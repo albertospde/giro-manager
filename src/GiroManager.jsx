@@ -1,4 +1,5 @@
 import { useState, useEffect, useMemo, useCallback } from "react";
+import ModuloImport from "./ModuloImport.jsx";
 
 // ─── SUPABASE CONFIG ──────────────────────────────────────────────────────────
 const SUPABASE_URL = "https://tdflwenlylhctxssatax.supabase.co";
@@ -499,6 +500,7 @@ const MODULES = [
   { id: "cedola", label: "Cedola", icon: "≡" },
   { id: "prenotato", label: "Prenotato", icon: "↳" },
   { id: "finegiro", label: "Fine Giro", icon: "⊞" },
+  { id: "import", label: "Import Cedola", icon: "↑" },
 ];
 
 export default function App() {
@@ -562,6 +564,7 @@ export default function App() {
           <span style={{ color: T.textMid, fontSize: "11px" }}>{titoli.length} titoli · {MOCK_GIRI.length} sub-giri</span>
         </div>
         <div style={{ flex: 1, overflow: "hidden", display: "flex", flexDirection: "column" }}>
+          {activeModule === "import" && <ModuloImport giriList={MOCK_GIRI} token={session.token} />}
           {activeModule === "dashboard" && <ModuloDashboard titoli={titoli} giriList={MOCK_GIRI} prenotato={prenotato} canali={MOCK_CANALI} />}
           {activeModule === "cedola" && <ModuloCedola titoli={titoli} giriList={MOCK_GIRI} onUpdateTitolo={updateTitolo} />}
           {activeModule === "prenotato" && <ModuloPrenotato titoli={titoli} giriList={MOCK_GIRI} canali={MOCK_CANALI} prenotato={prenotato} />}
