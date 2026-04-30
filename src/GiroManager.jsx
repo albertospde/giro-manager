@@ -76,14 +76,22 @@ const MOCK_PRENOTATO = [
 
 // ─── COLORI TEMA ──────────────────────────────────────────────────────────────
 const T = {
-  bg: "#0f0f0f", surface: "#161616", border: "#252525", borderHi: "#333333",
-  text: "#e8e8e8", textMid: "#888888", textDim: "#444444",
-  accent: "#c8a96e", accentDim: "#7a6540",
-  green: "#4caf7d", red: "#e05c5c", blue: "#5b8fd4", purple: "#9c6fcf",
+  bg: "#1a2140",
+  surface: "#212d54",
+  border: "#2e3d6b",
+  borderHi: "#3d4f82",
+  text: "#f0f2f8",
+  textMid: "#8b9cc8",
+  textDim: "#4a5a8a",
+  accent: "#7b9fe8",
+  green: "#4caf7d",
+  red: "#e05c5c",
+  blue: "#4a5da0",
+  purple: "#9c6fcf",
 };
 
 const css = {
-  app: { background: T.bg, color: T.text, minHeight: "100vh", fontFamily: "'DM Mono', 'Courier New', monospace", fontSize: "13px" },
+  app: { background: T.bg, color: T.text, minHeight: "100vh", fontFamily: "'Inter', 'Segoe UI', Arial, sans-serif", fontSize: "13px" },
   sidebar: { width: 200, background: T.surface, borderRight: `1px solid ${T.border}`, display: "flex", flexDirection: "column", flexShrink: 0 },
   main: { flex: 1, overflow: "hidden", display: "flex", flexDirection: "column" },
   header: { borderBottom: `1px solid ${T.border}`, padding: "12px 20px", display: "flex", alignItems: "center", gap: 12, background: T.surface },
@@ -554,8 +562,10 @@ export default function App() {
     <div style={{ ...css.app, display: "flex", height: "100vh" }}>
       <div style={css.sidebar}>
         <div style={{ padding: "20px 16px 16px", borderBottom: `1px solid ${T.border}` }}>
-          <div style={{ color: T.accent, fontSize: "16px", fontWeight: "700", letterSpacing: "0.08em" }}>GIRO</div>
-          <div style={{ color: T.textMid, fontSize: "10px", letterSpacing: "0.12em", marginTop: 2 }}>MANAGER</div>
+          <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 4 }}>
+  <img src="https://raw.githubusercontent.com/albertospde/giro-manager/main/public/logo_pde.png" style={{ height: 28 }} alt="PDE" />
+</div>
+<div style={{ color: T.accent, fontSize: "13px", fontWeight: "700", letterSpacing: "0.06em" }}>GIRO MANAGER</div>
         </div>
         <nav style={{ flex: 1, padding: "8px 0" }}>
           {MODULES.map((m) => (
