@@ -512,8 +512,16 @@ export default function App() {
   const [session, setSession] = useState(null);
   const [checkingAuth, setCheckingAuth] = useState(true);
   const [activeModule, setActiveModule] = useState("dashboard");
-  const [titoli, setTitoli] = useState(MOCK_TITOLI);
-  const [prenotato] = useState(MOCK_PRENOTATO);
+  const [titoli, setTitoli] = useState([]);
+  const [prenotato, setPrenotato] = useState([]);
+  const [giriDB, setGiriDB] = useState(MOCK_GIRI);
+
+  useEffect(() => {
+    if (!session) return;
+    sbFetch("giri?select=*&order=anno.desc,numero.desc", session.token).then(setGiriDB);
+    sbFetch("titoli?select=*&order=ranking_editore.asc,ranking_titolo.asc", session.token).then(setTitoli);
+    sbFetch("prenotato?select=*", session.token).then(setPrenotato);
+  }, [session]);
 
   useEffect(() => {
     const token = localStorage.getItem("giro_token");
