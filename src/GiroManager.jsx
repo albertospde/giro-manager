@@ -29,7 +29,12 @@ const sb = {
     },
   },
 };
-
+const sbFetch = async (path, token) => {
+  const r = await fetch(`${SUPABASE_URL}/rest/v1/${path}`, {
+    headers: { "apikey": SUPABASE_KEY, "Authorization": `Bearer ${token}`, "Accept": "application/json" },
+  });
+  return r.json();
+};
 // ─── MOCK DATA ────────────────────────────────────────────────────────────────
 const MOCK_GIRI = [
   { id: 1, numero: 4, anno: 2026, label: "GIRO 4 2026 A", sub_giro: "A", attivo: true },
