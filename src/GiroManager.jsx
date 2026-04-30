@@ -36,7 +36,7 @@ const sbFetch = async (path, token) => {
   return r.json();
 };
 // ─── MOCK DATA ────────────────────────────────────────────────────────────────
-const MOCK_GIRI = [
+const giriDB = [
   { id: 1, numero: 4, anno: 2026, label: "GIRO 4 2026 A", sub_giro: "A", attivo: true },
   { id: 2, numero: 4, anno: 2026, label: "GIRO 4 2026 B", sub_giro: "B", attivo: true },
   { id: 3, numero: 4, anno: 2026, label: "GIRO 4 2026 C", sub_giro: "C", attivo: true },
@@ -514,7 +514,7 @@ export default function App() {
   const [activeModule, setActiveModule] = useState("dashboard");
   const [titoli, setTitoli] = useState([]);
   const [prenotato, setPrenotato] = useState([]);
-  const [giriDB, setGiriDB] = useState(MOCK_GIRI);
+  const [giriDB, setGiriDB] = useState(giriDB);
 
   useEffect(() => {
     if (!session) return;
@@ -574,14 +574,14 @@ export default function App() {
         <div style={css.header}>
           <span style={{ color: T.accent, fontSize: "11px", letterSpacing: "0.12em", textTransform: "uppercase" }}>{MODULES.find((m) => m.id === activeModule)?.label}</span>
           <span style={{ color: T.borderHi }}>·</span>
-          <span style={{ color: T.textMid, fontSize: "11px" }}>{titoli.length} titoli · {MOCK_GIRI.length} sub-giri</span>
+          <span style={{ color: T.textMid, fontSize: "11px" }}>{titoli.length} titoli · {giriDB.length} sub-giri</span>
         </div>
         <div style={{ flex: 1, overflow: "hidden", display: "flex", flexDirection: "column" }}>
-          {activeModule === "import" && <ModuloImport giriList={MOCK_GIRI} token={session.token} />}
-          {activeModule === "dashboard" && <ModuloDashboard titoli={titoli} giriList={MOCK_GIRI} prenotato={prenotato} canali={MOCK_CANALI} />}
-          {activeModule === "cedola" && <ModuloCedola titoli={titoli} giriList={MOCK_GIRI} onUpdateTitolo={updateTitolo} />}
-          {activeModule === "prenotato" && <ModuloPrenotato titoli={titoli} giriList={MOCK_GIRI} canali={MOCK_CANALI} prenotato={prenotato} />}
-          {activeModule === "finegiro" && <ModuloFineGiro titoli={titoli} giriList={MOCK_GIRI} prenotato={prenotato} canali={MOCK_CANALI} />}
+          {activeModule === "import" && <ModuloImport giriList={giriDB} token={session.token} />}
+          {activeModule === "dashboard" && <ModuloDashboard titoli={titoli} giriList={giriDB} prenotato={prenotato} canali={MOCK_CANALI} />}
+          {activeModule === "cedola" && <ModuloCedola titoli={titoli} giriList={giriDB} onUpdateTitolo={updateTitolo} />}
+          {activeModule === "prenotato" && <ModuloPrenotato titoli={titoli} giriList={giriDB} canali={MOCK_CANALI} prenotato={prenotato} />}
+          {activeModule === "finegiro" && <ModuloFineGiro titoli={titoli} giriList={giriDB} prenotato={prenotato} canali={MOCK_CANALI} />}
         </div>
       </div>
     </div>
