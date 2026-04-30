@@ -514,7 +514,7 @@ export default function App() {
   const [activeModule, setActiveModule] = useState("dashboard");
   const [titoli, setTitoli] = useState([]);
   const [prenotato, setPrenotato] = useState([]);
-  const [giriDB, setGiriDB] = useState(giriDB);
+  const [giriDB, setGiriDB] = useState([]);
 
   useEffect(() => {
     if (!session) return;
