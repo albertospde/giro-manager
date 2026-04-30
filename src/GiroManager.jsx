@@ -290,7 +290,7 @@ function ModuloCedola({ titoli, giriList, onUpdateTitolo }) {
                 <td style={{ ...css.td, color: T.textMid }}>{t.autore}</td>
                 <td style={css.td}>€ {t.prezzo?.toFixed(2)}</td>
                 <td style={{ ...css.td, color: T.textMid }}>{t.uscita}</td>
-                <td style={css.td}><div style={{ fontSize: "11px" }}>{t.obiettivo_assegnato}</div><ProgressBar value={t.obiettivo_raggiunto} total={t.obiettivo_assegnato} /></td>
+                <td style={{ ...css.td, whiteSpace: "nowrap", minWidth: 120 }}><div style={{ fontSize: "11px", marginBottom: 4 }}>{t.obiettivo_raggiunto} / {t.obiettivo_assegnato}</div><ProgressBar value={t.obiettivo_raggiunto} total={t.obiettivo_assegnato} /></td>
                 <td style={css.td}><div style={{ display: "flex", gap: 4 }}>{t.il_triangolo && <Badge label="▲" color={T.purple} />}{t.top_100 && <Badge label="★" color={T.accent} />}</div></td>
                 <td style={css.td}>{t.ean_gemello_1 && <div style={{ fontSize: "10px", color: T.textMid }}><div>{t.ean_gemello_1}</div>{t.ean_gemello_2 && <div>{t.ean_gemello_2}</div>}{t.ean_gemello_3 && <div>{t.ean_gemello_3}</div>}</div>}</td>
                 <td style={{ ...css.td, maxWidth: 160 }}>{(t.note || t.note_comunicazione) && <div style={{ fontSize: "11px", color: T.textMid, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", maxWidth: 150 }} title={t.note_comunicazione || t.note}>{t.note_comunicazione || t.note}</div>}</td>
