@@ -106,7 +106,7 @@ export default function ModuloImport({ giriList, token, onImportDone }) {
           "Content-Type": "application/json",
           "apikey": SUPABASE_KEY,
           "Authorization": `Bearer ${token}`,
-          "Prefer": "resolution=merge-duplicates,return=minimal",
+          "Prefer": "return=minimal,resolution=merge-duplicates",
         },
         body: JSON.stringify(payload),
       });
