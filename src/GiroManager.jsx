@@ -241,7 +241,7 @@ function ModuloCedola({ titoli, giriList, onUpdateTitolo, spalmatura }) {
     return [...new Set(titoli.map((t) => t.n_cedola).filter(Boolean))].sort();
   }, [titoli]);
   const editori = useMemo(() => {
-    const t = giroSel === "tutti" ? titoli : titoli.filter((t) => t.giro_id === Number(giroSel));
+    const t = giroSel === "tutti" ? titoli : titoli.filter((t) => t.n_cedola === giroSel);
     return [...new Set(t.map((t) => t.editore_nome).filter(Boolean))].sort();
   }, [titoli, giroSel]);
 
