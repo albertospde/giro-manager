@@ -100,7 +100,7 @@ export default function ModuloImport({ giriList, token, onImportDone }) {
     setImporting(true);
     const payload = rows.map(r => ({ ...r, giro_id: giroSel }));
     try {
-      const res = await fetch(`${SUPABASE_URL}/rest/v1/titoli?on_conflict=ean,giro_id`, {
+      const res = await fetch(`${SUPABASE_URL}/rest/v1/titoli?on_conflict=ean,giro_id&columns=ean,giro_id,titolo,autore,codice_editore,editore_nome,prezzo,uscita,formato,eta,n_cedola,ranking_editore,ranking_titolo,obiettivo_assegnato,il_triangolo,top_100,account_editore,promozione,note_comunicazione,note,ean_gemello_1,titolo_gemello_1,ean_gemello_2,titolo_gemello_2,ean_gemello_3,titolo_gemello_3`, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
