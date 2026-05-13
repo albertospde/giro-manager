@@ -1,3 +1,4 @@
+import ModuloPrenotato from "./ModuloPrenotato.jsx";
 import { useState, useEffect, useMemo, useCallback } from "react";
 import ModuloImport from "./ModuloImport.jsx";
 
@@ -733,7 +734,7 @@ export default function App() {
           {activeModule === "import" && <ModuloImport giriList={giriDB} token={session.token} />}
           {activeModule === "dashboard" && <ModuloDashboard titoli={titoli} giriList={giriDB} prenotato={prenotato} canali={MOCK_CANALI} />}
           {activeModule === "cedola" && <ModuloCedola titoli={titoli} giriList={giriDB} onUpdateTitolo={updateTitolo} spalmatura={spalmatura} />}
-          {activeModule === "prenotato" && <ModuloPrenotato titoli={titoli} giriList={giriDB} canali={MOCK_CANALI} prenotato={prenotato} />}
+          {activeModule === "prenotato" && <ModuloPrenotato token={session.token} titoli={titoli} />}
           {activeModule === "finegiro" && <ModuloFineGiro titoli={titoli} giriList={giriDB} prenotato={prenotato} canali={MOCK_CANALI} />}
         </div>
       </div>
