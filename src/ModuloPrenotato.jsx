@@ -124,15 +124,14 @@ export default function ModuloPrenotato({ token, titoli }) {
     })).filter(r => r.canale_id !== null);
 
     // Upsert prenotato
-    const res = await fetch(`${SUPABASE_URL}/rest/v1/prenotato`, {
+    const res = await fetch(`${SUPABASE_URL}/rest/v1/rpc/upsert_prenotato`, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
         "apikey": SUPABASE_KEY,
         "Authorization": `Bearer ${token}`,
-        "Prefer": "resolution=merge-duplicates,return=minimal",
       },
-      body: JSON.stringify(payload),
+      body: JSON.stringify({ payload }),
     });
 
     if (res.ok) {
