@@ -74,7 +74,7 @@ export default function ModuloPrenotato({ token, titoli }) {
           const qta = parseInt(row["Pren (Qtà)"]) || 0;
           if (!ean || !gruppoCliente || qta === 0) return;
 
-          const canale = map[parseInt(gruppoCliente)] || "INDIPENDENTI_ALTRE_CATENE";
+          const canale = (!gruppoCliente || gruppoCliente === "") ? "INDIPENDENTI_ALTRE_CATENE" : (map[parseInt(gruppoCliente)] || "INDIPENDENTI_ALTRE_CATENE");
           const key = `${ean}__${canale}`;
           if (!aggMap[key]) aggMap[key] = { ean, canale, qta: 0 };
           aggMap[key].qta += qta;
