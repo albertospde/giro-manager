@@ -326,6 +326,39 @@ function ModuloCedola({ titoli, giriList, onUpdateTitolo, spalmatura }) {
       { codice: 'CENTROLIBRI', label: 'Centrolibri' },
       { codice: 'GDO', label: 'GDO' },
     ];
+
+    // Foglio 1: Cedola
+    const headersCedola = ["N° CEDOLA", "EAN", "TITOLO", "AUTORE", "EDITORE", "PREZZO", "NOTE", "EAN GEM 1", "TITOLO GEM 1", "EAN GEM 2", "TITOLO GEM 2", "EAN GEM 3", "TITOLO GEM 3"];
+    const rowsCedola = filtered.map(t => [
+      t.n_cedola, t.ean, t.titolo, t.autore, t.editore_nome, t.prezzo,
+      t.note_comunicazione || t.note,
+      t.ean_gemello_1, t.titolo_gemello_1,
+      t.ean_gemello_2, t.titolo_gemello_2,
+      t.ean_gemello_3, t.titolo_gemello_3,
+    ]);
+    const wsCedola = XLSX.utils.aoa_to_sheet([headersCedola, ...rowsCedola]);
+    wsCedola["!cols"] = [14,16,40,25,20,8,30,16,30,16,30,16,30].map(w => ({ wch: w }));
+
+    // Foglio 2: Obiettivi
+    const headersObj = ["N° CEDOLA", "EAN", "TITOLO", "AUTORE", "EDITORE", "PREZZO", "OBJ TOTALE", ...canaliDir.map(c => c.label)];
+    const rowsObj = filtered.map(t => {
+      const objPerCanale = canaliDir.map(c => getObjCanale(t, c.codice));
+      const totObj = t.obiettivo_assegnato || 0;
+      return [
+        t.n_cedola, t.ean, t.titolo, t.autore, t.editore_nome, t.prezzo,
+        totObj, ...objPerCanale,
+      ];
+    });
+    const wsObj = XLSX.utils.aoa_to_sheet([headersObj, ...rowsObj]);
+    wsObj["!cols"] = [14,16,40,25,20,8,10,...canaliDir.map(() => 14)].map(w => ({ wch: w }));
+
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, wsCedola, "CEDOLA");
+    XLSX.utils.book_append_sheet(wb, wsObj, "OBIETTIVI");
+    const label = giroSel === "tutti" ? "TUTTI" : giroSel;
+    XLSX.writeFile(wb, `CEDOLA_DIREZIONALE_${label}.xlsx`);
+  };
+    ];
     const headers = ["N° CEDOLA", "EAN", "TITOLO", "AUTORE", "EDITORE", "PREZZO", "USCITA", "NOTE", "EAN GEM 1", "TITOLO GEM 1", "EAN GEM 2", "TITOLO GEM 2", "EAN GEM 3", "TITOLO GEM 3", ...canaliDir.map(c => c.label), "TOT OBJ"];
     const rows = filtered.map(t => {
       const objPerCanale = canaliDir.map(c => getObjCanale(t, c.codice));
