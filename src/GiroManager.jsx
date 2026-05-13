@@ -268,7 +268,7 @@ function ModuloCedola({ titoli, giriList, onUpdateTitolo, spalmatura }) {
         if (sortKey === "prezzo") return (b.prezzo ?? 0) - (a.prezzo ?? 0);
         return 0;
       });
-  }, [titoli, giroSel, search, filterFlag, filterEditore, sortKey]);
+ }, [titoli, giroSel, search, filterFlag, filterEditori, sortKey]);
 
   const editingTitolo = titoli.find((t) => t.id === editingId);
 
