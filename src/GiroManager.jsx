@@ -522,6 +522,7 @@ export default function App() {
   const [activeModule, setActiveModule] = useState("dashboard");
   const [titoli, setTitoli] = useState([]);
   const [prenotato, setPrenotato] = useState([]);
+  const [spalmatura, setSpalmatura] = useState([]);
   const [giriDB, setGiriDB] = useState([]);
 
   useEffect(() => {
@@ -529,6 +530,7 @@ export default function App() {
     sbFetch("giri?select=*&order=anno.desc,numero.desc", session.token).then(setGiriDB);
     sbFetch("titoli?select=*&order=ranking_editore.asc,ranking_titolo.asc", session.token).then(setTitoli);
     sbFetch("prenotato?select=*", session.token).then(setPrenotato);
+    sbFetch("spalmatura_obiettivo?select=*", session.token).then(setSpalmatura);
   }, [session]);
 
   useEffect(() => {
@@ -589,7 +591,7 @@ export default function App() {
         <div style={{ flex: 1, overflow: "hidden", display: "flex", flexDirection: "column" }}>
           {activeModule === "import" && <ModuloImport giriList={giriDB} token={session.token} />}
           {activeModule === "dashboard" && <ModuloDashboard titoli={titoli} giriList={giriDB} prenotato={prenotato} canali={MOCK_CANALI} />}
-          {activeModule === "cedola" && <ModuloCedola titoli={titoli} giriList={giriDB} onUpdateTitolo={updateTitolo} />}
+          {activeModule === "cedola" && <ModuloCedola titoli={titoli} giriList={giriDB} onUpdateTitolo={updateTitolo} spalmatura={spalmatura} />}
           {activeModule === "prenotato" && <ModuloPrenotato titoli={titoli} giriList={giriDB} canali={MOCK_CANALI} prenotato={prenotato} />}
           {activeModule === "finegiro" && <ModuloFineGiro titoli={titoli} giriList={giriDB} prenotato={prenotato} canali={MOCK_CANALI} />}
         </div>
