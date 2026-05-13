@@ -232,6 +232,7 @@ function EditModal({ titolo, onSave, onClose }) {
 // ─── MODULO: CEDOLA ───────────────────────────────────────────────────────────
 function ModuloCedola({ titoli, giriList, onUpdateTitolo, spalmatura }) {
   const [giroSel, setGiroSel] = useState("tutti");
+  const [giroLabelSel, setGiroLabelSel] = useState("tutti");
   const [search, setSearch] = useState("");
   const [filterFlag, setFilterFlag] = useState("tutti");
   const [filterEditori, setFilterEditori] = useState([]);
@@ -239,9 +240,17 @@ function ModuloCedola({ titoli, giriList, onUpdateTitolo, spalmatura }) {
   const [editingId, setEditingId] = useState(null);
   const [sortKey, setSortKey] = useState("n_cedola");
 
-  const cedole = useMemo(() => {
-    return [...new Set(titoli.map((t) => t.n_cedola).filter(Boolean))].sort();
+  const giri = useMemo(() => {
+    return [...new Set(titoli.map((t) => t.giro_label).filter(Boolean))].sort((a, b) => {
+      const [na, ya] = a.split(" "); const [nb, yb] = b.split(" ");
+      return Number(yb) - Number(ya) || Number(nb) - Number(na);
+    });
   }, [titoli]);
+
+  const cedole = useMemo(() => {
+    const t = giroLabelSel === "tutti" ? titoli : titoli.filter(t => t.giro_label === giroLabelSel);
+    return [...new Set(t.map((t) => t.n_cedola).filter(Boolean))].sort();
+  }, [titoli, giroLabelSel]);
   const editori = useMemo(() => {
     const t = giroSel === "tutti" ? titoli : titoli.filter((t) => t.n_cedola === giroSel);
     return [...new Set(t.map((t) => t.editore_nome).filter(Boolean))].sort();
@@ -249,6 +258,7 @@ function ModuloCedola({ titoli, giriList, onUpdateTitolo, spalmatura }) {
 
   const filtered = useMemo(() => {
     return titoli
+      .filter((t) => giroLabelSel === "tutti" || t.giro_label === giroLabelSel)
       .filter((t) => giroSel === "tutti" || t.n_cedola === giroSel)
       .filter((t) => filterEditori.length === 0 || filterEditori.includes(t.editore_nome))
       .filter((t) => {
@@ -365,6 +375,10 @@ function ModuloCedola({ titoli, giriList, onUpdateTitolo, spalmatura }) {
     <div style={{ display: "flex", flexDirection: "column", height: "100%", overflow: "hidden" }}>
       {editingTitolo && <EditModal titolo={editingTitolo} onSave={onUpdateTitolo} onClose={() => setEditingId(null)} />}
       <div style={{ padding: "12px 20px", borderBottom: `1px solid ${T.border}`, display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap" }}>
+        <select style={css.input} value={giroLabelSel} onChange={(e) => { setGiroLabelSel(e.target.value); setGiroSel("tutti"); setFilterEditori([]); }}>
+          <option value="tutti">Tutti i giri</option>
+          {giri.map((g) => <option key={g} value={g}>Giro {g}</option>)}
+        </select>
         <select style={css.input} value={giroSel} onChange={(e) => { setGiroSel(e.target.value); setFilterEditori([]); }}>
           <option value="tutti">Tutte le cedole</option>
           {cedole.map((c) => <option key={c} value={c}>{c}</option>)}
