@@ -618,7 +618,9 @@ const MODULES = [
   { id: "finegiro", label: "Fine Giro", icon: "⊞" },
   { id: "import", label: "Import Cedola", icon: "↑" },
 ];
-
+const style = document.createElement('style');
+style.textContent = `button:hover { filter: brightness(1.3); }`;
+document.head.appendChild(style);
 export default function App() {
   const [session, setSession] = useState(null);
   const [checkingAuth, setCheckingAuth] = useState(true);
@@ -627,10 +629,7 @@ export default function App() {
   const [prenotato, setPrenotato] = useState([]);
   const [spalmatura, setSpalmatura] = useState([]);
   const [giriDB, setGiriDB] = useState([]);
-  const style = document.createElement('style');
-style.textContent = `button:hover { filter: brightness(1.3); }`;
-document.head.appendChild(style);
-
+  
   useEffect(() => {
     if (!session) return;
     sbFetch("giri?select=*&order=anno.desc,numero.desc", session.token).then(setGiriDB);
