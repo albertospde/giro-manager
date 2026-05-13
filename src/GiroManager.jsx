@@ -690,7 +690,7 @@ export default function App() {
         <div style={css.header}>
           <span style={{ color: T.accent, fontSize: "11px", letterSpacing: "0.12em", textTransform: "uppercase" }}>{MODULES.find((m) => m.id === activeModule)?.label}</span>
           <span style={{ color: T.borderHi }}>·</span>
-          <span style={{ color: T.textMid, fontSize: "11px" }}>{titoli.length} titoli · {giriDB.length} sub-giri</span>
+          <span style={{ color: T.textMid, fontSize: "11px" }}>{titoli.length} titoli · {giriDB.length} cedole</span>
         </div>
         <div style={{ flex: 1, overflow: "hidden", display: "flex", flexDirection: "column" }}>
           {activeModule === "import" && <ModuloImport giriList={giriDB} token={session.token} />}
