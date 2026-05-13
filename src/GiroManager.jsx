@@ -233,7 +233,8 @@ function ModuloCedola({ titoli, giriList, onUpdateTitolo, spalmatura }) {
   const [giroSel, setGiroSel] = useState("tutti");
   const [search, setSearch] = useState("");
   const [filterFlag, setFilterFlag] = useState("tutti");
-  const [filterEditore, setFilterEditore] = useState("tutti");
+  const [filterEditori, setFilterEditori] = useState([]);
+  const [editoreDropdownOpen, setEditoreDropdownOpen] = useState(false);
   const [editingId, setEditingId] = useState(null);
   const [sortKey, setSortKey] = useState("n_cedola");
 
@@ -248,7 +249,7 @@ function ModuloCedola({ titoli, giriList, onUpdateTitolo, spalmatura }) {
   const filtered = useMemo(() => {
     return titoli
       .filter((t) => giroSel === "tutti" || t.n_cedola === giroSel)
-      .filter((t) => filterEditore === "tutti" || t.editore_nome === filterEditore)
+      .filter((t) => filterEditori.length === 0 || filterEditori.includes(t.editore_nome))
       .filter((t) => {
         if (!search) return true;
         const q = search.toLowerCase();
@@ -350,14 +351,34 @@ function ModuloCedola({ titoli, giriList, onUpdateTitolo, spalmatura }) {
     <div style={{ display: "flex", flexDirection: "column", height: "100%", overflow: "hidden" }}>
       {editingTitolo && <EditModal titolo={editingTitolo} onSave={onUpdateTitolo} onClose={() => setEditingId(null)} />}
       <div style={{ padding: "12px 20px", borderBottom: `1px solid ${T.border}`, display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap" }}>
-        <select style={css.input} value={giroSel} onChange={(e) => { setGiroSel(e.target.value); setFilterEditore("tutti"); }}>
+        <select style={css.input} value={giroSel} onChange={(e) => { setGiroSel(e.target.value); setFilterEditori([]); }}>
           <option value="tutti">Tutte le cedole</option>
           {cedole.map((c) => <option key={c} value={c}>{c}</option>)}
         </select>
-        <select style={css.input} value={filterEditore} onChange={(e) => setFilterEditore(e.target.value)}>
-          <option value="tutti">Tutti gli editori</option>
-          {editori.map((e) => <option key={e} value={e}>{e}</option>)}
-        </select>
+        <div style={{ position: "relative" }}>
+          <button style={{ ...css.btn(), minWidth: 180, display: "flex", justifyContent: "space-between", alignItems: "center", gap: 8 }}
+            onClick={() => setEditoreDropdownOpen(o => !o)}>
+            <span>{filterEditori.length === 0 ? "Tutti gli editori" : `${filterEditori.length} selezionati`}</span>
+            <span>▾</span>
+          </button>
+          {editoreDropdownOpen && (
+            <div style={{ position: "absolute", top: "100%", left: 0, zIndex: 50, background: T.surface, border: `1px solid ${T.borderHi}`, borderRadius: 4, minWidth: 220, maxHeight: 300, overflowY: "auto", marginTop: 4, boxShadow: "0 4px 20px #0008" }}>
+              <div style={{ padding: "8px 12px", borderBottom: `1px solid ${T.border}`, display: "flex", justifyContent: "space-between" }}>
+                <span style={{ color: T.textMid, fontSize: "11px" }}>{editori.length} editori</span>
+                <span style={{ color: T.accent, fontSize: "11px", cursor: "pointer" }} onClick={() => setFilterEditori([])}>Deseleziona tutti</span>
+              </div>
+              {editori.map((e) => (
+                <label key={e} style={{ display: "flex", alignItems: "center", gap: 8, padding: "7px 12px", cursor: "pointer", borderBottom: `1px solid ${T.border}22`, background: filterEditori.includes(e) ? T.accent + "18" : "transparent" }}>
+                  <input type="checkbox" checked={filterEditori.includes(e)} onChange={() => setFilterEditori(prev => prev.includes(e) ? prev.filter(x => x !== e) : [...prev, e])} style={{ accentColor: T.accent }} />
+                  <span style={{ fontSize: "12px", color: filterEditori.includes(e) ? T.accent : T.text }}>{e}</span>
+                </label>
+              ))}
+              <div style={{ padding: 8, borderTop: `1px solid ${T.border}` }}>
+                <button style={{ ...css.btn("accent"), width: "100%" }} onClick={() => setEditoreDropdownOpen(false)}>Applica</button>
+              </div>
+            </div>
+          )}
+        </div>
         <input style={{ ...css.input, width: 200 }} placeholder="Cerca titolo, autore, EAN..." value={search} onChange={(e) => setSearch(e.target.value)} />
         {["tutti","triangolo","top100","gemelli"].map((f) => (
           <button key={f} style={{ ...css.btn(filterFlag === f ? "accent" : "default"), padding: "5px 10px" }} onClick={() => setFilterFlag(f)}>
