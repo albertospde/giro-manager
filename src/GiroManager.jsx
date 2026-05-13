@@ -229,44 +229,143 @@ function EditModal({ titolo, onSave, onClose }) {
 }
 
 // ─── MODULO: CEDOLA ───────────────────────────────────────────────────────────
-function ModuloCedola({ titoli, giriList, onUpdateTitolo }) {
-  const [giroSel, setGiroSel] = useState(giriList[0]?.id ?? null);
+function ModuloCedola({ titoli, giriList, onUpdateTitolo, spalmatura }) {
+  const [giroSel, setGiroSel] = useState("tutti");
   const [search, setSearch] = useState("");
   const [filterFlag, setFilterFlag] = useState("tutti");
+  const [filterEditore, setFilterEditore] = useState("tutti");
   const [editingId, setEditingId] = useState(null);
   const [sortKey, setSortKey] = useState("n_cedola");
 
+  const editori = useMemo(() => {
+    const t = giroSel === "tutti" ? titoli : titoli.filter((t) => t.giro_id === Number(giroSel));
+    return [...new Set(t.map((t) => t.editore_nome).filter(Boolean))].sort();
+  }, [titoli, giroSel]);
+
   const filtered = useMemo(() => {
-    return titoli.filter((t) => t.giro_id === giroSel)
-      .filter((t) => { if (!search) return true; const q = search.toLowerCase(); return t.titolo?.toLowerCase().includes(q) || t.autore?.toLowerCase().includes(q) || t.editore_nome?.toLowerCase().includes(q) || t.ean?.includes(q); })
-      .filter((t) => { if (filterFlag === "triangolo") return t.il_triangolo; if (filterFlag === "top100") return t.top_100; if (filterFlag === "gemelli") return t.ean_gemello_1; return true; })
-      .sort((a, b) => { if (sortKey === "n_cedola") return (a.n_cedola ?? 999) - (b.n_cedola ?? 999); if (sortKey === "editore") return (a.editore_nome ?? "").localeCompare(b.editore_nome ?? ""); if (sortKey === "prezzo") return (b.prezzo ?? 0) - (a.prezzo ?? 0); return 0; });
-  }, [titoli, giroSel, search, filterFlag, sortKey]);
+    return titoli
+      .filter((t) => giroSel === "tutti" || t.giro_id === Number(giroSel))
+      .filter((t) => filterEditore === "tutti" || t.editore_nome === filterEditore)
+      .filter((t) => {
+        if (!search) return true;
+        const q = search.toLowerCase();
+        return t.titolo?.toLowerCase().includes(q) || t.autore?.toLowerCase().includes(q) ||
+               t.editore_nome?.toLowerCase().includes(q) || t.ean?.includes(q);
+      })
+      .filter((t) => {
+        if (filterFlag === "triangolo") return t.il_triangolo;
+        if (filterFlag === "top100") return t.top_100;
+        if (filterFlag === "gemelli") return t.ean_gemello_1;
+        return true;
+      })
+      .sort((a, b) => {
+        if (sortKey === "n_cedola") return (a.n_cedola ?? 999) - (b.n_cedola ?? 999);
+        if (sortKey === "editore") return (a.editore_nome ?? "").localeCompare(b.editore_nome ?? "");
+        if (sortKey === "prezzo") return (b.prezzo ?? 0) - (a.prezzo ?? 0);
+        return 0;
+      });
+  }, [titoli, giroSel, search, filterFlag, filterEditore, sortKey]);
 
   const editingTitolo = titoli.find((t) => t.id === editingId);
+
   const avanzamento = useMemo(() => {
-    const tGiro = titoli.filter((t) => t.giro_id === giroSel);
-    const totObj = tGiro.reduce((s, t) => s + (t.obiettivo_assegnato || 0), 0);
-    const totRag = tGiro.reduce((s, t) => s + (t.obiettivo_raggiunto || 0), 0);
-    return { totObj, totRag, pct: totObj > 0 ? Math.round((totRag / totObj) * 100) : 0, count: tGiro.length };
-  }, [titoli, giroSel]);
+    const totObj = filtered.reduce((s, t) => s + (t.obiettivo_assegnato || 0), 0);
+    const totRag = filtered.reduce((s, t) => s + (t.obiettivo_raggiunto || 0), 0);
+    return { totObj, totRag, pct: totObj > 0 ? Math.round((totRag / totObj) * 100) : 0, count: filtered.length };
+  }, [filtered]);
+
+  // Calcola obiettivo per canale dato un titolo
+  const getObjCanale = (titolo, canale_codice) => {
+    const spRow = spalmatura.find(s =>
+      s.editore_nome === titolo.editore_nome &&
+      s.formato === (titolo.formato || 'Cover') &&
+      s.canale_codice === canale_codice
+    );
+    if (!spRow || !titolo.obiettivo_assegnato) return 0;
+    return Math.round(titolo.obiettivo_assegnato * spRow.percentuale);
+  };
+
+  const exportAgenti = () => {
+    const XLSX = window.XLSX;
+    const headers = ["N° CEDOLA", "EAN", "TITOLO", "AUTORE", "EDITORE", "PREZZO", "USCITA", "NOTE", "EAN GEM 1", "TITOLO GEM 1", "EAN GEM 2", "TITOLO GEM 2", "EAN GEM 3", "TITOLO GEM 3", "OBJ INDIPENDENTI & ALTRE CATENE"];
+    const rows = filtered.map(t => [
+      t.n_cedola, t.ean, t.titolo, t.autore, t.editore_nome,
+      t.prezzo, t.uscita, t.note_comunicazione || t.note,
+      t.ean_gemello_1, t.titolo_gemello_1,
+      t.ean_gemello_2, t.titolo_gemello_2,
+      t.ean_gemello_3, t.titolo_gemello_3,
+      getObjCanale(t, 'INDIPENDENTI_ALTRE_CATENE'),
+    ]);
+    const ws = XLSX.utils.aoa_to_sheet([headers, ...rows]);
+    ws["!cols"] = [8,16,40,25,20,8,10,30,16,30,16,30,16,30,14].map(w => ({ wch: w }));
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, "CEDOLA AGENTI");
+    const label = giroSel === "tutti" ? "TUTTI" : giriList.find(g => g.id === Number(giroSel))?.label ?? giroSel;
+    XLSX.utils.book_write_file(wb, `CEDOLA_AGENTI_${label}.xlsx`);
+  };
+
+  const exportDirezionale = () => {
+    const pwd = prompt("Password direzionale:");
+    if (pwd !== "nuovaluce") { alert("Password errata."); return; }
+    const XLSX = window.XLSX;
+    const canaliDir = [
+      { codice: 'FELTRINELLI', label: 'Feltrinelli' },
+      { codice: 'GIUNTI', label: 'Giunti' },
+      { codice: 'MONDADORI', label: 'Mondadori' },
+      { codice: 'UBIK', label: 'Ubik' },
+      { codice: 'INDIPENDENTI_ALTRE_CATENE', label: 'Indip. & Altre Catene' },
+      { codice: 'AMAZON', label: 'Amazon' },
+      { codice: 'IBS', label: 'IBS' },
+      { codice: 'ALTRI_ONLINE', label: 'Altri Online' },
+      { codice: 'FASTBOOK', label: 'Fastbook' },
+      { codice: 'GROSSISTI', label: 'Grossisti' },
+      { codice: 'CENTROLIBRI', label: 'Centrolibri' },
+      { codice: 'GDO', label: 'GDO' },
+    ];
+    const headers = ["N° CEDOLA", "EAN", "TITOLO", "AUTORE", "EDITORE", "PREZZO", "USCITA", "NOTE", "EAN GEM 1", "TITOLO GEM 1", "EAN GEM 2", "TITOLO GEM 2", "EAN GEM 3", "TITOLO GEM 3", ...canaliDir.map(c => c.label), "TOT OBJ"];
+    const rows = filtered.map(t => {
+      const objPerCanale = canaliDir.map(c => getObjCanale(t, c.codice));
+      const totObj = objPerCanale.reduce((s, v) => s + v, 0);
+      return [
+        t.n_cedola, t.ean, t.titolo, t.autore, t.editore_nome,
+        t.prezzo, t.uscita, t.note_comunicazione || t.note,
+        t.ean_gemello_1, t.titolo_gemello_1,
+        t.ean_gemello_2, t.titolo_gemello_2,
+        t.ean_gemello_3, t.titolo_gemello_3,
+        ...objPerCanale, totObj,
+      ];
+    });
+    const ws = XLSX.utils.aoa_to_sheet([headers, ...rows]);
+    ws["!cols"] = [8,16,40,25,20,8,10,30,16,30,16,30,16,30,...canaliDir.map(() => 14), 10].map(w => ({ wch: w }));
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, "CEDOLA DIREZIONALE");
+    const label = giroSel === "tutti" ? "TUTTI" : giriList.find(g => g.id === Number(giroSel))?.label ?? giroSel;
+    XLSX.utils.book_write_file(wb, `CEDOLA_DIREZIONALE_${label}.xlsx`);
+  };
 
   return (
     <div style={{ display: "flex", flexDirection: "column", height: "100%", overflow: "hidden" }}>
       {editingTitolo && <EditModal titolo={editingTitolo} onSave={onUpdateTitolo} onClose={() => setEditingId(null)} />}
       <div style={{ padding: "12px 20px", borderBottom: `1px solid ${T.border}`, display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap" }}>
-        <select style={css.input} value={giroSel ?? ""} onChange={(e) => setGiroSel(Number(e.target.value))}>
+        <select style={css.input} value={giroSel} onChange={(e) => { setGiroSel(e.target.value); setFilterEditore("tutti"); }}>
+          <option value="tutti">Tutti i giri</option>
           {giriList.map((g) => <option key={g.id} value={g.id}>{g.label}</option>)}
         </select>
-        <input style={{ ...css.input, width: 220 }} placeholder="Cerca titolo, autore, EAN..." value={search} onChange={(e) => setSearch(e.target.value)} />
+        <select style={css.input} value={filterEditore} onChange={(e) => setFilterEditore(e.target.value)}>
+          <option value="tutti">Tutti gli editori</option>
+          {editori.map((e) => <option key={e} value={e}>{e}</option>)}
+        </select>
+        <input style={{ ...css.input, width: 200 }} placeholder="Cerca titolo, autore, EAN..." value={search} onChange={(e) => setSearch(e.target.value)} />
         {["tutti","triangolo","top100","gemelli"].map((f) => (
           <button key={f} style={{ ...css.btn(filterFlag === f ? "accent" : "default"), padding: "5px 10px" }} onClick={() => setFilterFlag(f)}>
             {f === "tutti" ? "Tutti" : f === "triangolo" ? "▲ Triangolo" : f === "top100" ? "★ Top 100" : "Gemelli"}
           </button>
         ))}
         <div style={{ marginLeft: "auto", color: T.textMid, fontSize: "11px" }}>
-          <span style={{ color: T.text }}>{filtered.length}</span> / {avanzamento.count} titoli &nbsp;·&nbsp; Obj: <span style={{ color: T.accent }}>{avanzamento.pct}%</span>
+          <span style={{ color: T.text }}>{avanzamento.count}</span> titoli &nbsp;·&nbsp; Obj: <span style={{ color: T.accent }}>{avanzamento.pct}%</span>
         </div>
+        <button style={css.btn()} onClick={exportAgenti}>↓ Agenti</button>
+        <button style={css.btn("accent")} onClick={exportDirezionale}>↓ Direzionale</button>
       </div>
       <div style={{ flex: 1, overflowY: "auto" }}>
         <table style={css.table}>
@@ -290,7 +389,10 @@ function ModuloCedola({ titoli, giriList, onUpdateTitolo }) {
                 <td style={{ ...css.td, color: T.textMid }}>{t.autore}</td>
                 <td style={css.td}>€ {t.prezzo?.toFixed(2)}</td>
                 <td style={{ ...css.td, color: T.textMid }}>{t.uscita}</td>
-                <td style={{ ...css.td, whiteSpace: "nowrap", minWidth: 120 }}><div style={{ fontSize: "11px", marginBottom: 4 }}>{t.obiettivo_raggiunto} / {t.obiettivo_assegnato}</div><ProgressBar value={t.obiettivo_raggiunto} total={t.obiettivo_assegnato} /></td>
+                <td style={{ ...css.td, whiteSpace: "nowrap", minWidth: 120 }}>
+                  <div style={{ fontSize: "11px", marginBottom: 4 }}>{t.obiettivo_raggiunto} / {t.obiettivo_assegnato}</div>
+                  <ProgressBar value={t.obiettivo_raggiunto} total={t.obiettivo_assegnato} />
+                </td>
                 <td style={css.td}><div style={{ display: "flex", gap: 4 }}>{t.il_triangolo && <Badge label="▲" color={T.purple} />}{t.top_100 && <Badge label="★" color={T.accent} />}</div></td>
                 <td style={css.td}>{t.ean_gemello_1 && <div style={{ fontSize: "10px", color: T.textMid }}><div>{t.ean_gemello_1}</div>{t.ean_gemello_2 && <div>{t.ean_gemello_2}</div>}{t.ean_gemello_3 && <div>{t.ean_gemello_3}</div>}</div>}</td>
                 <td style={{ ...css.td, maxWidth: 160 }}>{(t.note || t.note_comunicazione) && <div style={{ fontSize: "11px", color: T.textMid, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", maxWidth: 150 }} title={t.note_comunicazione || t.note}>{t.note_comunicazione || t.note}</div>}</td>
@@ -303,6 +405,7 @@ function ModuloCedola({ titoli, giriList, onUpdateTitolo }) {
     </div>
   );
 }
+
 
 // ─── MODULO: PRENOTATO ────────────────────────────────────────────────────────
 function ModuloPrenotato({ titoli, giriList, canali, prenotato }) {
