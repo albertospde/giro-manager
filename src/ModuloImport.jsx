@@ -143,13 +143,7 @@ if (field === "n_cedola") val = val ? String(val) : null;
       {/* STEP 1: UPLOAD */}
       {step === "upload" && (
         <div style={{ maxWidth: 500 }}>
-          <div style={{ marginBottom: 20 }}>
-            <div style={{ color: T.textMid, fontSize: "11px", letterSpacing: "0.08em", textTransform: "uppercase", marginBottom: 8 }}>Giro di destinazione</div>
-            <select style={css.input} value={giroSel ?? ""} onChange={(e) => setGiroSel(Number(e.target.value))}>
-              {giriList.map((g) => <option key={g.id} value={g.id}>{g.label}</option>)}
-            </select>
-          </div>
-          <div style={{ border: `2px dashed ${T.borderHi}`, borderRadius: 6, padding: 40, textAlign: "center", marginBottom: 20 }}>
+              <div style={{ border: `2px dashed ${T.borderHi}`, borderRadius: 6, padding: 40, textAlign: "center", marginBottom: 20 }}>
             <div style={{ fontSize: "32px", marginBottom: 12 }}>📂</div>
             <div style={{ color: T.text, marginBottom: 8 }}>Carica il template compilato</div>
             <div style={{ color: T.textMid, fontSize: "11px", marginBottom: 20 }}>Solo file .xlsx — usa il template ufficiale</div>
