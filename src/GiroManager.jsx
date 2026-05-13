@@ -379,7 +379,7 @@ function ModuloCedola({ titoli, giriList, onUpdateTitolo, spalmatura }) {
           <tbody>
             {filtered.map((t, i) => (
               <tr key={t.id} style={{ background: i % 2 === 0 ? "transparent" : T.surface + "66" }}>
-                <td style={{ ...css.td, color: T.textMid, width: 36 }}>{t.n_cedola}</td>
+                <td style={{ ...css.td, color: T.textMid, fontSize: "10px", whiteSpace: "nowrap" }}>{t.n_cedola}</td>
                 <td style={{ ...css.td, color: T.textDim, fontFamily: "monospace", fontSize: "11px" }}>{t.ean}</td>
                 <td style={{ ...css.td, color: T.accent, fontWeight: "600", whiteSpace: "nowrap" }}>{t.editore_nome}</td>
                 <td style={{ ...css.td, maxWidth: 260 }}>
