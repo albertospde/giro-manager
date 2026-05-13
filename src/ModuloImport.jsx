@@ -18,17 +18,17 @@ const css = {
 
 // Mappa colonne template → campi DB
 const COL_MAP = {
-  0: "n_cedola", 1: "ranking_editore", 2: "ranking_titolo", 3: "ean",
-  4: "titolo", 5: "autore", 6: "codice_editore", 7: "editore_nome",
-  8: "prezzo", 9: "uscita", 10: "formato", 11: "eta",
-  12: "obiettivo_assegnato", 13: "il_triangolo", 14: "top_100",
-  15: "account_editore", 16: "promozione", 17: "note_comunicazione", 18: "note",
-  19: "ean_gemello_1", 20: "titolo_gemello_1",
-  21: "ean_gemello_2", 22: "titolo_gemello_2",
-  23: "ean_gemello_3", 24: "titolo_gemello_3",
+  0: "giro_label", 1: "n_cedola", 2: "ranking_editore", 3: "ranking_titolo", 4: "ean",
+  5: "titolo", 6: "autore", 7: "codice_editore", 8: "editore_nome",
+  9: "prezzo", 10: "uscita", 11: "formato", 12: "eta",
+  13: "obiettivo_assegnato", 14: "il_triangolo", 15: "top_100",
+  16: "account_editore", 17: "promozione", 18: "note_comunicazione", 19: "note",
+  20: "ean_gemello_1", 21: "titolo_gemello_1",
+  22: "ean_gemello_2", 23: "titolo_gemello_2",
+  24: "ean_gemello_3", 25: "titolo_gemello_3",
 };
 
-const REQUIRED = ["ean", "titolo", "editore_nome", "prezzo", "formato"];
+const REQUIRED = ["giro_label", "ean", "titolo", "editore_nome", "prezzo", "formato"];
 
 function parseXlsx(buffer) {
   // Parser XLSX minimale (legge le celle come testo dal file zip)
@@ -73,7 +73,7 @@ export default function ModuloImport({ giriList, token, onImportDone }) {
             if (field === "obiettivo_assegnato") val = parseInt(val) || 0;
             if (field === "il_triangolo" || field === "top_100") val = String(val).toUpperCase() === "SI";
             if (field === "ranking_editore" || field === "ranking_titolo") val = parseInt(val) || null;
-if (field === "n_cedola") val = val ? String(val) : null;
+if (field === "n_cedola" || field === "giro_label") val = val ? String(val) : null;
             obj[field] = val === "" ? null : val;
           });
           obj.giro_id = null; // assegnato all'import
