@@ -156,7 +156,7 @@ export default function ModuloImport({ giriList, token, onImportDone }) {
             <label htmlFor="file-input" style={{ ...css.btn("accent"), cursor: "pointer", padding: "8px 20px" }}>Scegli file .xlsx</label>
           </div>
           <div style={{ color: T.textMid, fontSize: "11px" }}>
-            Non hai il template? <span style={{ color: T.accent, cursor: "pointer" }} <a href="https://albertospde.github.io/giro-manager/template_cedola.xlsx" download style={{ color: T.accent }}>Scaricalo qui</a>
+            Non hai il template? <a href="https://albertospde.github.io/giro-manager/template_cedola.xlsx" download style={{ color: T.accent }}>Scaricalo qui</a>
           </div>
         </div>
       )}
