@@ -328,16 +328,17 @@ function ModuloCedola({ titoli, giriList, onUpdateTitolo, spalmatura }) {
     ];
 
     // Foglio 1: Cedola
-    const headersCedola = ["N° CEDOLA", "EAN", "TITOLO", "AUTORE", "EDITORE", "PREZZO", "NOTE", "EAN GEM 1", "TITOLO GEM 1", "EAN GEM 2", "TITOLO GEM 2", "EAN GEM 3", "TITOLO GEM 3"];
+    const headersCedola = ["N° CEDOLA", "EAN", "TITOLO", "AUTORE", "EDITORE", "PREZZO", "OBJ TOTALE", "NOTE", "EAN GEM 1", "TITOLO GEM 1", "EAN GEM 2", "TITOLO GEM 2", "EAN GEM 3", "TITOLO GEM 3"];
     const rowsCedola = filtered.map(t => [
       t.n_cedola, t.ean, t.titolo, t.autore, t.editore_nome, t.prezzo,
+      t.obiettivo_assegnato || 0,
       t.note_comunicazione || t.note,
       t.ean_gemello_1, t.titolo_gemello_1,
       t.ean_gemello_2, t.titolo_gemello_2,
       t.ean_gemello_3, t.titolo_gemello_3,
     ]);
     const wsCedola = XLSX.utils.aoa_to_sheet([headersCedola, ...rowsCedola]);
-    wsCedola["!cols"] = [14,16,40,25,20,8,30,16,30,16,30,16,30].map(w => ({ wch: w }));
+    wsCedola["!cols"] = [14,16,40,25,20,8,10,30,16,30,16,30,16,30].map(w => ({ wch: w }));
 
     // Foglio 2: Obiettivi
     const headersObj = ["N° CEDOLA", "EAN", "TITOLO", "AUTORE", "EDITORE", "PREZZO", "OBJ TOTALE", ...canaliDir.map(c => c.label)];
