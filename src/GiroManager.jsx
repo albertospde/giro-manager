@@ -348,7 +348,7 @@ function ModuloCedola({ titoli, giriList, onUpdateTitolo, spalmatura }) {
       {editingTitolo && <EditModal titolo={editingTitolo} onSave={onUpdateTitolo} onClose={() => setEditingId(null)} />}
       <div style={{ padding: "12px 20px", borderBottom: `1px solid ${T.border}`, display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap" }}>
         <select style={css.input} value={giroSel} onChange={(e) => { setGiroSel(e.target.value); setFilterEditore("tutti"); }}>
-          <option value="tutti">Tutti i giri</option>
+          <option value="tutti">Tutte le cedole</option>
           {giriList.map((g) => <option key={g.id} value={g.id}>{g.label}</option>)}
         </select>
         <select style={css.input} value={filterEditore} onChange={(e) => setFilterEditore(e.target.value)}>
