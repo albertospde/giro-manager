@@ -237,6 +237,9 @@ function ModuloCedola({ titoli, giriList, onUpdateTitolo, spalmatura }) {
   const [editingId, setEditingId] = useState(null);
   const [sortKey, setSortKey] = useState("n_cedola");
 
+  const cedole = useMemo(() => {
+    return [...new Set(titoli.map((t) => t.n_cedola).filter(Boolean))].sort();
+  }, [titoli]);
   const editori = useMemo(() => {
     const t = giroSel === "tutti" ? titoli : titoli.filter((t) => t.giro_id === Number(giroSel));
     return [...new Set(t.map((t) => t.editore_nome).filter(Boolean))].sort();
@@ -244,7 +247,7 @@ function ModuloCedola({ titoli, giriList, onUpdateTitolo, spalmatura }) {
 
   const filtered = useMemo(() => {
     return titoli
-      .filter((t) => giroSel === "tutti" || t.giro_id === Number(giroSel))
+      .filter((t) => giroSel === "tutti" || t.n_cedola === giroSel)
       .filter((t) => filterEditore === "tutti" || t.editore_nome === filterEditore)
       .filter((t) => {
         if (!search) return true;
@@ -349,7 +352,7 @@ function ModuloCedola({ titoli, giriList, onUpdateTitolo, spalmatura }) {
       <div style={{ padding: "12px 20px", borderBottom: `1px solid ${T.border}`, display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap" }}>
         <select style={css.input} value={giroSel} onChange={(e) => { setGiroSel(e.target.value); setFilterEditore("tutti"); }}>
           <option value="tutti">Tutte le cedole</option>
-          {giriList.map((g) => <option key={g.id} value={g.id}>{g.label}</option>)}
+          {cedole.map((c) => <option key={c} value={c}>{c}</option>)}
         </select>
         <select style={css.input} value={filterEditore} onChange={(e) => setFilterEditore(e.target.value)}>
           <option value="tutti">Tutti gli editori</option>
