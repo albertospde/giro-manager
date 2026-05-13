@@ -384,8 +384,7 @@ function ModuloCedola({ titoli, giriList, onUpdateTitolo, spalmatura }) {
                 <td style={{ ...css.td, color: T.accent, fontWeight: "600", whiteSpace: "nowrap" }}>{t.editore_nome}</td>
                 <td style={{ ...css.td, maxWidth: 260 }}>
                   <div style={{ fontWeight: "600", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{t.titolo}</div>
-                  <div style={{ color: T.textMid, fontSize: "11px" }}>{t.formato}</div>
-                </td>
+                    </td>
                 <td style={{ ...css.td, color: T.textMid }}>{t.autore}</td>
                 <td style={css.td}>€ {t.prezzo?.toFixed(2)}</td>
                 <td style={{ ...css.td, color: T.textMid }}>{t.uscita}</td>
