@@ -61,6 +61,7 @@ export default function ModuloImport({ giriList, token, onImportDone }) {
         const data = XLSX.utils.sheet_to_json(ws, { header: 1, defval: "" });
         // Skip righe 0-2 (titolo, legenda, note), header riga 3, dati da riga 4
         const dataRows = data.slice(4).filter(r => r.some(v => v !== ""));
+        console.log("Prima riga dati:", dataRows[0]);
 
         const parsed = [];
         const errs = [];
