@@ -72,7 +72,8 @@ export default function ModuloImport({ giriList, token, onImportDone }) {
             if (field === "prezzo") val = parseFloat(val) || null;
             if (field === "obiettivo_assegnato") val = parseInt(val) || 0;
             if (field === "il_triangolo" || field === "top_100") val = String(val).toUpperCase() === "SI";
-            if (field === "n_cedola" || field === "ranking_editore" || field === "ranking_titolo") val = parseInt(val) || null;
+            if (field === "ranking_editore" || field === "ranking_titolo") val = parseInt(val) || null;
+if (field === "n_cedola") val = val ? String(val) : null;
             obj[field] = val === "" ? null : val;
           });
           obj.giro_id = null; // assegnato all'import
