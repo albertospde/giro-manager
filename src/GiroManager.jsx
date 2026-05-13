@@ -301,7 +301,7 @@ function ModuloCedola({ titoli, giriList, onUpdateTitolo, spalmatura }) {
     const wb = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(wb, ws, "CEDOLA AGENTI");
     const label = giroSel === "tutti" ? "TUTTI" : giriList.find(g => g.id === Number(giroSel))?.label ?? giroSel;
-    XLSX.utils.book_write_file(wb, `CEDOLA_AGENTI_${label}.xlsx`);
+    XLSX.utils.writeFfile(wb, `CEDOLA_AGENTI_${label}.xlsx`);
   };
 
   const exportDirezionale = () => {
@@ -340,7 +340,7 @@ function ModuloCedola({ titoli, giriList, onUpdateTitolo, spalmatura }) {
     const wb = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(wb, ws, "CEDOLA DIREZIONALE");
     const label = giroSel === "tutti" ? "TUTTI" : giriList.find(g => g.id === Number(giroSel))?.label ?? giroSel;
-    XLSX.utils.book_write_file(wb, `CEDOLA_DIREZIONALE_${label}.xlsx`);
+    XLSX.utils.writeFile(wb, `CEDOLA_DIREZIONALE_${label}.xlsx`);
   };
 
   return (
