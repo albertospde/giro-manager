@@ -358,28 +358,7 @@ function ModuloCedola({ titoli, giriList, onUpdateTitolo, spalmatura }) {
     const label = giroSel === "tutti" ? "TUTTI" : giroSel;
     XLSX.writeFile(wb, `CEDOLA_DIREZIONALE_${label}.xlsx`);
   };
-    ];
-    const headers = ["N° CEDOLA", "EAN", "TITOLO", "AUTORE", "EDITORE", "PREZZO", "USCITA", "NOTE", "EAN GEM 1", "TITOLO GEM 1", "EAN GEM 2", "TITOLO GEM 2", "EAN GEM 3", "TITOLO GEM 3", ...canaliDir.map(c => c.label), "TOT OBJ"];
-    const rows = filtered.map(t => {
-      const objPerCanale = canaliDir.map(c => getObjCanale(t, c.codice));
-      const totObj = objPerCanale.reduce((s, v) => s + v, 0);
-      return [
-        t.n_cedola, t.ean, t.titolo, t.autore, t.editore_nome,
-        t.prezzo, t.uscita, t.note_comunicazione || t.note,
-        t.ean_gemello_1, t.titolo_gemello_1,
-        t.ean_gemello_2, t.titolo_gemello_2,
-        t.ean_gemello_3, t.titolo_gemello_3,
-        ...objPerCanale, totObj,
-      ];
-    });
-    const ws = XLSX.utils.aoa_to_sheet([headers, ...rows]);
-    ws["!cols"] = [8,16,40,25,20,8,10,30,16,30,16,30,16,30,...canaliDir.map(() => 14), 10].map(w => ({ wch: w }));
-    const wb = XLSX.utils.book_new();
-    XLSX.utils.book_append_sheet(wb, ws, "CEDOLA DIREZIONALE");
-    const label = giroSel === "tutti" ? "TUTTI" : giriList.find(g => g.id === Number(giroSel))?.label ?? giroSel;
-    XLSX.writeFile(wb, `CEDOLA_DIREZIONALE_${label}.xlsx`);
-  };
-
+    
   return (
     <div style={{ display: "flex", flexDirection: "column", height: "100%", overflow: "hidden" }}>
       {editingTitolo && <EditModal titolo={editingTitolo} onSave={onUpdateTitolo} onClose={() => setEditingId(null)} />}
