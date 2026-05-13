@@ -100,13 +100,13 @@ export default function ModuloImport({ giriList, token, onImportDone }) {
     setImporting(true);
     const payload = rows.map(r => ({ ...r, giro_id: giroSel }));
     try {
-      const res = await fetch(`${SUPABASE_URL}/rest/v1/titoli`, {
+      const res = await fetch(`${SUPABASE_URL}/rest/v1/titoli?on_conflict=ean,giro_id`, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
           "apikey": SUPABASE_KEY,
           "Authorization": `Bearer ${token}`,
-          "Prefer": "return=minimal",
+          "Prefer": "resolution=merge-duplicates,return=minimal",
         },
         body: JSON.stringify(payload),
       });
