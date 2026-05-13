@@ -364,8 +364,8 @@ function ModuloCedola({ titoli, giriList, onUpdateTitolo, spalmatura }) {
         <div style={{ marginLeft: "auto", color: T.textMid, fontSize: "11px" }}>
           <span style={{ color: T.text }}>{avanzamento.count}</span> titoli &nbsp;·&nbsp; Obj: <span style={{ color: T.accent }}>{avanzamento.pct}%</span>
         </div>
-        <button style={css.btn()} onClick={exportAgenti}>↓ Agenti</button>
-        <button style={css.btn("accent")} onClick={exportDirezionale}>↓ Direzionale</button>
+       <button style={css.btn("accent")} onClick={exportAgenti}>↓ Download Agenti</button>
+<button style={css.btn("accent")} onClick={exportDirezionale}>↓ Download Direzionali</button>
       </div>
       <div style={{ flex: 1, overflowY: "auto" }}>
         <table style={css.table}>
