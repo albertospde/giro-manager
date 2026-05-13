@@ -301,7 +301,7 @@ function ModuloCedola({ titoli, giriList, onUpdateTitolo, spalmatura }) {
     const wb = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(wb, ws, "CEDOLA AGENTI");
     const label = giroSel === "tutti" ? "TUTTI" : giriList.find(g => g.id === Number(giroSel))?.label ?? giroSel;
-    XLSX.utils.writeFfile(wb, `CEDOLA_AGENTI_${label}.xlsx`);
+    XLSX.utils.writeFile(wb, `CEDOLA_AGENTI_${label}.xlsx`);
   };
 
   const exportDirezionale = () => {
