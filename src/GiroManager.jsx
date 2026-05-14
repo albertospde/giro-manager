@@ -731,7 +731,7 @@ export default function App() {
         <div style={{ flex: 1, overflow: "hidden", display: "flex", flexDirection: "column" }}>
           {activeModule === "dashboard" && <ModuloDashboard titoli={titoli} prenotato={prenotato} canali={canali} />}
           {activeModule === "cedola" && <ModuloCedola titoli={titoli} giriList={giriDB} onUpdateTitolo={updateTitolo} spalmatura={spalmatura} />}
-          {activeModule === "prenotato" && <ModuloPrenotato token={session.token} titoli={titoli} />}
+          {activeModule === "prenotato" && <ModuloPrenotato token={session.token} titoli={titoli} onImportDone={() => sbFetch("prenotato?select=*", session.token).then(setPrenotato)} />}
           {activeModule === "finegiro" && <ModuloFineGiro titoli={titoli} prenotato={prenotato} canali={canali} />}
           {activeModule === "import" && <ModuloImport giriList={giriDB} token={session.token} />}
         </div>
