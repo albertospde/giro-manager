@@ -732,9 +732,6 @@ export default function App() {
           <span style={{ color: T.accent, fontSize: "11px", letterSpacing: "0.12em", textTransform: "uppercase" }}>{MODULES.find(m => m.id === activeModule)?.label}</span>
           <span style={{ color: T.borderHi }}>·</span>
           <span style={{ color: T.textMid, fontSize: "11px" }}>{titoli.length} titoli · {[...new Set(titoli.map(t => t.n_cedola).filter(Boolean))].length} cedole</span>
-          <button style={{ ...css.btn(), marginLeft: "auto", fontSize: "11px", padding: "4px 10px" }} onClick={() => {
-            sbFetch("prenotato?select=*", session.token).then(setPrenotato);
-            sbFetch("titoli?select=*&order=ranking_editore.asc,ranking_titolo.asc", session.token).then(setTitoli);
           <button style={{ ...css.btn(), marginLeft: "auto", fontSize: "11px", padding: "4px 10px" }} onClick={refreshDati}>↺ Aggiorna</button>
         </div>
         <div style={{ flex: 1, overflow: "hidden", display: "flex", flexDirection: "column" }}>
