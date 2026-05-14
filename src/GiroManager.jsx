@@ -619,7 +619,7 @@ function ModuloFineGiro({ titoli, prenotato, canali }) {
               <th style={css.th}>Obj. Ass.</th>
               <th style={css.th}>Prenotato</th>
               <th style={css.th}>Avanz.</th>
-              {canaliPrincipali.map(c => <th key={c.id} style={css.th}>{c.nome}</th>)}
+              {canaliPrincipali.map(c => <th key={c.id} style={{ ...css.th, whiteSpace: "normal", maxWidth: 70, lineHeight: 1.2 }}>{c.nome}</th>)}
             </tr>
           </thead>
           <tbody>
