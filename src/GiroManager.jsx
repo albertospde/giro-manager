@@ -179,93 +179,97 @@ function EditModal({ titolo, onSave, onClose }) {
 
 // ─── MODULO: DASHBOARD ────────────────────────────────────────────────────────
 function ModuloDashboard({ titoli, prenotato, canali }) {
-  const giri = useMemo(() => {
-    const map = {};
-    titoli.forEach(t => {
-      const g = t.giro_label || "—";
-      if (!map[g]) map[g] = { label: g, titoli: [], totObj: 0, totRag: 0, valObj: 0 };
-      map[g].titoli.push(t);
-      map[g].totObj += t.obiettivo_assegnato || 0;
-      map[g].totRag += t.obiettivo_raggiunto || 0;
-      map[g].valObj += (t.prezzo || 0) * (t.obiettivo_assegnato || 0);
-    });
-    return Object.values(map).sort((a, b) => {
-      const [na, ya] = a.label.split(" "); const [nb, yb] = b.label.split(" ");
+  const giriLabel = useMemo(() => {
+    return [...new Set(titoli.map(t => t.giro_label).filter(Boolean))].sort((a, b) => {
+      const [na, ya] = a.split(" "); const [nb, yb] = b.split(" ");
       return Number(yb || 0) - Number(ya || 0) || Number(nb || 0) - Number(na || 0);
     });
   }, [titoli]);
 
+  const [giroSel, setGiroSel] = useState(null);
+  useEffect(() => { if (giriLabel.length > 0 && !giroSel) setGiroSel(giriLabel[0]); }, [giriLabel]);
+
+  const titoliGiro = useMemo(() => giroSel ? titoli.filter(t => t.giro_label === giroSel) : [], [titoli, giroSel]);
+
+  const kpiGiro = useMemo(() => {
+    const totObj = titoliGiro.reduce((s, t) => s + (t.obiettivo_assegnato || 0), 0);
+    const totRag = titoliGiro.reduce((s, t) => s + (t.obiettivo_raggiunto || 0), 0);
+    const valObj = titoliGiro.reduce((s, t) => s + (t.prezzo || 0) * (t.obiettivo_assegnato || 0), 0);
+    const totTriangolo = titoliGiro.filter(t => t.il_triangolo === true).length;
+    const totTop100 = titoliGiro.filter(t => t.top_100 === true).length;
+    return { totObj, totRag, valObj, totTriangolo, totTop100, count: titoliGiro.length, pct: totObj > 0 ? Math.round(totRag / totObj * 100) : 0 };
+  }, [titoliGiro]);
+
   const cedole = useMemo(() => {
     const map = {};
-    titoli.forEach(t => {
+    titoliGiro.forEach(t => {
       const c = t.n_cedola || "—";
-      if (!map[c]) map[c] = { label: c, giro: t.giro_label, titoli: [], totObj: 0, totRag: 0 };
-      map[c].titoli.push(t);
+      if (!map[c]) map[c] = { label: c, totObj: 0, totRag: 0, count: 0 };
       map[c].totObj += t.obiettivo_assegnato || 0;
       map[c].totRag += t.obiettivo_raggiunto || 0;
+      map[c].count++;
     });
-    return Object.values(map).sort((a, b) => (a.giro || "").localeCompare(b.giro || "") || (a.label || "").localeCompare(b.label || ""));
-  }, [titoli]);
+    return Object.values(map).sort((a, b) => a.label.localeCompare(b.label));
+  }, [titoliGiro]);
 
-  const totPrenotato = prenotato.reduce((s, p) => s + p.quantita, 0);
-  const totTriangolo = titoli.filter(t => t.il_triangolo === true).length;
-  const totTop100 = titoli.filter(t => t.top_100 === true).length;
+  const prenotatoGiro = useMemo(() => {
+    const titoliIds = new Set(titoliGiro.map(t => t.id));
+    return prenotato.filter(p => titoliIds.has(p.titolo_id));
+  }, [prenotato, titoliGiro]);
+
+  const totPrenotatoGiro = prenotatoGiro.reduce((s, p) => s + p.quantita, 0);
 
   const prenotatoPerCanale = useMemo(() => {
     const map = {};
-    prenotato.forEach(p => {
+    prenotatoGiro.forEach(p => {
       const c = canali.find(c => c.id === p.canale_id);
       if (!c) return;
       map[c.nome] = (map[c.nome] || 0) + p.quantita;
     });
     return Object.entries(map).sort((a, b) => b[1] - a[1]);
-  }, [prenotato, canali]);
+  }, [prenotatoGiro, canali]);
   const maxCanale = prenotatoPerCanale[0]?.[1] || 1;
 
   return (
     <div style={{ flex: 1, overflowY: "auto", padding: 20 }}>
+      {/* Tendina giro */}
+      <div style={{ display: "flex", gap: 12, alignItems: "center", marginBottom: 20 }}>
+        <select style={{ ...css.input, fontSize: "14px", fontWeight: "600", color: T.accent }} value={giroSel || ""} onChange={e => setGiroSel(e.target.value)}>
+          {giriLabel.map(g => <option key={g} value={g}>Giro {g}</option>)}
+        </select>
+        <span style={{ color: T.textMid, fontSize: "12px" }}>{kpiGiro.count} titoli · € {kpiGiro.valObj.toLocaleString("it", { maximumFractionDigits: 0 })} valore obiettivo</span>
+      </div>
+
+      {/* KPI giro */}
       <div style={{ display: "flex", gap: 12, marginBottom: 24, flexWrap: "wrap" }}>
-        <KpiCard label="Titoli totali" value={titoli.length} color={T.text} />
-        <KpiCard label="▲ Triangolo" value={totTriangolo} color={T.purple} />
-        <KpiCard label="★ Top 100" value={totTop100} color={T.accent} />
-        <KpiCard label="Prenotato tot." value={totPrenotato.toLocaleString("it")} color={T.green} sub="copie" />
+        <KpiCard label="Titoli" value={kpiGiro.count} color={T.text} />
+        <KpiCard label="▲ Triangolo" value={kpiGiro.totTriangolo} color={T.purple} />
+        <KpiCard label="★ Top 100" value={kpiGiro.totTop100} color={T.accent} />
+        <KpiCard label="Prenotato" value={totPrenotatoGiro.toLocaleString("it")} color={T.green} sub="copie" />
+        <div style={{ background: T.surface, border: `1px solid ${T.border}`, borderRadius: 4, padding: "16px 20px", minWidth: 200 }}>
+          <div style={{ color: T.textMid, fontSize: "10px", letterSpacing: "0.1em", textTransform: "uppercase", marginBottom: 8 }}>Avanzamento obiettivo</div>
+          <div style={{ color: T.accent, fontSize: "24px", fontWeight: "700", lineHeight: 1, marginBottom: 8 }}>{kpiGiro.pct}%</div>
+          <div style={{ height: 6, background: T.borderHi, borderRadius: 3, overflow: "hidden" }}>
+            <div style={{ width: `${kpiGiro.pct}%`, height: "100%", background: kpiGiro.pct >= 80 ? T.green : kpiGiro.pct >= 50 ? T.accent : T.red }} />
+          </div>
+          <div style={{ color: T.textMid, fontSize: "11px", marginTop: 6 }}>{kpiGiro.totRag.toLocaleString("it")} / {kpiGiro.totObj.toLocaleString("it")}</div>
+        </div>
       </div>
+
+      {/* Cedole */}
       <div style={{ marginBottom: 24 }}>
-        <div style={{ color: T.textMid, fontSize: "11px", letterSpacing: "0.1em", textTransform: "uppercase", marginBottom: 12 }}>AVANZAMENTO PER GIRO</div>
-        {giri.map(({ label, titoli: tList, totObj, totRag, valObj }) => {
-          const pct = totObj > 0 ? Math.round((totRag / totObj) * 100) : 0;
-          return (
-            <div key={label} style={{ background: T.surface, border: `1px solid ${T.border}`, borderRadius: 4, padding: "12px 16px", display: "flex", alignItems: "center", gap: 16, marginBottom: 8 }}>
-              <div style={{ width: 100, color: T.accent, fontWeight: "600", fontSize: "12px" }}>Giro {label}</div>
-              <div style={{ color: T.textMid, fontSize: "11px", width: 80 }}>{tList.length} titoli</div>
-              <div style={{ flex: 1 }}>
-                <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 4 }}>
-                  <span style={{ color: T.textMid, fontSize: "11px" }}>{totRag.toLocaleString("it")} / {totObj.toLocaleString("it")}</span>
-                  <span style={{ color: pct >= 80 ? T.green : pct >= 50 ? T.accent : T.red, fontSize: "11px", fontWeight: "700" }}>{pct}%</span>
-                </div>
-                <div style={{ height: 6, background: T.borderHi, borderRadius: 3, overflow: "hidden" }}>
-                  <div style={{ width: `${pct}%`, height: "100%", background: pct >= 80 ? T.green : pct >= 50 ? T.accent : T.red }} />
-                </div>
-              </div>
-              <div style={{ color: T.textMid, fontSize: "11px", width: 110, textAlign: "right" }}>€ {valObj.toLocaleString("it", { maximumFractionDigits: 0 })}</div>
-            </div>
-          );
-        })}
-      </div>
-      <div style={{ marginBottom: 24 }}>
-        <div style={{ color: T.textMid, fontSize: "11px", letterSpacing: "0.1em", textTransform: "uppercase", marginBottom: 12 }}>AVANZAMENTO PER CEDOLA</div>
+        <div style={{ color: T.textMid, fontSize: "11px", letterSpacing: "0.1em", textTransform: "uppercase", marginBottom: 12 }}>CEDOLE</div>
         <table style={{ width: "100%", borderCollapse: "collapse" }}>
           <thead>
-            <tr>{["Cedola","Giro","Titoli","Obj Ass.","Obj Rag.","Avanz."].map(h => <th key={h} style={{ padding: "8px 12px", textAlign: "left", color: T.textMid, fontWeight: "400", fontSize: "11px", letterSpacing: "0.08em", textTransform: "uppercase", borderBottom: `1px solid ${T.border}`, background: T.surface }}>{h}</th>)}</tr>
+            <tr>{["Cedola","Titoli","Obj Ass.","Obj Rag.","Avanz."].map(h => <th key={h} style={{ padding: "8px 12px", textAlign: "left", color: T.textMid, fontWeight: "400", fontSize: "11px", letterSpacing: "0.08em", textTransform: "uppercase", borderBottom: `1px solid ${T.border}`, background: T.surface }}>{h}</th>)}</tr>
           </thead>
           <tbody>
-            {cedole.map(({ label, giro, titoli: tList, totObj, totRag }, i) => {
-              const pct = totObj > 0 ? Math.round((totRag / totObj) * 100) : 0;
+            {cedole.map(({ label, count, totObj, totRag }, i) => {
+              const pct = totObj > 0 ? Math.round(totRag / totObj * 100) : 0;
               return (
                 <tr key={label} style={{ background: i % 2 === 0 ? "transparent" : T.surface + "66" }}>
                   <td style={{ padding: "8px 12px", color: T.accent, fontWeight: "600", fontSize: "12px" }}>{label}</td>
-                  <td style={{ padding: "8px 12px", color: T.textMid, fontSize: "12px" }}>{giro}</td>
-                  <td style={{ padding: "8px 12px", fontSize: "12px" }}>{tList.length}</td>
+                  <td style={{ padding: "8px 12px", fontSize: "12px" }}>{count}</td>
                   <td style={{ padding: "8px 12px", fontSize: "12px" }}>{totObj.toLocaleString("it")}</td>
                   <td style={{ padding: "8px 12px", fontSize: "12px" }}>{totRag.toLocaleString("it")}</td>
                   <td style={{ padding: "8px 12px" }}>
@@ -282,23 +286,29 @@ function ModuloDashboard({ titoli, prenotato, canali }) {
           </tbody>
         </table>
       </div>
+
+      {/* Prenotato per canale */}
       {prenotatoPerCanale.length > 0 && (
         <div>
           <div style={{ color: T.textMid, fontSize: "11px", letterSpacing: "0.1em", textTransform: "uppercase", marginBottom: 12 }}>PRENOTATO PER CANALE</div>
           {prenotatoPerCanale.map(([nome, qta]) => (
             <div key={nome} style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 6 }}>
-              <div style={{ width: 160, fontSize: "12px" }}>{nome}</div>
+              <div style={{ width: 200, fontSize: "12px" }}>{nome}</div>
               <div style={{ flex: 1, height: 8, background: T.borderHi, borderRadius: 2, overflow: "hidden" }}>
                 <div style={{ width: `${(qta / maxCanale) * 100}%`, height: "100%", background: T.blue }} />
               </div>
               <div style={{ width: 70, textAlign: "right", color: T.accent, fontSize: "12px", fontWeight: "600" }}>{qta.toLocaleString("it")}</div>
             </div>
           ))}
+          <div style={{ display: "flex", justifyContent: "flex-end", marginTop: 8, paddingTop: 8, borderTop: `1px solid ${T.border}` }}>
+            <span style={{ color: T.textMid, fontSize: "12px" }}>Totale: <span style={{ color: T.green, fontWeight: "700" }}>{totPrenotatoGiro.toLocaleString("it")}</span></span>
+          </div>
         </div>
       )}
     </div>
   );
 }
+
 
 // ─── MODULO: CEDOLA ───────────────────────────────────────────────────────────
 function ModuloCedola({ titoli, giriList, onUpdateTitolo, spalmatura }) {
