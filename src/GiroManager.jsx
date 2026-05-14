@@ -565,7 +565,7 @@ function ModuloFineGiro({ titoli, prenotato, canali }) {
 
   const totPrenotato = righe.reduce((s, r) => s + r.totPren, 0);
   const pctTot = totObj > 0 ? Math.round(totPrenotato / totObj * 100) : 0;
-  const canaliPrincipali = canali.slice(0, 6);
+  const canaliPrincipali = canali;
 
   const exportExcel = () => {
     const XLSX = window.XLSX;
