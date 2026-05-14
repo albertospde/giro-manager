@@ -668,7 +668,7 @@ export default function App() {
     if (!session) return;
     sbFetch("giri?select=*&order=anno.desc,numero.desc", session.token).then(setGiriDB);
     sbFetch("titoli?select=*&order=ranking_editore.asc,ranking_titolo.asc", session.token).then(setTitoli);
-    sbFetch("prenotato?select=*", session.token).then(setPrenotato);
+   sbFetch("prenotato?select=*&limit=100000", session.token).then(setPrenotato);
     sbFetch("spalmatura_obiettivo?select=*", session.token).then(setSpalmatura);
     sbFetch("canali?select=*&order=nome.asc", session.token).then(setCanali);
   }, [session]);
