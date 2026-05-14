@@ -696,6 +696,11 @@ export default function App() {
   const updateTitolo = useCallback((updated) => {
     setTitoli(prev => prev.map(t => t.id === updated.id ? { ...t, ...updated } : t));
   }, []);
+  const refreshDati = useCallback(() => {
+    if (!session) return;
+    sbFetch("prenotato?select=*", session.token).then(data => { if (Array.isArray(data)) setPrenotato(data); });
+    sbFetch("titoli?select=*&order=ranking_editore.asc,ranking_titolo.asc", session.token).then(data => { if (Array.isArray(data)) setTitoli(data); });
+  }, [session]);
 
   if (checkingAuth) return <div style={{ ...css.app, display: "flex", alignItems: "center", justifyContent: "center", height: "100vh", color: T.textMid }}>Caricamento...</div>;
   if (!session) return <LoginScreen onLogin={handleLogin} />;
@@ -730,7 +735,7 @@ export default function App() {
           <button style={{ ...css.btn(), marginLeft: "auto", fontSize: "11px", padding: "4px 10px" }} onClick={() => {
             sbFetch("prenotato?select=*", session.token).then(setPrenotato);
             sbFetch("titoli?select=*&order=ranking_editore.asc,ranking_titolo.asc", session.token).then(setTitoli);
-          }}>↺ Aggiorna</button>
+          <button style={{ ...css.btn(), marginLeft: "auto", fontSize: "11px", padding: "4px 10px" }} onClick={refreshDati}>↺ Aggiorna</button>
         </div>
         <div style={{ flex: 1, overflow: "hidden", display: "flex", flexDirection: "column" }}>
           {activeModule === "dashboard" && <ModuloDashboard titoli={titoli} prenotato={prenotato} canali={canali} />}
