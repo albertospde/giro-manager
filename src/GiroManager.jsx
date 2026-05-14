@@ -321,6 +321,7 @@ function ModuloCedola({ titoli, giriList, onUpdateTitolo, spalmatura }) {
   const [search, setSearch] = useState("");
   const [filterFlag, setFilterFlag] = useState("tutti");
   const [filterEditori, setFilterEditori] = useState([]);
+  const [filterAccount, setFilterAccount] = useState("tutti");
   const [editoreDropdownOpen, setEditoreDropdownOpen] = useState(false);
   const [editingId, setEditingId] = useState(null);
   const [sortKey, setSortKey] = useState("n_cedola");
@@ -336,7 +337,12 @@ function ModuloCedola({ titoli, giriList, onUpdateTitolo, spalmatura }) {
     const t = giroLabelSel === "tutti" ? titoli : titoli.filter(t => t.giro_label === giroLabelSel);
     return [...new Set(t.map(t => t.n_cedola).filter(Boolean))].sort();
   }, [titoli, giroLabelSel]);
-
+const accounts = useMemo(() => {
+    const t = giroSel === "tutti"
+      ? (giroLabelSel === "tutti" ? titoli : titoli.filter(t => t.giro_label === giroLabelSel))
+      : titoli.filter(t => t.n_cedola === giroSel);
+    return [...new Set(t.map(t => t.account_editore).filter(Boolean))].sort();
+  }, [titoli, giroLabelSel, giroSel]);
   const editori = useMemo(() => {
     const t = giroSel === "tutti"
       ? (giroLabelSel === "tutti" ? titoli : titoli.filter(t => t.giro_label === giroLabelSel))
@@ -349,6 +355,7 @@ function ModuloCedola({ titoli, giriList, onUpdateTitolo, spalmatura }) {
       .filter(t => giroLabelSel === "tutti" || t.giro_label === giroLabelSel)
       .filter(t => giroSel === "tutti" || t.n_cedola === giroSel)
       .filter(t => filterEditori.length === 0 || filterEditori.includes(t.editore_nome))
+      .filter(t => filterAccount === "tutti" || t.account_editore === filterAccount)
       .filter(t => {
         if (!search) return true;
         const q = search.toLowerCase();
@@ -366,7 +373,7 @@ function ModuloCedola({ titoli, giriList, onUpdateTitolo, spalmatura }) {
         if (sortKey === "prezzo") return (b.prezzo ?? 0) - (a.prezzo ?? 0);
         return 0;
       });
-  }, [titoli, giroLabelSel, giroSel, search, filterFlag, filterEditori, sortKey]);
+  }, [titoli, giroLabelSel, giroSel, search, filterFlag, filterEditori, filterAccount, sortKey]);
 
   const editingTitolo = titoli.find(t => t.id === editingId);
   const avanzamento = useMemo(() => {
@@ -447,12 +454,16 @@ function ModuloCedola({ titoli, giriList, onUpdateTitolo, spalmatura }) {
                   <span style={{ fontSize: "12px", color: filterEditori.includes(e) ? T.accent : T.text }}>{e}</span>
                 </label>
               ))}
-              <div style={{ padding: 8, borderTop: `1px solid ${T.border}` }}>
+            <div style={{ padding: 8, borderTop: `1px solid ${T.border}` }}>
                 <button style={{ ...css.btn("accent"), width: "100%" }} onClick={() => setEditoreDropdownOpen(false)}>Applica</button>
               </div>
             </div>
           )}
         </div>
+        <select style={css.input} value={filterAccount} onChange={(e) => setFilterAccount(e.target.value)}>
+          <option value="tutti">Tutti gli account</option>
+          {accounts.map(a => <option key={a} value={a}>{a}</option>)}
+        </select>
         <input style={{ ...css.input, width: 180 }} placeholder="Cerca..." value={search} onChange={(e) => setSearch(e.target.value)} />
         {["tutti","triangolo","top100","gemelli"].map(f => (
           <button key={f} style={{ ...css.btn(filterFlag === f ? "accent" : "default"), padding: "5px 10px" }} onClick={() => setFilterFlag(f)}>
