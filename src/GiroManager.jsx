@@ -514,22 +514,41 @@ const accounts = useMemo(() => {
   );
 }
 
-// ─── MODULO: FINE GIRO ────────────────────────────────────────────────────────
 function ModuloFineGiro({ titoli, prenotato, canali }) {
-  const giriLabel = useMemo(() => [...new Set(titoli.map(t => t.giro_label).filter(Boolean))].sort(), [titoli]);
-  const cedole = useMemo(() => [...new Set(titoli.map(t => t.n_cedola).filter(Boolean))].sort(), [titoli]);
+  const giriLabel = useMemo(() => [...new Set(titoli.map(t => t.giro_label).filter(Boolean))].sort((a, b) => {
+    const [na, ya] = a.split(" "); const [nb, yb] = b.split(" ");
+    return Number(yb || 0) - Number(ya || 0) || Number(nb || 0) - Number(na || 0);
+  }), [titoli]);
+
   const [giroLabelSel, setGiroLabelSel] = useState("tutti");
   const [cedolaSel, setCedolaSel] = useState("tutti");
+  const [filterEditore, setFilterEditore] = useState("tutti");
+  const [filterAccount, setFilterAccount] = useState("tutti");
+
+  const cedole = useMemo(() => {
+    const t = giroLabelSel === "tutti" ? titoli : titoli.filter(t => t.giro_label === giroLabelSel);
+    return [...new Set(t.map(t => t.n_cedola).filter(Boolean))].sort();
+  }, [titoli, giroLabelSel]);
+
+  const editori = useMemo(() => {
+    const t = giroLabelSel === "tutti" ? titoli : titoli.filter(t => t.giro_label === giroLabelSel);
+    return [...new Set(t.map(t => t.editore_nome).filter(Boolean))].sort();
+  }, [titoli, giroLabelSel]);
+
+  const accounts = useMemo(() => {
+    const t = giroLabelSel === "tutti" ? titoli : titoli.filter(t => t.giro_label === giroLabelSel);
+    return [...new Set(t.map(t => t.account_editore).filter(Boolean))].sort();
+  }, [titoli, giroLabelSel]);
 
   const titoliSel = useMemo(() => titoli
     .filter(t => giroLabelSel === "tutti" || t.giro_label === giroLabelSel)
     .filter(t => cedolaSel === "tutti" || t.n_cedola === cedolaSel)
+    .filter(t => filterEditore === "tutti" || t.editore_nome === filterEditore)
+    .filter(t => filterAccount === "tutti" || t.account_editore === filterAccount)
     .sort((a, b) => (a.ranking_editore ?? 99) - (b.ranking_editore ?? 99) || (a.ranking_titolo ?? 99) - (b.ranking_titolo ?? 99)),
-  [titoli, giroLabelSel, cedolaSel]);
+  [titoli, giroLabelSel, cedolaSel, filterEditore, filterAccount]);
 
   const totObj = titoliSel.reduce((s, t) => s + (t.obiettivo_assegnato || 0), 0);
-  const totRag = titoliSel.reduce((s, t) => s + (t.obiettivo_raggiunto || 0), 0);
-  const canaliPrincipali = canali.slice(0, 6);
 
   const righe = useMemo(() => titoliSel.map(t => {
     const pren = prenotato.filter(p => p.titolo_id === t.id);
@@ -539,10 +558,29 @@ function ModuloFineGiro({ titoli, prenotato, canali }) {
     return { titolo: t, totPren, byCanale };
   }), [titoliSel, prenotato, canali]);
 
+  const totPrenotato = righe.reduce((s, r) => s + r.totPren, 0);
+  const pctTot = totObj > 0 ? Math.round(totPrenotato / totObj * 100) : 0;
+  const canaliPrincipali = canali.slice(0, 6);
+
+  const exportExcel = () => {
+    const XLSX = window.XLSX;
+    const headers = ["N° CEDOLA","EAN","EDITORE","TITOLO","OBJ ASS.","PRENOTATO","AVANZ %", ...canaliPrincipali.map(c => c.nome)];
+    const rows = righe.map(({ titolo: t, totPren, byCanale }) => {
+      const pct = t.obiettivo_assegnato > 0 ? Math.round(totPren / t.obiettivo_assegnato * 100) : 0;
+      return [t.n_cedola, t.ean, t.editore_nome, t.titolo, t.obiettivo_assegnato, totPren, `${pct}%`, ...canaliPrincipali.map(c => byCanale[c.codice] ?? 0)];
+    });
+    const ws = XLSX.utils.aoa_to_sheet([headers, ...rows]);
+    ws["!cols"] = [14,16,20,40,10,10,8,...canaliPrincipali.map(() => 12)].map(w => ({ wch: w }));
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, "FINE GIRO");
+    const label = giroLabelSel === "tutti" ? "TUTTI" : giroLabelSel;
+    XLSX.writeFile(wb, `FINE_GIRO_${label}.xlsx`);
+  };
+
   return (
     <div style={{ display: "flex", flexDirection: "column", height: "100%", overflow: "hidden" }}>
-      <div style={{ padding: "12px 20px", borderBottom: `1px solid ${T.border}`, display: "flex", gap: 10, alignItems: "center" }}>
-        <select style={css.input} value={giroLabelSel} onChange={(e) => { setGiroLabelSel(e.target.value); setCedolaSel("tutti"); }}>
+      <div style={{ padding: "12px 20px", borderBottom: `1px solid ${T.border}`, display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap" }}>
+        <select style={css.input} value={giroLabelSel} onChange={(e) => { setGiroLabelSel(e.target.value); setCedolaSel("tutti"); setFilterEditore("tutti"); setFilterAccount("tutti"); }}>
           <option value="tutti">Tutti i giri</option>
           {giriLabel.map(g => <option key={g} value={g}>Giro {g}</option>)}
         </select>
@@ -550,20 +588,33 @@ function ModuloFineGiro({ titoli, prenotato, canali }) {
           <option value="tutti">Tutte le cedole</option>
           {cedole.map(c => <option key={c} value={c}>{c}</option>)}
         </select>
+        <select style={css.input} value={filterEditore} onChange={(e) => setFilterEditore(e.target.value)}>
+          <option value="tutti">Tutti gli editori</option>
+          {editori.map(e => <option key={e} value={e}>{e}</option>)}
+        </select>
+        <select style={css.input} value={filterAccount} onChange={(e) => setFilterAccount(e.target.value)}>
+          <option value="tutti">Tutti gli account</option>
+          {accounts.map(a => <option key={a} value={a}>{a}</option>)}
+        </select>
         <div style={{ color: T.textMid, fontSize: "12px" }}>
-          Obj: <span style={{ color: T.accent, fontWeight: "700" }}>{totObj.toLocaleString("it")}</span> &nbsp;·&nbsp;
-          Raggiunto: <span style={{ color: T.green, fontWeight: "700" }}>{totRag.toLocaleString("it")}</span> &nbsp;·&nbsp;
-          <span style={{ color: T.accent, fontWeight: "700" }}>{totObj > 0 ? Math.round(totRag / totObj * 100) : 0}%</span>
+          Obj: <span style={{ color: T.accent, fontWeight: "700" }}>{totObj.toLocaleString("it")}</span>
+          &nbsp;·&nbsp; Prenotato: <span style={{ color: T.green, fontWeight: "700" }}>{totPrenotato.toLocaleString("it")}</span>
+          &nbsp;·&nbsp; <span style={{ color: pctTot >= 80 ? T.green : pctTot >= 50 ? T.accent : T.red, fontWeight: "700" }}>{pctTot}%</span>
         </div>
+        <button style={{ ...css.btn("accent"), marginLeft: "auto" }} onClick={exportExcel}>↓ Export Excel</button>
       </div>
       <div style={{ flex: 1, overflowY: "auto" }}>
         <table style={css.table}>
           <thead>
             <tr>
-              <th style={css.th}>Editore</th><th style={css.th}>Titolo</th><th style={css.th}>EAN</th>
-              <th style={css.th}>Obj. Ass.</th><th style={css.th}>Avanz.</th>
+              <th style={css.th}>Cedola</th>
+              <th style={css.th}>Editore</th>
+              <th style={css.th}>Titolo</th>
+              <th style={css.th}>EAN</th>
+              <th style={css.th}>Obj. Ass.</th>
+              <th style={css.th}>Prenotato</th>
+              <th style={css.th}>Avanz.</th>
               {canaliPrincipali.map(c => <th key={c.id} style={css.th}>{c.nome}</th>)}
-              <th style={css.th}>Tot. Pren.</th>
             </tr>
           </thead>
           <tbody>
@@ -571,13 +622,14 @@ function ModuloFineGiro({ titoli, prenotato, canali }) {
               const pct = t.obiettivo_assegnato > 0 ? Math.round(totPren / t.obiettivo_assegnato * 100) : 0;
               return (
                 <tr key={t.id} style={{ background: i % 2 === 0 ? "transparent" : T.surface + "66" }}>
-                  <td style={{ ...css.td, color: T.accent, fontWeight: "600" }}>{t.editore_nome}</td>
-                  <td style={{ ...css.td, maxWidth: 200 }}><div style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{t.titolo}</div></td>
+                  <td style={{ ...css.td, color: T.textMid, fontSize: "10px", whiteSpace: "nowrap" }}>{t.n_cedola}</td>
+                  <td style={{ ...css.td, color: T.accent, fontWeight: "600", whiteSpace: "nowrap" }}>{t.editore_nome}</td>
+                  <td style={{ ...css.td, maxWidth: 220 }}><div style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{t.titolo}</div></td>
                   <td style={{ ...css.td, fontFamily: "monospace", fontSize: "11px", color: T.textMid }}>{t.ean}</td>
-                  <td style={css.td}>{t.obiettivo_assegnato}</td>
+                  <td style={css.td}>{t.obiettivo_assegnato?.toLocaleString("it")}</td>
+                  <td style={{ ...css.td, color: T.green, fontWeight: "600" }}>{totPren > 0 ? totPren.toLocaleString("it") : "—"}</td>
                   <td style={css.td}><span style={{ color: pct >= 80 ? T.green : pct >= 50 ? T.accent : T.red, fontWeight: "700" }}>{pct}%</span></td>
-                  {canaliPrincipali.map(c => <td key={c.id} style={{ ...css.td, color: byCanale[c.codice] ? T.text : T.textDim }}>{byCanale[c.codice] ?? "—"}</td>)}
-                  <td style={{ ...css.td, color: totPren > 0 ? T.green : T.textDim, fontWeight: "700" }}>{totPren || "—"}</td>
+                  {canaliPrincipali.map(c => <td key={c.id} style={{ ...css.td, color: byCanale[c.codice] ? T.text : T.textDim }}>{byCanale[c.codice]?.toLocaleString("it") ?? "—"}</td>)}
                 </tr>
               );
             })}
@@ -587,6 +639,7 @@ function ModuloFineGiro({ titoli, prenotato, canali }) {
     </div>
   );
 }
+
 
 // ─── APP ROOT ─────────────────────────────────────────────────────────────────
 const MODULES = [
