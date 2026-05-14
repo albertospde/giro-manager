@@ -575,11 +575,10 @@ function ModuloFineGiro({ titoli, prenotato, canali }) {
 
 // ─── APP ROOT ─────────────────────────────────────────────────────────────────
 const MODULES = [
-  { id: "dashboard", label: "Dashboard", icon: "◈" },
-  { id: "cedola", label: "Cedola", icon: "≡" },
-  { id: "prenotato", label: "Prenotato", icon: "↳" },
-  { id: "finegiro", label: "Fine Giro", icon: "⊞" },
+  { id: "dashboard", label: "Giri e Cedole", icon: "◈" },
   { id: "import", label: "Import Cedola", icon: "↑" },
+  { id: "finegiro", label: "Fine Giro", icon: "⊞" },
+  { id: "prenotato", label: "Import Prenotato", icon: "↳" },
 ];
 
 const style = document.createElement('style');
