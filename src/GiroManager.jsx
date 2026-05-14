@@ -321,7 +321,7 @@ function ModuloDashboard({ titoli, prenotato, canali }) {
 
 
 // ─── MODULO: CEDOLA ───────────────────────────────────────────────────────────
-function ModuloCedola({ titoli, giriList, onUpdateTitolo, spalmatura }) {
+function ModuloCedola({ titoli, giriList, onUpdateTitolo, spalmatura, prenotato }) {
   const [giroLabelSel, setGiroLabelSel] = useState("tutti");
   const [giroSel, setGiroSel] = useState("tutti");
   const [search, setSearch] = useState("");
@@ -504,8 +504,7 @@ const accounts = useMemo(() => {
                 <td style={css.td}>€ {t.prezzo?.toFixed(2)}</td>
                 <td style={{ ...css.td, color: T.textMid }}>{t.uscita}</td>
                 <td style={{ ...css.td, whiteSpace: "nowrap", minWidth: 120 }}>
-                  <div style={{ fontSize: "11px", marginBottom: 4 }}>{t.obiettivo_raggiunto} / {t.obiettivo_assegnato}</div>
-                  <ProgressBar value={t.obiettivo_raggiunto} total={t.obiettivo_assegnato} />
+                  {(() => { const pren = prenotato.filter(p => p.titolo_id === t.id).reduce((s,p) => s+p.quantita, 0); return (<><div style={{ fontSize: "11px", marginBottom: 4 }}>{pren.toLocaleString("it")} / {(t.obiettivo_assegnato||0).toLocaleString("it")}</div><ProgressBar value={pren} total={t.obiettivo_assegnato} /></>); })()}
                 </td>
                 <td style={css.td}><div style={{ display: "flex", gap: 4 }}>{t.il_triangolo && <Badge label="▲" color={T.purple} />}{t.top_100 && <Badge label="★" color={T.accent} />}</div></td>
                 <td style={css.td}>{t.ean_gemello_1 && <div style={{ fontSize: "10px", color: T.textMid }}><div>{t.ean_gemello_1}</div>{t.ean_gemello_2 && <div>{t.ean_gemello_2}</div>}{t.ean_gemello_3 && <div>{t.ean_gemello_3}</div>}</div>}</td>
@@ -742,7 +741,7 @@ export default function App() {
         </div>
         <div style={{ flex: 1, overflow: "hidden", display: "flex", flexDirection: "column" }}>
           {activeModule === "dashboard" && <ModuloDashboard titoli={titoli} prenotato={prenotato} canali={canali} />}
-          {activeModule === "cedola" && <ModuloCedola titoli={titoli} giriList={giriDB} onUpdateTitolo={updateTitolo} spalmatura={spalmatura} />}
+          {activeModule === "cedola" && <ModuloCedola titoli={titoli} giriList={giriDB} onUpdateTitolo={updateTitolo} spalmatura={spalmatura} prenotato={prenotato} />}
           {activeModule === "prenotato" && <ModuloPrenotato token={session.token} titoli={titoli} onImportDone={() => sbFetch("prenotato?select=*", session.token).then(setPrenotato)} />}
           {activeModule === "finegiro" && <ModuloFineGiro titoli={titoli} prenotato={prenotato} canali={canali} />}
           {activeModule === "import" && <ModuloImport giriList={giriDB} token={session.token} />}
