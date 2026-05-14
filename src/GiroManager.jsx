@@ -579,7 +579,8 @@ function ModuloFineGiro({ titoli, prenotato, canali }) {
 
 // ─── APP ROOT ─────────────────────────────────────────────────────────────────
 const MODULES = [
-  { id: "dashboard", label: "Giri e Cedole", icon: "◈" },
+  { id: "dashboard", label: "Dashboard", icon: "◈" },
+  { id: "cedola", label: "Giri e Cedole", icon: "≡" },
   { id: "import", label: "Import Cedola", icon: "↑" },
   { id: "finegiro", label: "Fine Giro", icon: "⊞" },
   { id: "prenotato", label: "Import Prenotato", icon: "↳" },
