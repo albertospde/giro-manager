@@ -74,7 +74,7 @@ const CANALI_LABELS = {
   CENTROLIBRI: "Centrolibri", GDO: "GDO",
 };
 
-export default function ModuloPrenotato({ token, titoli }) {
+export default function ModuloPrenotato({ token, titoli, onImportDone }) {
   const [step, setStep] = useState("upload");
   const [file, setFile] = useState(null);
   const [righe, setRighe] = useState([]);
@@ -169,6 +169,7 @@ export default function ModuloPrenotato({ token, titoli }) {
     });
 
     if (res.ok) {
+      onImportDone && onImportDone();
       setDone({ ok: payload.length, totQta: totaleFound, notFound: aggregato.filter(r => r.found).length === aggregato.length ? 0 : aggregato.filter(r => !r.found).length });
       setStep("result");
     } else {
