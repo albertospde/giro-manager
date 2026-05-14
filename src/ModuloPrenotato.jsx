@@ -10,10 +10,60 @@ const T = {
 };
 
 const css = {
-  btn: (v = "default") => ({ padding: "6px 14px", border: `1px solid ${v === "accent" ? T.accent : v === "danger" ? T.red : T.border}`, background: v === "accent" ? T.accent : "transparent", color: v === "accent" ? "#000" : T.text, cursor: "pointer", fontSize: "12px", fontFamily: "inherit", borderRadius: 3, fontWeight: v === "accent" ? "700" : "400" }),
+  btn: (v = "default") => ({ padding: "6px 14px", border: `1px solid ${v === "accent" ? T.accent : T.border}`, background: v === "accent" ? T.accent : "transparent", color: v === "accent" ? "#000" : T.text, cursor: "pointer", fontSize: "12px", fontFamily: "inherit", borderRadius: 3, fontWeight: v === "accent" ? "700" : "400" }),
   input: { background: T.bg, border: `1px solid ${T.border}`, color: T.text, padding: "5px 10px", fontSize: "12px", fontFamily: "inherit", borderRadius: 3, outline: "none" },
   th: { padding: "8px 12px", textAlign: "left", color: T.textMid, fontWeight: "400", fontSize: "11px", letterSpacing: "0.08em", textTransform: "uppercase", borderBottom: `1px solid ${T.border}`, whiteSpace: "nowrap", background: T.surface, position: "sticky", top: 0, zIndex: 1 },
   td: { padding: "7px 12px", borderBottom: `1px solid ${T.border}22`, verticalAlign: "middle", fontSize: "12px" },
+};
+
+// Mappa completa gruppi cliente -> canale
+const GRUPPI_CANALE = {
+  0: "INDIPENDENTI_ALTRE_CATENE",
+  2: "FELTRINELLI",
+  4: "INDIPENDENTI_ALTRE_CATENE",
+  6: "LIB_RELIGIOSE",
+  8: "MONDADORI",
+  11: "LIBRACCIO",
+  12: "INDIPENDENTI_ALTRE_CATENE",
+  15: "INDIPENDENTI_ALTRE_CATENE",
+  18: "LIB_RELIGIOSE",
+  19: "LIB_RELIGIOSE",
+  21: "LIB_RELIGIOSE",
+  22: "INDIPENDENTI_ALTRE_CATENE",
+  23: "FELTRINELLI",
+  24: "INDIPENDENTI_ALTRE_CATENE",
+  25: "GROSSISTI",
+  28: "GROSSISTI",
+  30: "GROSSISTI",
+  32: "GIUNTI",
+  33: "ALTRI_ONLINE",
+  34: "MONDADORI",
+  36: "INDIPENDENTI_ALTRE_CATENE",
+  38: "INDIPENDENTI_ALTRE_CATENE",
+  44: "GDO",
+  47: "INDIPENDENTI_ALTRE_CATENE",
+  48: "INDIPENDENTI_ALTRE_CATENE",
+  49: "INDIPENDENTI_ALTRE_CATENE",
+  50: "INDIPENDENTI_ALTRE_CATENE",
+  55: "INDIPENDENTI_ALTE_CATENE",
+  56: "LIBRACCIO",
+  57: "LIB_RELIGIOSE",
+  58: "ALTRI_ONLINE",
+  59: "FELTRINELLI",
+  60: "INDIPENDENTI_ALTRE_CATENE",
+  61: "INDIPENDENTI_ALTRE_CATENE",
+  63: "CENTROLIBRI",
+  65: "INDIPENDENTI_ALTRE_CATENE",
+  72: "INDIPENDENTI_ALTRE_CATENE",
+  77: "FELTRINELLI",
+  80: "MONDADORI",
+  82: "AMAZON",
+  83: "UBIK",
+  88: "LIBRACCIO",
+  90: "LIBRACCIO",
+  91: "LIBRACCIO",
+  92: "LIBRACCIO",
+  94: "GDO",
 };
 
 const CANALI_LABELS = {
@@ -29,52 +79,39 @@ export default function ModuloPrenotato({ token, titoli }) {
   const [file, setFile] = useState(null);
   const [righe, setRighe] = useState([]);
   const [aggregato, setAggregato] = useState([]);
-  const [gruppiMap, setGruppiMap] = useState({});
   const [importing, setImporting] = useState(false);
   const [done, setDone] = useState(null);
-  const [gruppiCaricati, setGruppiCaricati] = useState(false);
 
-  // Carica mappa gruppi da Supabase
-  const caricaGruppi = useCallback(async () => {
-    if (gruppiCaricati) return gruppiMap;
-    const r = await fetch(`${SUPABASE_URL}/rest/v1/gruppi_clienti?select=codice_gruppo,canale_codice`, {
-      headers: { "apikey": SUPABASE_KEY, "Authorization": `Bearer ${token}` }
-    });
-    const data = await r.json();
-    const map = {};
-    data.forEach(g => { map[g.codice_gruppo] = g.canale_codice; });
-    setGruppiMap(map);
-    setGruppiCaricati(true);
-    return map;
-  }, [token, gruppiMap, gruppiCaricati]);
-
-  const handleFile = useCallback(async (e) => {
+  const handleFile = useCallback((e) => {
     const f = e.target.files[0];
     if (!f) return;
     setFile(f);
 
-    const map = await caricaGruppi();
     const XLSX = window.XLSX;
     const reader = new FileReader();
     reader.onload = (evt) => {
       try {
         const wb = XLSX.read(evt.target.result, { type: "array" });
-        // Cerca il foglio giusto
         const sheetName = wb.SheetNames.find(n => n.toLowerCase().includes("pianifica")) || wb.SheetNames[0];
         const ws = wb.Sheets[sheetName];
         const data = XLSX.utils.sheet_to_json(ws, { defval: "" });
-
         setRighe(data);
 
-        // Aggrega per EAN × canale
+        // Aggrega per EAN × canale usando la mappa locale
         const aggMap = {};
         data.forEach(row => {
           const ean = String(row["EAN"] || "").trim();
-          const gruppoCliente = row["Gruppo cliente"];
+          const gruppoRaw = row["Gruppo cliente"];
           const qta = parseInt(row["Pren (Qtà)"]) || 0;
-          if (!ean || !gruppoCliente || qta === 0) return;
+          if (!ean || qta === 0) return;
 
-          const canale = (!gruppoCliente || gruppoCliente === "") ? "INDIPENDENTI_ALTRE_CATENE" : (map[parseInt(gruppoCliente)] || "INDIPENDENTI_ALTRE_CATENE");
+          // Gruppo null o vuoto -> INDIPENDENTI_ALTRE_CATENE
+          let canale = "INDIPENDENTI_ALTRE_CATENE";
+          if (gruppoRaw !== "" && gruppoRaw !== null && gruppoRaw !== undefined) {
+            const gruppoInt = parseInt(parseFloat(gruppoRaw));
+            canale = GRUPPI_CANALE[gruppoInt] || "INDIPENDENTI_ALTRE_CATENE";
+          }
+
           const key = `${ean}__${canale}`;
           if (!aggMap[key]) aggMap[key] = { ean, canale, qta: 0 };
           aggMap[key].qta += qta;
@@ -82,7 +119,7 @@ export default function ModuloPrenotato({ token, titoli }) {
 
         // Arricchisci con dati titolo
         const result = Object.values(aggMap).map(r => {
-          const titolo = titoli.find(t => t.ean === r.ean);
+          const titolo = titoli.find(t => t.ean === r.ean || t.ean === String(parseInt(r.ean)));
           return { ...r, titolo: titolo?.titolo ?? "— non trovato —", found: !!titolo, titolo_id: titolo?.id };
         }).sort((a, b) => a.ean.localeCompare(b.ean));
 
@@ -93,9 +130,8 @@ export default function ModuloPrenotato({ token, titoli }) {
       }
     };
     reader.readAsArrayBuffer(f);
-  }, [caricaGruppi, titoli]);
+  }, [titoli]);
 
-  // Riepilogo per canale
   const riepilogoCanale = useMemo(() => {
     const map = {};
     aggregato.forEach(r => {
@@ -105,11 +141,14 @@ export default function ModuloPrenotato({ token, titoli }) {
     return Object.entries(map).sort((a, b) => b[1] - a[1]);
   }, [aggregato]);
 
+  const totaleAggregato = aggregato.reduce((s, r) => s + r.qta, 0);
+  const totaleFound = aggregato.filter(r => r.found).reduce((s, r) => s + r.qta, 0);
+
   const handleImport = async () => {
     setImporting(true);
     const validi = aggregato.filter(r => r.found && r.titolo_id);
 
-    // Prima: recupera canali da Supabase
+    // Recupera canali da Supabase
     const rCanali = await fetch(`${SUPABASE_URL}/rest/v1/canali?select=id,codice`, {
       headers: { "apikey": SUPABASE_KEY, "Authorization": `Bearer ${token}` }
     });
@@ -123,19 +162,14 @@ export default function ModuloPrenotato({ token, titoli }) {
       quantita: r.qta,
     })).filter(r => r.canale_id !== null);
 
-    // Upsert prenotato
     const res = await fetch(`${SUPABASE_URL}/rest/v1/rpc/upsert_prenotato`, {
       method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        "apikey": SUPABASE_KEY,
-        "Authorization": `Bearer ${token}`,
-      },
+      headers: { "Content-Type": "application/json", "apikey": SUPABASE_KEY, "Authorization": `Bearer ${token}` },
       body: JSON.stringify({ payload }),
     });
 
     if (res.ok) {
-      setDone({ ok: payload.length, notFound: aggregato.filter(r => !r.found).length });
+      setDone({ ok: payload.length, totQta: totaleFound, notFound: aggregato.filter(r => r.found).length === aggregato.length ? 0 : aggregato.filter(r => !r.found).length });
       setStep("result");
     } else {
       const err = await res.json();
@@ -161,7 +195,6 @@ export default function ModuloPrenotato({ token, titoli }) {
         ))}
       </div>
 
-      {/* STEP 1: UPLOAD */}
       {step === "upload" && (
         <div style={{ maxWidth: 500 }}>
           <div style={{ border: `2px dashed ${T.borderHi}`, borderRadius: 6, padding: 40, textAlign: "center", marginBottom: 20 }}>
@@ -171,13 +204,10 @@ export default function ModuloPrenotato({ token, titoli }) {
             <input type="file" accept=".xlsx" onChange={handleFile} style={{ display: "none" }} id="pv-file-input" />
             <label htmlFor="pv-file-input" style={{ ...css.btn("accent"), cursor: "pointer", padding: "8px 20px" }}>Scegli file .xlsx</label>
           </div>
-          <div style={{ color: T.textMid, fontSize: "11px" }}>
-            L'app leggerà automaticamente le quantità prenotate e le aggregherà per canale.
-          </div>
+          <div style={{ color: T.textMid, fontSize: "11px" }}>L'app legge le quantità prenotate e le aggrega per canale automaticamente.</div>
         </div>
       )}
 
-      {/* STEP 2: PREVIEW */}
       {step === "preview" && (
         <div>
           <div style={{ display: "flex", gap: 12, marginBottom: 20, flexWrap: "wrap" }}>
@@ -186,12 +216,12 @@ export default function ModuloPrenotato({ token, titoli }) {
               <div style={{ color: T.text, fontWeight: "700", fontSize: "20px" }}>{righe.length.toLocaleString("it")}</div>
             </div>
             <div style={{ background: T.surface, border: `1px solid ${T.border}`, borderRadius: 4, padding: "10px 16px" }}>
-              <div style={{ color: T.textMid, fontSize: "10px", textTransform: "uppercase", marginBottom: 4 }}>EAN × Canale</div>
-              <div style={{ color: T.accent, fontWeight: "700", fontSize: "20px" }}>{aggregato.length}</div>
+              <div style={{ color: T.textMid, fontSize: "10px", textTransform: "uppercase", marginBottom: 4 }}>Totale copie</div>
+              <div style={{ color: T.accent, fontWeight: "700", fontSize: "20px" }}>{totaleAggregato.toLocaleString("it")}</div>
             </div>
             <div style={{ background: T.surface, border: `1px solid ${T.green}44`, borderRadius: 4, padding: "10px 16px" }}>
               <div style={{ color: T.textMid, fontSize: "10px", textTransform: "uppercase", marginBottom: 4 }}>Trovati in cedola</div>
-              <div style={{ color: T.green, fontWeight: "700", fontSize: "20px" }}>{aggregato.filter(r => r.found).length}</div>
+              <div style={{ color: T.green, fontWeight: "700", fontSize: "20px" }}>{totaleFound.toLocaleString("it")}</div>
             </div>
             <div style={{ background: T.surface, border: `1px solid ${T.red}44`, borderRadius: 4, padding: "10px 16px" }}>
               <div style={{ color: T.textMid, fontSize: "10px", textTransform: "uppercase", marginBottom: 4 }}>Non trovati</div>
@@ -199,7 +229,6 @@ export default function ModuloPrenotato({ token, titoli }) {
             </div>
           </div>
 
-          {/* Riepilogo canale */}
           <div style={{ marginBottom: 20, background: T.surface, border: `1px solid ${T.border}`, borderRadius: 4, padding: 16 }}>
             <div style={{ color: T.textMid, fontSize: "10px", textTransform: "uppercase", letterSpacing: "0.1em", marginBottom: 12 }}>Riepilogo per canale</div>
             <div style={{ display: "flex", flexWrap: "wrap", gap: 12 }}>
@@ -215,16 +244,14 @@ export default function ModuloPrenotato({ token, titoli }) {
           <div style={{ display: "flex", gap: 8, marginBottom: 16 }}>
             <button style={css.btn()} onClick={reset}>← Ricarica</button>
             <button style={css.btn("accent")} onClick={handleImport} disabled={importing}>
-              {importing ? "Import in corso..." : `Importa ${aggregato.filter(r => r.found).length} righe`}
+              {importing ? "Import in corso..." : `Importa ${totaleFound.toLocaleString("it")} copie`}
             </button>
           </div>
 
           <div style={{ overflowX: "auto" }}>
             <table style={{ width: "100%", borderCollapse: "collapse" }}>
               <thead>
-                <tr>
-                  {["EAN", "Titolo", "Canale", "Qtà", ""].map(h => <th key={h} style={css.th}>{h}</th>)}
-                </tr>
+                <tr>{["EAN","Titolo","Canale","Qtà",""].map(h => <th key={h} style={css.th}>{h}</th>)}</tr>
               </thead>
               <tbody>
                 {aggregato.map((r, i) => (
@@ -246,13 +273,12 @@ export default function ModuloPrenotato({ token, titoli }) {
         </div>
       )}
 
-      {/* STEP 3: RESULT */}
       {step === "result" && done && (
         <div style={{ textAlign: "center", padding: 60 }}>
           <div style={{ fontSize: "48px", marginBottom: 16 }}>✅</div>
           <div style={{ color: T.green, fontSize: "20px", fontWeight: "700", marginBottom: 8 }}>Import completato</div>
-          <div style={{ color: T.textMid, marginBottom: 8 }}>{done.ok} righe importate in Supabase</div>
-          {done.notFound > 0 && <div style={{ color: T.red, fontSize: "12px", marginBottom: 24 }}>{done.notFound} EAN non trovati nella cedola — ignorati</div>}
+          <div style={{ color: T.textMid, marginBottom: 8 }}>{done.ok} righe · {done.totQta?.toLocaleString("it")} copie importate</div>
+          {done.notFound > 0 && <div style={{ color: T.red, fontSize: "12px", marginBottom: 24 }}>{done.notFound} EAN non trovati — ignorati</div>}
           <button style={css.btn("accent")} onClick={reset}>Nuovo import</button>
         </div>
       )}
