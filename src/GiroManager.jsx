@@ -191,33 +191,40 @@ function ModuloDashboard({ titoli, prenotato, canali }) {
 
   const titoliGiro = useMemo(() => giroSel ? titoli.filter(t => t.giro_label === giroSel) : [], [titoli, giroSel]);
 
-  const kpiGiro = useMemo(() => {
-    const totObj = titoliGiro.reduce((s, t) => s + (t.obiettivo_assegnato || 0), 0);
-    const totRag = titoliGiro.reduce((s, t) => s + (t.obiettivo_raggiunto || 0), 0);
-    const valObj = titoliGiro.reduce((s, t) => s + (t.prezzo || 0) * (t.obiettivo_assegnato || 0), 0);
-    const totTriangolo = titoliGiro.filter(t => t.il_triangolo === true).length;
-    const totTop100 = titoliGiro.filter(t => t.top_100 === true).length;
-    return { totObj, totRag, valObj, totTriangolo, totTop100, count: titoliGiro.length, pct: totObj > 0 ? Math.round(totRag / totObj * 100) : 0 };
-  }, [titoliGiro]);
-
-  const cedole = useMemo(() => {
-    const map = {};
-    titoliGiro.forEach(t => {
-      const c = t.n_cedola || "—";
-      if (!map[c]) map[c] = { label: c, totObj: 0, totRag: 0, count: 0 };
-      map[c].totObj += t.obiettivo_assegnato || 0;
-      map[c].totRag += t.obiettivo_raggiunto || 0;
-      map[c].count++;
-    });
-    return Object.values(map).sort((a, b) => a.label.localeCompare(b.label));
-  }, [titoliGiro]);
-
   const prenotatoGiro = useMemo(() => {
     const titoliIds = new Set(titoliGiro.map(t => t.id));
     return prenotato.filter(p => titoliIds.has(p.titolo_id));
   }, [prenotato, titoliGiro]);
 
-  const totPrenotatoGiro = prenotatoGiro.reduce((s, p) => s + p.quantita, 0);
+  const totPrenotatoGiro = useMemo(() => prenotatoGiro.reduce((s, p) => s + p.quantita, 0), [prenotatoGiro]);
+
+  const kpiGiro = useMemo(() => {
+    const totObj = titoliGiro.reduce((s, t) => s + (t.obiettivo_assegnato || 0), 0);
+    const totRag = totPrenotatoGiro;
+    const valObj = titoliGiro.reduce((s, t) => s + (t.prezzo || 0) * (t.obiettivo_assegnato || 0), 0);
+    const totTriangolo = titoliGiro.filter(t => t.il_triangolo === true).length;
+    const totTop100 = titoliGiro.filter(t => t.top_100 === true).length;
+    return { totObj, totRag, valObj, totTriangolo, totTop100, count: titoliGiro.length, pct: totObj > 0 ? Math.round(totRag / totObj * 100) : 0 };
+  }, [titoliGiro, totPrenotatoGiro]);
+
+  const cedole = useMemo(() => {
+    const prenotatoMap = {};
+    prenotatoGiro.forEach(p => {
+      const t = titoliGiro.find(t => t.id === p.titolo_id);
+      if (!t) return;
+      const c = t.n_cedola || "—";
+      prenotatoMap[c] = (prenotatoMap[c] || 0) + p.quantita;
+    });
+    const map = {};
+    titoliGiro.forEach(t => {
+      const c = t.n_cedola || "—";
+      if (!map[c]) map[c] = { label: c, totObj: 0, totRag: 0, count: 0 };
+      map[c].totObj += t.obiettivo_assegnato || 0;
+      map[c].totRag = prenotatoMap[c] || 0;
+      map[c].count++;
+    });
+    return Object.values(map).sort((a, b) => a.label.localeCompare(b.label));
+  }, [titoliGiro, prenotatoGiro]);
 
   const prenotatoPerCanale = useMemo(() => {
     const map = {};
@@ -232,7 +239,6 @@ function ModuloDashboard({ titoli, prenotato, canali }) {
 
   return (
     <div style={{ flex: 1, overflowY: "auto", padding: 20 }}>
-      {/* Tendina giro */}
       <div style={{ display: "flex", gap: 12, alignItems: "center", marginBottom: 20 }}>
         <select style={{ ...css.input, fontSize: "14px", fontWeight: "600", color: T.accent }} value={giroSel || ""} onChange={e => setGiroSel(e.target.value)}>
           {giriLabel.map(g => <option key={g} value={g}>Giro {g}</option>)}
@@ -240,7 +246,6 @@ function ModuloDashboard({ titoli, prenotato, canali }) {
         <span style={{ color: T.textMid, fontSize: "12px" }}>{kpiGiro.count} titoli · € {kpiGiro.valObj.toLocaleString("it", { maximumFractionDigits: 0 })} valore obiettivo</span>
       </div>
 
-      {/* KPI giro */}
       <div style={{ display: "flex", gap: 12, marginBottom: 24, flexWrap: "wrap" }}>
         <KpiCard label="Titoli" value={kpiGiro.count} color={T.text} />
         <KpiCard label="▲ Triangolo" value={kpiGiro.totTriangolo} color={T.purple} />
@@ -256,12 +261,11 @@ function ModuloDashboard({ titoli, prenotato, canali }) {
         </div>
       </div>
 
-      {/* Cedole */}
       <div style={{ marginBottom: 24 }}>
         <div style={{ color: T.textMid, fontSize: "11px", letterSpacing: "0.1em", textTransform: "uppercase", marginBottom: 12 }}>CEDOLE</div>
         <table style={{ width: "100%", borderCollapse: "collapse" }}>
           <thead>
-            <tr>{["Cedola","Titoli","Obj Ass.","Obj Rag.","Avanz."].map(h => <th key={h} style={{ padding: "8px 12px", textAlign: "left", color: T.textMid, fontWeight: "400", fontSize: "11px", letterSpacing: "0.08em", textTransform: "uppercase", borderBottom: `1px solid ${T.border}`, background: T.surface }}>{h}</th>)}</tr>
+            <tr>{["Cedola","Titoli","Obj Ass.","Prenotato","Avanz."].map(h => <th key={h} style={{ padding: "8px 12px", textAlign: "left", color: T.textMid, fontWeight: "400", fontSize: "11px", letterSpacing: "0.08em", textTransform: "uppercase", borderBottom: `1px solid ${T.border}`, background: T.surface }}>{h}</th>)}</tr>
           </thead>
           <tbody>
             {cedole.map(({ label, count, totObj, totRag }, i) => {
@@ -271,7 +275,7 @@ function ModuloDashboard({ titoli, prenotato, canali }) {
                   <td style={{ padding: "8px 12px", color: T.accent, fontWeight: "600", fontSize: "12px" }}>{label}</td>
                   <td style={{ padding: "8px 12px", fontSize: "12px" }}>{count}</td>
                   <td style={{ padding: "8px 12px", fontSize: "12px" }}>{totObj.toLocaleString("it")}</td>
-                  <td style={{ padding: "8px 12px", fontSize: "12px" }}>{totRag.toLocaleString("it")}</td>
+                  <td style={{ padding: "8px 12px", fontSize: "12px", color: T.green }}>{totRag.toLocaleString("it")}</td>
                   <td style={{ padding: "8px 12px" }}>
                     <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
                       <div style={{ width: 80, height: 4, background: T.borderHi, borderRadius: 2, overflow: "hidden" }}>
@@ -287,7 +291,6 @@ function ModuloDashboard({ titoli, prenotato, canali }) {
         </table>
       </div>
 
-      {/* Prenotato per canale */}
       {prenotatoPerCanale.length > 0 && (
         <div>
           <div style={{ color: T.textMid, fontSize: "11px", letterSpacing: "0.1em", textTransform: "uppercase", marginBottom: 12 }}>PRENOTATO PER CANALE</div>
@@ -308,6 +311,7 @@ function ModuloDashboard({ titoli, prenotato, canali }) {
     </div>
   );
 }
+
 
 
 // ─── MODULO: CEDOLA ───────────────────────────────────────────────────────────
