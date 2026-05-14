@@ -71,7 +71,7 @@ export default function ModuloImport({ giriList, token, onImportDone }) {
             let val = row[parseInt(colIdx)] ?? "";
             if (field === "prezzo") val = parseFloat(val) || null;
             if (field === "obiettivo_assegnato") val = parseInt(val) || 0;
-            if (field === "il_triangolo" || field === "top_100") val = String(val).toUpperCase() === "SI";
+            if (field === "il_triangolo" || field === "top_100") val = String(val).trim().toUpperCase() === "SI";
             if (field === "ranking_editore" || field === "ranking_titolo") val = parseInt(val) || null;
 if (field === "n_cedola" || field === "giro_label") val = val ? String(val) : null;
             obj[field] = val === "" ? null : val;
