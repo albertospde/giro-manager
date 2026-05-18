@@ -186,7 +186,7 @@ function EditModal({ titolo, onSave, onClose }) {
 const MACROGRUPPI = [
   { id: "RETE", label: "Rete", canali: ["LIBRACCIO", "LIB_RELIGIOSE", "LIB_COOP", "INDIPENDENTI_ALTRE_CATENE"] },
   { id: "CATENE", label: "Catene Centralizzate", canali: ["FELTRINELLI", "MONDADORI", "UBIK", "GIUNTI"] },
-  { id: "GROSSISTI", label: "Grossisti", canali: ["FASTBOOK", "CENTROLIBRI", "AURORA", "ALTRI GROSSISTI"] },
+  { id: "GROSSISTI", label: "Grossisti", canali: ["FASTBOOK", "CENTROLIBRI", "AURORA", "GROSSISTI"] },
   { id: "ONLINE", label: "Online", canali: ["AMAZON", "IBS", "ALTRI_ONLINE"] },
 ];
 
@@ -425,7 +425,7 @@ function ModuloCedola({ titoli, giriList, onUpdateTitolo, spalmatura, prenotato,
       { codice: 'INDIPENDENTI_ALTRE_CATENE', label: 'Indip. & Altre Catene' },
       { codice: 'AMAZON', label: 'Amazon' }, { codice: 'IBS', label: 'IBS' },
       { codice: 'ALTRI_ONLINE', label: 'Altri Online' }, { codice: 'FASTBOOK', label: 'Fastbook' },
-      { codice: 'ALTRI GROSSISTI', label: 'Grossisti' }, { codice: 'CENTROLIBRI', label: 'Centrolibri' }, { codice: 'GDO', label: 'GDO' },
+      { codice: 'GROSSISTI', label: 'Grossisti' }, { codice: 'CENTROLIBRI', label: 'Centrolibri' }, { codice: 'GDO', label: 'GDO' },
     ];
     const headersCedola = ["N° CEDOLA","EAN","TITOLO","AUTORE","COD.EDITORE","EDITORE","PREZZO","OBJ TOTALE","NOTE","EAN GEM 1","TITOLO GEM 1","EAN GEM 2","TITOLO GEM 2","EAN GEM 3","TITOLO GEM 3"];
     const rowsCedola = filtered.map(t => [t.n_cedola, t.ean, t.titolo, t.autore, t.codice_editore, t.editore_nome, t.prezzo, t.obiettivo_assegnato || 0, t.note_comunicazione || t.note, t.ean_gemello_1, t.titolo_gemello_1, t.ean_gemello_2, t.titolo_gemello_2, t.ean_gemello_3, t.titolo_gemello_3]);
@@ -539,7 +539,7 @@ function ModuloCedola({ titoli, giriList, onUpdateTitolo, spalmatura, prenotato,
 const MACROGRUPPI_FG = [
   { id: "RETE", label: "Rete", canali: ["LIBRACCIO", "LIB_RELIGIOSE", "LIB_COOP", "INDIPENDENTI_ALTRE_CATENE"] },
   { id: "CATENE", label: "Catene Centralizzate", canali: ["FELTRINELLI", "MONDADORI", "UBIK", "GIUNTI"] },
-  { id: "GROSSISTI", label: "Grossisti", canali: ["FASTBOOK", "CENTROLIBRI", "AURORA", "ALTRI GROSSISTI"] },
+  { id: "GROSSISTI", label: "Grossisti", canali: ["FASTBOOK", "CENTROLIBRI", "AURORA", "GROSSISTI"] },
   { id: "ONLINE", label: "Online", canali: ["AMAZON", "IBS", "ALTRI_ONLINE"] },
 ];
 
