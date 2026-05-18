@@ -186,7 +186,7 @@ function EditModal({ titolo, onSave, onClose }) {
 const MACROGRUPPI = [
   { id: "RETE", label: "Rete", canali: ["LIBRACCIO", "LIB_RELIGIOSE", "LIB_COOP", "INDIPENDENTI_ALTRE_CATENE"] },
   { id: "CATENE", label: "Catene Centralizzate", canali: ["FELTRINELLI", "MONDADORI", "UBIK", "GIUNTI"] },
-  { id: "TUTTI I GROSSISTI", label: "Grossisti", canali: ["FASTBOOK", "CENTROLIBRI", "AURORA", "GROSSISTI"] },
+  { id: "GROSSISTI", label: "Grossisti", canali: ["FASTBOOK", "CENTROLIBRI", "AURORA", "GROSSISTI"] },
   { id: "ONLINE", label: "Online", canali: ["AMAZON", "IBS", "ALTRI_ONLINE"] },
 ];
 
