@@ -16,77 +16,40 @@ const css = {
   td: { padding: "7px 12px", borderBottom: `1px solid ${T.border}22`, verticalAlign: "middle", fontSize: "12px" },
 };
 
-// Mappa completa gruppi cliente -> canale
 const GRUPPI_CANALE = {
-  0: "INDIPENDENTI_ALTRE_CATENE",
-  2: "FELTRINELLI",
-  4: "INDIPENDENTI_ALTRE_CATENE",
-  6: "LIB_RELIGIOSE",
-  8: "MONDADORI",
-  11: "LIBRACCIO",
-  12: "INDIPENDENTI_ALTRE_CATENE",
-  15: "INDIPENDENTI_ALTRE_CATENE",
-  18: "LIB_RELIGIOSE",
-  19: "LIB_RELIGIOSE",
-  21: "LIB_RELIGIOSE",
-  22: "INDIPENDENTI_ALTRE_CATENE",
-  23: "FELTRINELLI",
-  24: "INDIPENDENTI_ALTRE_CATENE",
-  25: "GROSSISTI",
-  28: "GROSSISTI",
-  30: "GROSSISTI",
-  32: "GIUNTI",
-  33: "ALTRI_ONLINE",
-  34: "MONDADORI",
-  36: "INDIPENDENTI_ALTRE_CATENE",
-  38: "INDIPENDENTI_ALTRE_CATENE",
-  44: "GDO",
-  47: "INDIPENDENTI_ALTRE_CATENE",
-  48: "INDIPENDENTI_ALTRE_CATENE",
-  49: "INDIPENDENTI_ALTRE_CATENE",
-  50: "INDIPENDENTI_ALTRE_CATENE",
-  55: "INDIPENDENTI_ALTE_CATENE",
-  56: "LIBRACCIO",
-  57: "LIB_RELIGIOSE",
-  58: "ALTRI_ONLINE",
-  59: "FELTRINELLI",
-  60: "INDIPENDENTI_ALTRE_CATENE",
-  61: "INDIPENDENTI_ALTRE_CATENE",
-  63: "CENTROLIBRI",
-  65: "INDIPENDENTI_ALTRE_CATENE",
-  72: "INDIPENDENTI_ALTRE_CATENE",
-  77: "FELTRINELLI",
-  80: "MONDADORI",
-  82: "AMAZON",
-  83: "UBIK",
-  88: "LIBRACCIO",
-  90: "LIBRACCIO",
-  91: "LIBRACCIO",
-  92: "LIBRACCIO",
-  94: "GDO",
+  0: "INDIPENDENTI_ALTRE_CATENE", 2: "FELTRINELLI", 4: "INDIPENDENTI_ALTRE_CATENE",
+  6: "LIB_RELIGIOSE", 8: "MONDADORI", 11: "LIBRACCIO", 12: "INDIPENDENTI_ALTRE_CATENE",
+  15: "INDIPENDENTI_ALTRE_CATENE", 18: "LIB_RELIGIOSE", 19: "LIB_RELIGIOSE",
+  21: "LIB_RELIGIOSE", 22: "INDIPENDENTI_ALTRE_CATENE", 23: "FELTRINELLI",
+  24: "INDIPENDENTI_ALTRE_CATENE", 25: "GROSSISTI", 28: "GROSSISTI", 30: "GROSSISTI",
+  32: "GIUNTI", 33: "ALTRI_ONLINE", 34: "MONDADORI", 36: "INDIPENDENTI_ALTRE_CATENE",
+  38: "INDIPENDENTI_ALTRE_CATENE", 44: "GDO", 47: "INDIPENDENTI_ALTRE_CATENE",
+  48: "INDIPENDENTI_ALTRE_CATENE", 49: "INDIPENDENTI_ALTRE_CATENE", 50: "INDIPENDENTI_ALTRE_CATENE",
+  55: "INDIPENDENTI_ALTRE_CATENE", 56: "LIBRACCIO", 57: "LIB_RELIGIOSE", 58: "ALTRI_ONLINE",
+  59: "FELTRINELLI", 60: "INDIPENDENTI_ALTRE_CATENE", 61: "INDIPENDENTI_ALTRE_CATENE",
+  63: "CENTROLIBRI", 65: "INDIPENDENTI_ALTRE_CATENE", 72: "INDIPENDENTI_ALTRE_CATENE",
+  77: "FELTRINELLI", 80: "MONDADORI", 82: "AMAZON", 83: "UBIK", 88: "LIBRACCIO",
+  90: "LIBRACCIO", 91: "LIBRACCIO", 92: "LIBRACCIO", 94: "GDO",
 };
 
 const CANALI_LABELS = {
   FELTRINELLI: "Feltrinelli", GIUNTI: "Giunti", MONDADORI: "Mondadori",
   UBIK: "Ubik", LIBRACCIO: "Libraccio", INDIPENDENTI_ALTRE_CATENE: "Indip. & Altre Catene",
   LIB_RELIGIOSE: "Lib. Religiose", ALTRI_ONLINE: "Altri Online", AMAZON: "Amazon",
-  IBS: "IBS", FASTBOOK: "Fastbook", GROSSISTI: "Grossisti",
-  CENTROLIBRI: "Centrolibri", GDO: "GDO",
+  IBS: "IBS", FASTBOOK: "Fastbook", GROSSISTI: "Grossisti", CENTROLIBRI: "Centrolibri", GDO: "GDO",
 };
 
 export default function ModuloPrenotato({ token, titoli, onImportDone }) {
   const [step, setStep] = useState("upload");
-  const [file, setFile] = useState(null);
   const [righe, setRighe] = useState([]);
   const [aggregato, setAggregato] = useState([]);
+  const [aggregatoClienti, setAggregatoClienti] = useState([]);
   const [importing, setImporting] = useState(false);
   const [done, setDone] = useState(null);
 
   const handleFile = useCallback((e) => {
     const f = e.target.files[0];
     if (!f) return;
-    setFile(f);
-
     const XLSX = window.XLSX;
     const reader = new FileReader();
     reader.onload = (evt) => {
@@ -97,33 +60,50 @@ export default function ModuloPrenotato({ token, titoli, onImportDone }) {
         const data = XLSX.utils.sheet_to_json(ws, { defval: "" });
         setRighe(data);
 
-        // Aggrega per EAN × canale usando la mappa locale
+        // Aggrega per EAN × canale (per tabella prenotato)
         const aggMap = {};
+        // Aggrega per EAN × cliente (per tabella prenotato_clienti)
+        const aggClientiMap = {};
+
         data.forEach(row => {
           const ean = String(row["EAN"] || "").trim();
           const gruppoRaw = row["Gruppo cliente"];
           const qta = parseInt(row["Pren (Qtà)"]) || 0;
+          const codiceCliente = String(row["Codice cliente"] || "").trim();
+          const nomeCliente = String(row["Nome Cliente"] || "").trim();
           if (!ean || qta === 0) return;
 
-          // Gruppo null o vuoto -> INDIPENDENTI_ALTRE_CATENE
           let canale = "INDIPENDENTI_ALTRE_CATENE";
           if (gruppoRaw !== "" && gruppoRaw !== null && gruppoRaw !== undefined) {
             const gruppoInt = parseInt(parseFloat(gruppoRaw));
             canale = GRUPPI_CANALE[gruppoInt] || "INDIPENDENTI_ALTRE_CATENE";
           }
 
+          // Aggregato per canale
           const key = `${ean}__${canale}`;
           if (!aggMap[key]) aggMap[key] = { ean, canale, qta: 0 };
           aggMap[key].qta += qta;
+
+          // Aggregato per cliente
+          if (codiceCliente) {
+            const keyC = `${ean}__${codiceCliente}`;
+            if (!aggClientiMap[keyC]) aggClientiMap[keyC] = { ean, codice_cliente: codiceCliente, nome_cliente: nomeCliente, canale, qta: 0 };
+            aggClientiMap[keyC].qta += qta;
+          }
         });
 
-        // Arricchisci con dati titolo
         const result = Object.values(aggMap).map(r => {
           const titolo = titoli.find(t => t.ean === r.ean || t.ean === String(parseInt(r.ean)));
           return { ...r, titolo: titolo?.titolo ?? "— non trovato —", found: !!titolo, titolo_id: titolo?.id };
         }).sort((a, b) => a.ean.localeCompare(b.ean));
 
+        const resultClienti = Object.values(aggClientiMap).map(r => {
+          const titolo = titoli.find(t => t.ean === r.ean || t.ean === String(parseInt(r.ean)));
+          return { ...r, found: !!titolo, titolo_id: titolo?.id };
+        });
+
         setAggregato(result);
+        setAggregatoClienti(resultClienti);
         setStep("preview");
       } catch (err) {
         alert("Errore lettura file: " + err.message);
@@ -134,10 +114,7 @@ export default function ModuloPrenotato({ token, titoli, onImportDone }) {
 
   const riepilogoCanale = useMemo(() => {
     const map = {};
-    aggregato.forEach(r => {
-      if (!map[r.canale]) map[r.canale] = 0;
-      map[r.canale] += r.qta;
-    });
+    aggregato.forEach(r => { map[r.canale] = (map[r.canale] || 0) + r.qta; });
     return Object.entries(map).sort((a, b) => b[1] - a[1]);
   }, [aggregato]);
 
@@ -146,9 +123,7 @@ export default function ModuloPrenotato({ token, titoli, onImportDone }) {
 
   const handleImport = async () => {
     setImporting(true);
-    const validi = aggregato.filter(r => r.found && r.titolo_id);
 
-    // Recupera canali da Supabase
     const rCanali = await fetch(`${SUPABASE_URL}/rest/v1/canali?select=id,codice`, {
       headers: { "apikey": SUPABASE_KEY, "Authorization": `Bearer ${token}` }
     });
@@ -156,34 +131,55 @@ export default function ModuloPrenotato({ token, titoli, onImportDone }) {
     const canaleMap = {};
     canaliDB.forEach(c => { canaleMap[c.codice] = c.id; });
 
+    // Import prenotato aggregato per canale
+    const validi = aggregato.filter(r => r.found && r.titolo_id);
     const payload = validi.map(r => ({
       titolo_id: r.titolo_id,
       canale_id: canaleMap[r.canale] || null,
       quantita: r.qta,
     })).filter(r => r.canale_id !== null);
 
-    const res = await fetch(`${SUPABASE_URL}/rest/v1/rpc/upsert_prenotato`, {
+    const res1 = await fetch(`${SUPABASE_URL}/rest/v1/rpc/upsert_prenotato`, {
       method: "POST",
       headers: { "Content-Type": "application/json", "apikey": SUPABASE_KEY, "Authorization": `Bearer ${token}` },
       body: JSON.stringify({ payload }),
     });
 
-    if (res.ok) {
-      onImportDone && onImportDone();
-      setDone({ ok: payload.length, totQta: totaleFound, notFound: aggregato.filter(r => r.found).length === aggregato.length ? 0 : aggregato.filter(r => !r.found).length });
+    // Import prenotato per cliente
+    const validiClienti = aggregatoClienti.filter(r => r.found && r.titolo_id);
+    const payloadClienti = validiClienti.map(r => ({
+      titolo_id: r.titolo_id,
+      codice_cliente: r.codice_cliente,
+      nome_cliente: r.nome_cliente,
+      canale_id: canaleMap[r.canale] || null,
+      quantita: r.qta,
+    })).filter(r => r.canale_id !== null);
+
+    // Importa in batch da 500
+    for (let i = 0; i < payloadClienti.length; i += 500) {
+      const batch = payloadClienti.slice(i, i + 500);
+      await fetch(`${SUPABASE_URL}/rest/v1/rpc/upsert_prenotato_clienti`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", "apikey": SUPABASE_KEY, "Authorization": `Bearer ${token}` },
+        body: JSON.stringify({ payload: batch }),
+      });
+    }
+
+    if (res1.ok) {
+      setDone({ ok: payload.length, totQta: totaleFound });
       setStep("result");
+      onImportDone && onImportDone();
     } else {
-      const err = await res.json();
+      const err = await res1.json();
       alert("Errore import: " + JSON.stringify(err));
     }
     setImporting(false);
   };
 
-  const reset = () => { setFile(null); setRighe([]); setAggregato([]); setDone(null); setStep("upload"); };
+  const reset = () => { setRighe([]); setAggregato([]); setAggregatoClienti([]); setDone(null); setStep("upload"); };
 
   return (
     <div style={{ flex: 1, overflowY: "auto", padding: 24 }}>
-      {/* Step indicator */}
       <div style={{ display: "flex", gap: 8, marginBottom: 24, alignItems: "center" }}>
         {["upload", "preview", "result"].map((s, i) => (
           <div key={s} style={{ display: "flex", alignItems: "center", gap: 8 }}>
@@ -205,7 +201,7 @@ export default function ModuloPrenotato({ token, titoli, onImportDone }) {
             <input type="file" accept=".xlsx" onChange={handleFile} style={{ display: "none" }} id="pv-file-input" />
             <label htmlFor="pv-file-input" style={{ ...css.btn("accent"), cursor: "pointer", padding: "8px 20px" }}>Scegli file .xlsx</label>
           </div>
-          <div style={{ color: T.textMid, fontSize: "11px" }}>L'app legge le quantità prenotate e le aggrega per canale automaticamente.</div>
+          <div style={{ color: T.textMid, fontSize: "11px" }}>Salva prenotato per canale e per singolo cliente.</div>
         </div>
       )}
 
@@ -278,8 +274,7 @@ export default function ModuloPrenotato({ token, titoli, onImportDone }) {
         <div style={{ textAlign: "center", padding: 60 }}>
           <div style={{ fontSize: "48px", marginBottom: 16 }}>✅</div>
           <div style={{ color: T.green, fontSize: "20px", fontWeight: "700", marginBottom: 8 }}>Import completato</div>
-          <div style={{ color: T.textMid, marginBottom: 8 }}>{done.ok} righe · {done.totQta?.toLocaleString("it")} copie importate</div>
-          {done.notFound > 0 && <div style={{ color: T.red, fontSize: "12px", marginBottom: 24 }}>{done.notFound} EAN non trovati — ignorati</div>}
+          <div style={{ color: T.textMid, marginBottom: 24 }}>{done.totQta?.toLocaleString("it")} copie · dettaglio clienti salvato</div>
           <button style={css.btn("accent")} onClick={reset}>Nuovo import</button>
         </div>
       )}
