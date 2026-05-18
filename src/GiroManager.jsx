@@ -62,6 +62,8 @@ const css = {
   td: { padding: "8px 12px", borderBottom: `1px solid ${T.border}22`, verticalAlign: "middle" },
 };
 
+const CANALI_RETE = ["LIBRACCIO", "LIB_RELIGIOSE", "LIB_COOP", "INDIPENDENTI_ALTRE_CATENE"];
+
 function LoginScreen({ onLogin }) {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -188,7 +190,7 @@ const MACROGRUPPI = [
   { id: "ONLINE", label: "Online", canali: ["AMAZON", "IBS", "ALTRI_ONLINE"] },
 ];
 
-function ModuloDashboard({ titoli, prenotato, canali }) {
+function ModuloDashboard({ titoli, prenotato, canali, ruolo }) {
   const giriLabel = useMemo(() => {
     return [...new Set(titoli.map(t => t.giro_label).filter(Boolean))].sort((a, b) => {
       const [na, ya] = a.split(" "); const [nb, yb] = b.split(" ");
@@ -240,16 +242,19 @@ function ModuloDashboard({ titoli, prenotato, canali }) {
     prenotatoGiro.forEach(p => {
       const c = canali.find(c => c.id === p.canale_id);
       if (!c) return;
+      if (ruolo === "agente" && !CANALI_RETE.includes(c.codice)) return;
       map[c.codice] = (map[c.codice] || 0) + p.quantita;
     });
     return map;
-  }, [prenotatoGiro, canali]);
+  }, [prenotatoGiro, canali, ruolo]);
+
+  const macrogruppiVis = ruolo === "agente" ? MACROGRUPPI.filter(mg => mg.id === "RETE") : MACROGRUPPI;
 
   const totMacro = useMemo(() => {
     const map = {};
-    MACROGRUPPI.forEach(mg => { map[mg.id] = mg.canali.reduce((s, cod) => s + (prenotatoPerCanale[cod] || 0), 0); });
+    macrogruppiVis.forEach(mg => { map[mg.id] = mg.canali.reduce((s, cod) => s + (prenotatoPerCanale[cod] || 0), 0); });
     return map;
-  }, [prenotatoPerCanale]);
+  }, [prenotatoPerCanale, macrogruppiVis]);
 
   const maxMacro = Math.max(...Object.values(totMacro), 1);
 
@@ -306,14 +311,14 @@ function ModuloDashboard({ titoli, prenotato, canali }) {
       </div>
       <div>
         <div style={{ color: T.textMid, fontSize: "11px", letterSpacing: "0.1em", textTransform: "uppercase", marginBottom: 12 }}>PRENOTATO PER CANALE</div>
-        {MACROGRUPPI.map(mg => (
+        {macrogruppiVis.map(mg => (
           <div key={mg.id} style={{ marginBottom: 20 }}>
             <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 8, padding: "10px 16px", background: T.surface, border: `1px solid ${T.borderHi}`, borderRadius: 4 }}>
               <div style={{ fontWeight: "700", color: T.accent, fontSize: "13px", width: 200 }}>{mg.label}</div>
               <div style={{ flex: 1, height: 8, background: T.borderHi, borderRadius: 2, overflow: "hidden" }}>
                 <div style={{ width: `${(totMacro[mg.id] / maxMacro) * 100}%`, height: "100%", background: T.accent }} />
               </div>
-              <div style={{ color: T.accent, fontWeight: "700", fontSize: "14px", width: 80, textAlign: "right" }}>{totMacro[mg.id].toLocaleString("it")}</div>
+              <div style={{ color: T.accent, fontWeight: "700", fontSize: "14px", width: 80, textAlign: "right" }}>{totMacro[mg.id]?.toLocaleString("it")}</div>
             </div>
             {mg.canali.map(codice => {
               const c = canali.find(c => c.codice === codice);
@@ -336,7 +341,7 @@ function ModuloDashboard({ titoli, prenotato, canali }) {
   );
 }
 
-function ModuloCedola({ titoli, giriList, onUpdateTitolo, spalmatura, prenotato }) {
+function ModuloCedola({ titoli, giriList, onUpdateTitolo, spalmatura, prenotato, ruolo }) {
   const [giroLabelSel, setGiroLabelSel] = useState("tutti");
   const [giroSel, setGiroSel] = useState("tutti");
   const [search, setSearch] = useState("");
@@ -395,10 +400,7 @@ function ModuloCedola({ titoli, giriList, onUpdateTitolo, spalmatura, prenotato 
   }, [titoli, giroLabelSel, giroSel, search, filterFlag, filterEditori, filterAccount, sortKey]);
 
   const editingTitolo = titoli.find(t => t.id === editingId);
-  const avanzamento = useMemo(() => {
-    const totObj = filtered.reduce((s, t) => s + (t.obiettivo_assegnato || 0), 0);
-    return { totObj, count: filtered.length };
-  }, [filtered]);
+  const avanzamento = useMemo(() => ({ count: filtered.length }), [filtered]);
 
   const getObjCanale = (titolo, canale_codice) => {
     const spRow = spalmatura.find(s => s.editore_nome === titolo.editore_nome && s.formato === (titolo.formato || 'Cover') && s.canale_codice === canale_codice);
@@ -492,7 +494,7 @@ function ModuloCedola({ titoli, giriList, onUpdateTitolo, spalmatura, prenotato 
           <span style={{ color: T.text }}>{avanzamento.count}</span> titoli
         </div>
         <button style={css.btn("accent")} onClick={exportAgenti}>↓ Download Agenti</button>
-        <button style={css.btn("accent")} onClick={exportDirezionale}>↓ Download Direzionali</button>
+        {ruolo !== "agente" && <button style={css.btn("accent")} onClick={exportDirezionale}>↓ Download Direzionali</button>}
       </div>
       <div style={{ flex: 1, overflowY: "auto" }}>
         <table style={css.table}>
@@ -538,7 +540,7 @@ const MACROGRUPPI_FG = [
   { id: "ONLINE", label: "Online", canali: ["AMAZON", "IBS", "ALTRI_ONLINE"] },
 ];
 
-function ModuloFineGiro({ titoli, prenotato, canali, token }) {
+function ModuloFineGiro({ titoli, prenotato, canali, token, ruolo }) {
   const giriLabel = useMemo(() => [...new Set(titoli.map(t => t.giro_label).filter(Boolean))].sort((a, b) => {
     const [na, ya] = a.split(" "); const [nb, yb] = b.split(" ");
     return Number(yb || 0) - Number(ya || 0) || Number(nb || 0) - Number(na || 0);
@@ -631,7 +633,14 @@ function ModuloFineGiro({ titoli, prenotato, canali, token }) {
   [titoli, giroLabelSel, cedolaSel, filterEditore, filterAccount, search]);
 
   const totObj = titoliSel.reduce((s, t) => s + (t.obiettivo_assegnato || 0), 0);
-  const canaliTabella = useMemo(() => canali.filter(c => c.codice !== "AURORA"), [canali]);
+
+  const canaliTabella = useMemo(() => {
+    const base = canali.filter(c => c.codice !== "AURORA");
+    if (ruolo === "agente") return base.filter(c => CANALI_RETE.includes(c.codice));
+    return base;
+  }, [canali, ruolo]);
+
+  const macrogruppiVis = ruolo === "agente" ? MACROGRUPPI_FG.filter(mg => mg.id === "RETE") : MACROGRUPPI_FG;
 
   const righe = useMemo(() => titoliSel.map(t => {
     if (clienteSel) {
@@ -642,13 +651,17 @@ function ModuloFineGiro({ titoli, prenotato, canali, token }) {
       return { titolo: t, totPren, byCanale };
     }
     const pren = prenotato.filter(p => p.titolo_id === t.id);
-    const aurora = auroraEdit[t.id] || 0;
-    const totPren = pren.reduce((s, p) => s + p.quantita, 0);
+    const aurora = ruolo !== "agente" ? (auroraEdit[t.id] || 0) : 0;
+    const totPrenBase = pren.reduce((s, p) => s + p.quantita, 0);
     const byCanale = {};
     pren.forEach(p => { const c = canali.find(c => c.id === p.canale_id); if (c) byCanale[c.codice] = p.quantita; });
-    byCanale["AURORA"] = aurora;
-    return { titolo: t, totPren: totPren + aurora, byCanale };
-  }), [titoliSel, prenotato, prenotatoCliente, clienteSel, canali, auroraEdit]);
+    if (ruolo !== "agente") byCanale["AURORA"] = aurora;
+    if (ruolo === "agente") {
+      const totRete = CANALI_RETE.reduce((s, cod) => s + (byCanale[cod] || 0), 0);
+      return { titolo: t, totPren: totRete, byCanale };
+    }
+    return { titolo: t, totPren: totPrenBase + aurora, byCanale };
+  }), [titoliSel, prenotato, prenotatoCliente, clienteSel, canali, auroraEdit, ruolo]);
 
   const totPrenotato = righe.reduce((s, r) => s + r.totPren, 0);
   const pctTot = totObj > 0 ? Math.round(totPrenotato / totObj * 100) : 0;
@@ -663,9 +676,9 @@ function ModuloFineGiro({ titoli, prenotato, canali, token }) {
 
   const totMacro = useMemo(() => {
     const map = {};
-    MACROGRUPPI_FG.forEach(mg => { map[mg.id] = mg.canali.reduce((s, cod) => s + (prenotatoPerCanale[cod] || 0), 0); });
+    macrogruppiVis.forEach(mg => { map[mg.id] = mg.canali.reduce((s, cod) => s + (prenotatoPerCanale[cod] || 0), 0); });
     return map;
-  }, [prenotatoPerCanale]);
+  }, [prenotatoPerCanale, macrogruppiVis]);
 
   const clientiFiltrati = useMemo(() => {
     if (!clienteSearch) return clientiList;
@@ -675,10 +688,11 @@ function ModuloFineGiro({ titoli, prenotato, canali, token }) {
 
   const exportExcel = () => {
     const XLSX = window.XLSX;
-    const headers = ["N° CEDOLA","EAN","EDITORE","TITOLO","OBJ ASS.","PRENOTATO","AVANZ %",...canali.map(c => c.nome)];
+    const colCanali = ruolo === "agente" ? canaliTabella : canali;
+    const headers = ["N° CEDOLA","EAN","EDITORE","TITOLO","OBJ ASS.","PRENOTATO","AVANZ %",...colCanali.map(c => c.nome)];
     const rows = righe.map(({ titolo: t, totPren, byCanale }) => {
       const pct = t.obiettivo_assegnato > 0 ? Math.round(totPren / t.obiettivo_assegnato * 100) : 0;
-      return [t.n_cedola, t.ean, t.editore_nome, t.titolo, t.obiettivo_assegnato, totPren, `${pct}%`, ...canali.map(c => byCanale[c.codice] ?? 0)];
+      return [t.n_cedola, t.ean, t.editore_nome, t.titolo, t.obiettivo_assegnato, totPren, `${pct}%`, ...colCanali.map(c => byCanale[c.codice] ?? 0)];
     });
     const ws = XLSX.utils.aoa_to_sheet([headers, ...rows]);
     const wb = XLSX.utils.book_new();
@@ -705,31 +719,33 @@ function ModuloFineGiro({ titoli, prenotato, canali, token }) {
           {accounts.map(a => <option key={a} value={a}>{a}</option>)}
         </select>
         <input style={{ ...css.input, width: 180 }} placeholder="Cerca EAN / titolo..." value={search} onChange={e => setSearch(e.target.value)} />
-        <div style={{ position: "relative" }}>
-          <button style={{ ...css.btn(clienteSel ? "accent" : "default"), minWidth: 180, display: "flex", justifyContent: "space-between", alignItems: "center", gap: 8 }}
-            onClick={() => setClienteDropdownOpen(o => !o)}>
-            <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", maxWidth: 150 }}>
-              {clienteSel ? clientiList.find(c => c.cod === clienteSel)?.nome || clienteSel : "Tutti i clienti"}
-            </span>
-            <span>▾</span>
-          </button>
-          {clienteDropdownOpen && (
-            <div style={{ position: "absolute", top: "100%", left: 0, zIndex: 50, background: T.surface, border: `1px solid ${T.borderHi}`, borderRadius: 4, minWidth: 260, maxHeight: 300, overflowY: "auto", marginTop: 4, boxShadow: "0 4px 20px #0008" }}>
-              <div style={{ padding: "8px 12px", borderBottom: `1px solid ${T.border}`, position: "sticky", top: 0, background: T.surface }}>
-                <input style={{ ...css.input, width: "100%", boxSizing: "border-box" }} placeholder="Cerca cliente..." value={clienteSearch} onChange={e => setClienteSearch(e.target.value)} autoFocus />
-              </div>
-              <div style={{ padding: "6px 12px", cursor: "pointer", color: !clienteSel ? T.accent : T.textMid, fontSize: "12px", borderBottom: `1px solid ${T.border}22` }}
-                onClick={() => { setClienteSel(null); setClienteDropdownOpen(false); setClienteSearch(""); }}>Tutti i clienti</div>
-              {clientiFiltrati.map(c => (
-                <div key={c.cod} style={{ padding: "6px 12px", cursor: "pointer", fontSize: "12px", color: clienteSel === c.cod ? T.accent : T.text, background: clienteSel === c.cod ? T.accent + "18" : "transparent", borderBottom: `1px solid ${T.border}22` }}
-                  onClick={() => { setClienteSel(c.cod); setClienteDropdownOpen(false); setClienteSearch(""); }}>
-                  <div style={{ fontWeight: "600" }}>{c.nome}</div>
-                  <div style={{ fontSize: "10px", color: T.textMid }}>{c.cod}</div>
+        {ruolo !== "agente" && (
+          <div style={{ position: "relative" }}>
+            <button style={{ ...css.btn(clienteSel ? "accent" : "default"), minWidth: 180, display: "flex", justifyContent: "space-between", alignItems: "center", gap: 8 }}
+              onClick={() => setClienteDropdownOpen(o => !o)}>
+              <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", maxWidth: 150 }}>
+                {clienteSel ? clientiList.find(c => c.cod === clienteSel)?.nome || clienteSel : "Tutti i clienti"}
+              </span>
+              <span>▾</span>
+            </button>
+            {clienteDropdownOpen && (
+              <div style={{ position: "absolute", top: "100%", left: 0, zIndex: 50, background: T.surface, border: `1px solid ${T.borderHi}`, borderRadius: 4, minWidth: 260, maxHeight: 300, overflowY: "auto", marginTop: 4, boxShadow: "0 4px 20px #0008" }}>
+                <div style={{ padding: "8px 12px", borderBottom: `1px solid ${T.border}`, position: "sticky", top: 0, background: T.surface }}>
+                  <input style={{ ...css.input, width: "100%", boxSizing: "border-box" }} placeholder="Cerca cliente..." value={clienteSearch} onChange={e => setClienteSearch(e.target.value)} autoFocus />
                 </div>
-              ))}
-            </div>
-          )}
-        </div>
+                <div style={{ padding: "6px 12px", cursor: "pointer", color: !clienteSel ? T.accent : T.textMid, fontSize: "12px", borderBottom: `1px solid ${T.border}22` }}
+                  onClick={() => { setClienteSel(null); setClienteDropdownOpen(false); setClienteSearch(""); }}>Tutti i clienti</div>
+                {clientiFiltrati.map(c => (
+                  <div key={c.cod} style={{ padding: "6px 12px", cursor: "pointer", fontSize: "12px", color: clienteSel === c.cod ? T.accent : T.text, background: clienteSel === c.cod ? T.accent + "18" : "transparent", borderBottom: `1px solid ${T.border}22` }}
+                    onClick={() => { setClienteSel(c.cod); setClienteDropdownOpen(false); setClienteSearch(""); }}>
+                    <div style={{ fontWeight: "600" }}>{c.nome}</div>
+                    <div style={{ fontSize: "10px", color: T.textMid }}>{c.cod}</div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        )}
         <div style={{ color: T.textMid, fontSize: "12px" }}>
           Obj: <span style={{ color: T.accent, fontWeight: "700" }}>{totObj.toLocaleString("it")}</span>
           &nbsp;·&nbsp; Pren: <span style={{ color: T.green, fontWeight: "700" }}>{totPrenotato.toLocaleString("it")}</span>
@@ -738,10 +754,10 @@ function ModuloFineGiro({ titoli, prenotato, canali, token }) {
         <button style={{ ...css.btn("accent"), marginLeft: "auto" }} onClick={exportExcel}>↓ Export Excel</button>
       </div>
       <div style={{ padding: "12px 20px", borderBottom: `1px solid ${T.border}`, display: "flex", gap: 12, flexWrap: "wrap" }}>
-        {MACROGRUPPI_FG.map(mg => (
+        {macrogruppiVis.map(mg => (
           <div key={mg.id} style={{ background: T.surface, border: `1px solid ${T.border}`, borderRadius: 4, padding: "10px 14px", minWidth: 160 }}>
             <div style={{ color: T.accent, fontWeight: "700", fontSize: "11px", letterSpacing: "0.08em", textTransform: "uppercase", marginBottom: 8 }}>
-              {mg.label} <span style={{ color: T.green, fontSize: "13px" }}>{totMacro[mg.id].toLocaleString("it")}</span>
+              {mg.label} <span style={{ color: T.green, fontSize: "13px" }}>{totMacro[mg.id]?.toLocaleString("it")}</span>
             </div>
             {mg.canali.map(cod => {
               const c = canali.find(c => c.codice === cod);
@@ -769,7 +785,7 @@ function ModuloFineGiro({ titoli, prenotato, canali, token }) {
               <th style={css.th}>Pren.</th>
               <th style={css.th}>%</th>
               {canaliTabella.map(c => <th key={c.id} style={{ ...css.th, whiteSpace: "normal", maxWidth: 70, lineHeight: 1.2 }}>{c.nome}</th>)}
-              <th style={{ ...css.th, color: T.accent }}>Aurora ✎</th>
+              {ruolo !== "agente" && <th style={{ ...css.th, color: T.accent }}>Aurora ✎</th>}
             </tr>
           </thead>
           <tbody>
@@ -786,24 +802,26 @@ function ModuloFineGiro({ titoli, prenotato, canali, token }) {
                   <td style={{ ...css.td, color: T.green, fontWeight: "600" }}>{totPren > 0 ? totPren.toLocaleString("it") : "—"}</td>
                   <td style={css.td}><span style={{ color: pct >= 80 ? T.green : pct >= 50 ? T.accent : T.red, fontWeight: "700" }}>{pct}%</span></td>
                   {canaliTabella.map(c => <td key={c.id} style={{ ...css.td, color: byCanale[c.codice] ? T.text : T.textDim }}>{byCanale[c.codice]?.toLocaleString("it") ?? "—"}</td>)}
-                  <td style={css.td}>
-                    {isEditingAurora ? (
-                      <div style={{ display: "flex", gap: 4 }}>
-                        <input type="number" defaultValue={auroraEdit[t.id] || 0}
-                          style={{ ...css.input, width: 70, padding: "2px 6px" }}
-                          id={`aurora-${t.id}`} autoFocus
-                          onKeyDown={e => { if (e.key === "Enter") saveAurora(t.id, e.target.value); if (e.key === "Escape") setAuroraEditing(null); }}
-                        />
-                        <button style={{ ...css.btn("accent"), padding: "2px 8px", fontSize: "11px" }}
-                          onClick={() => saveAurora(t.id, document.getElementById(`aurora-${t.id}`).value)}>✓</button>
-                      </div>
-                    ) : (
-                      <div style={{ display: "flex", alignItems: "center", gap: 6, cursor: "pointer" }} onClick={() => setAuroraEditing(t.id)}>
-                        <span style={{ color: auroraEdit[t.id] ? T.text : T.textDim }}>{auroraEdit[t.id]?.toLocaleString("it") || "—"}</span>
-                        <span style={{ color: T.accent, fontSize: "11px" }}>✎</span>
-                      </div>
-                    )}
-                  </td>
+                  {ruolo !== "agente" && (
+                    <td style={css.td}>
+                      {isEditingAurora ? (
+                        <div style={{ display: "flex", gap: 4 }}>
+                          <input type="number" defaultValue={auroraEdit[t.id] || 0}
+                            style={{ ...css.input, width: 70, padding: "2px 6px" }}
+                            id={`aurora-${t.id}`} autoFocus
+                            onKeyDown={e => { if (e.key === "Enter") saveAurora(t.id, e.target.value); if (e.key === "Escape") setAuroraEditing(null); }}
+                          />
+                          <button style={{ ...css.btn("accent"), padding: "2px 8px", fontSize: "11px" }}
+                            onClick={() => saveAurora(t.id, document.getElementById(`aurora-${t.id}`).value)}>✓</button>
+                        </div>
+                      ) : (
+                        <div style={{ display: "flex", alignItems: "center", gap: 6, cursor: "pointer" }} onClick={() => setAuroraEditing(t.id)}>
+                          <span style={{ color: auroraEdit[t.id] ? T.text : T.textDim }}>{auroraEdit[t.id]?.toLocaleString("it") || "—"}</span>
+                          <span style={{ color: T.accent, fontSize: "11px" }}>✎</span>
+                        </div>
+                      )}
+                    </td>
+                  )}
                 </tr>
               );
             })}
@@ -835,6 +853,7 @@ export default function App() {
   const [spalmatura, setSpalmatura] = useState([]);
   const [canali, setCanali] = useState([]);
   const [giriDB, setGiriDB] = useState([]);
+  const [ruolo, setRuolo] = useState("admin");
 
   useEffect(() => {
     if (!session) return;
@@ -843,6 +862,9 @@ export default function App() {
     sbFetch("prenotato?select=*&limit=100000", session.token).then(setPrenotato);
     sbFetch("spalmatura_obiettivo?select=*", session.token).then(setSpalmatura);
     sbFetch("canali?select=*&order=nome.asc", session.token).then(setCanali);
+    sbFetch(`user_profiles?id=eq.${session.user.id}&select=ruolo`, session.token).then(data => {
+      if (Array.isArray(data) && data[0]) setRuolo(data[0].ruolo);
+    });
   }, [session]);
 
   useEffect(() => {
@@ -878,6 +900,10 @@ export default function App() {
   if (checkingAuth) return <div style={{ ...css.app, display: "flex", alignItems: "center", justifyContent: "center", height: "100vh", color: T.textMid }}>Caricamento...</div>;
   if (!session) return <LoginScreen onLogin={handleLogin} />;
 
+  const moduliVis = ruolo === "agente"
+    ? MODULES.filter(m => m.id === "dashboard" || m.id === "cedola" || m.id === "finegiro")
+    : MODULES;
+
   return (
     <div style={{ ...css.app, display: "flex", height: "100vh" }}>
       <div style={css.sidebar}>
@@ -888,7 +914,7 @@ export default function App() {
           <div style={{ color: T.accent, fontSize: "13px", fontWeight: "700", letterSpacing: "0.06em" }}>GIRO MANAGER</div>
         </div>
         <nav style={{ flex: 1, padding: "8px 0" }}>
-          {MODULES.map(m => (
+          {moduliVis.map(m => (
             <button key={m.id} style={{ width: "100%", textAlign: "left", padding: "10px 16px", border: "none", background: activeModule === m.id ? T.accent + "18" : "transparent", color: activeModule === m.id ? T.accent : T.textMid, cursor: "pointer", fontFamily: "inherit", fontSize: "12px", borderLeft: `2px solid ${activeModule === m.id ? T.accent : "transparent"}`, display: "flex", alignItems: "center", gap: 10, letterSpacing: "0.04em" }}
               onClick={() => setActiveModule(m.id)}>
               <span style={{ fontSize: "14px" }}>{m.icon}</span> {m.label}
@@ -896,7 +922,8 @@ export default function App() {
           ))}
         </nav>
         <div style={{ padding: "12px 16px", borderTop: `1px solid ${T.border}` }}>
-          <div style={{ color: T.textDim, fontSize: "10px", marginBottom: 6 }}>{session.user?.email}</div>
+          <div style={{ color: T.textDim, fontSize: "10px", marginBottom: 2 }}>{session.user?.email}</div>
+          <div style={{ color: T.textDim, fontSize: "10px", marginBottom: 6, textTransform: "uppercase", letterSpacing: "0.06em" }}>{ruolo}</div>
           <button style={{ ...css.btn(), fontSize: "11px", padding: "4px 10px", width: "100%", marginBottom: 4 }} onClick={async () => {
             const nuova = prompt("Nuova password (min. 6 caratteri):");
             if (!nuova || nuova.length < 6) { alert("Password troppo corta."); return; }
@@ -917,13 +944,13 @@ export default function App() {
           <span style={{ color: T.accent, fontSize: "11px", letterSpacing: "0.12em", textTransform: "uppercase" }}>{MODULES.find(m => m.id === activeModule)?.label}</span>
           <span style={{ color: T.borderHi }}>·</span>
           <span style={{ color: T.textMid, fontSize: "11px" }}>{titoli.length} titoli · {[...new Set(titoli.map(t => t.n_cedola).filter(Boolean))].length} cedole</span>
-          <button style={{ ...css.btn(), marginLeft: "auto", fontSize: "11px", padding: "4px 10px" }} onClick={refreshDati}>↺ Aggiorna</button>
+          {ruolo !== "agente" && <button style={{ ...css.btn(), marginLeft: "auto", fontSize: "11px", padding: "4px 10px" }} onClick={refreshDati}>↺ Aggiorna</button>}
         </div>
         <div style={{ flex: 1, overflow: "hidden", display: "flex", flexDirection: "column" }}>
-          {activeModule === "dashboard" && <ModuloDashboard titoli={titoli} prenotato={prenotato} canali={canali} />}
-          {activeModule === "cedola" && <ModuloCedola titoli={titoli} giriList={giriDB} onUpdateTitolo={updateTitolo} spalmatura={spalmatura} prenotato={prenotato} />}
+          {activeModule === "dashboard" && <ModuloDashboard titoli={titoli} prenotato={prenotato} canali={canali} ruolo={ruolo} />}
+          {activeModule === "cedola" && <ModuloCedola titoli={titoli} giriList={giriDB} onUpdateTitolo={updateTitolo} spalmatura={spalmatura} prenotato={prenotato} ruolo={ruolo} />}
           {activeModule === "prenotato" && <ModuloPrenotato token={session.token} titoli={titoli} onImportDone={() => sbFetch("prenotato?select=*&limit=100000", session.token).then(setPrenotato)} />}
-          {activeModule === "finegiro" && <ModuloFineGiro titoli={titoli} prenotato={prenotato} canali={canali} token={session.token} />}
+          {activeModule === "finegiro" && <ModuloFineGiro titoli={titoli} prenotato={prenotato} canali={canali} token={session.token} ruolo={ruolo} />}
           {activeModule === "import" && <ModuloImport giriList={giriDB} token={session.token} />}
         </div>
       </div>
