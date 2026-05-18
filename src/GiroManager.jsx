@@ -534,7 +534,7 @@ const accounts = useMemo(() => {
                   <div style={{ fontWeight: "600", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{t.titolo}</div>
                 </td>
                 <td style={{ ...css.td, color: T.textMid }}>{t.autore}</td>
-                <td style={css.td}>€ {t.prezzo?.toFixed(2)}</td>
+                <td style={{ ...css.td, whiteSpace: "nowrap" }}>€ {t.prezzo?.toFixed(2)}</td>
                 <td style={{ ...css.td, color: T.textMid }}>{t.uscita}</td>
                 <td style={{ ...css.td, whiteSpace: "nowrap", minWidth: 120 }}>
                   {(() => { const pren = prenotato.filter(p => p.titolo_id === t.id).reduce((s,p) => s+p.quantita, 0); return (<><div style={{ fontSize: "11px", marginBottom: 4 }}>{pren.toLocaleString("it")} / {(t.obiettivo_assegnato||0).toLocaleString("it")}</div><ProgressBar value={pren} total={t.obiettivo_assegnato} /></>); })()}
