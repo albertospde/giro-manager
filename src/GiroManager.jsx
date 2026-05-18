@@ -173,7 +173,7 @@ function EditModal({ titolo, onSave, onClose }) {
 
 function ModuloDashboard({ titoli, prenotato, canali, ruolo }) {
   const giriLabel = useMemo(() => {
-    return [...new Set(titoli.filter(t => t.giro_label !== "EXTRA").map(t => t.giro_label).filter(Boolean))].sort((a, b) => {
+    return [...new Set(titoli.map(t => t.giro_label).filter(Boolean))].sort((a, b) => {
       const [na, ya] = a.split(" "); const [nb, yb] = b.split(" ");
       return Number(yb || 0) - Number(ya || 0) || Number(nb || 0) - Number(na || 0);
     });
