@@ -514,9 +514,8 @@ function ModuloFineGiro({ titoli, prenotato, canali, token, ruolo }) {
   const canaliTabella = useMemo(() => {
     let base = ruolo === "agente" ? canali.filter(c => CANALI_RETE.includes(c.codice)) : canali.filter(c => c.codice !== "AURORA");
     if (filterCanale !== "tutti") base = base.filter(c => c.codice === filterCanale);
-    if (clienteSel && byCanaleCliente) base = base.filter(c => (byCanaleCliente[c.codice] || 0) > 0);
     return base;
-  }, [canali, ruolo, filterCanale, clienteSel, byCanaleCliente]);
+  }, [canali, ruolo, filterCanale]);
 
   const macrogruppiVis = ruolo === "agente" ? MACROGRUPPI.filter(mg => mg.id === "RETE") : MACROGRUPPI;
 
