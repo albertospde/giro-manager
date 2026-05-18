@@ -6,7 +6,7 @@ const SUPABASE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZ
 const T = {
   bg: "#1a2140", surface: "#212d54", border: "#2e3d6b", borderHi: "#3d4f82",
   text: "#f0f2f8", textMid: "#8b9cc8", textDim: "#4a5a8a",
-  accent: "#7b9fe8", green: "#4caf7d", red: "#e05c5c", blue: "#4a5da0",
+  accent: "#7b9fe8", green: "#4caf7d", red: "#e05c5c",
 };
 
 const css = {
@@ -17,27 +17,60 @@ const css = {
 };
 
 const GRUPPI_CANALE = {
-  0: "INDIPENDENTI_ALTRE_CATENE", 2: "FELTRINELLI", 4: "INDIPENDENTI_ALTRE_CATENE",
-  6: "LIB_RELIGIOSE", 8: "MONDADORI", 11: "LIBRACCIO", 12: "INDIPENDENTI_ALTRE_CATENE",
-  15: "INDIPENDENTI_ALTRE_CATENE", 18: "LIB_RELIGIOSE", 19: "LIB_RELIGIOSE",
-  21: "LIB_RELIGIOSE", 22: "INDIPENDENTI_ALTRE_CATENE", 23: "FELTRINELLI",
-  24: "INDIPENDENTI_ALTRE_CATENE", 25: "GROSSISTI", 28: "FASTBOOK", 30: "GROSSISTI",
-  32: "GIUNTI", 33: "ALTRI_ONLINE", 34: "MONDADORI", 36: "INDIPENDENTI_ALTRE_CATENE",
-  38: "INDIPENDENTI_ALTRE_CATENE", 44: "GDO", 47: "INDIPENDENTI_ALTRE_CATENE",
-  48: "INDIPENDENTI_ALTRE_CATENE", 49: "INDIPENDENTI_ALTRE_CATENE", 50: "INDIPENDENTI_ALTRE_CATENE",
-  55: "INDIPENDENTI_ALTRE_CATENE", 56: "LIBRACCIO", 57: "LIB_RELIGIOSE", 58: "IBS",
-  59: "FELTRINELLI", 60: "INDIPENDENTI_ALTRE_CATENE", 61: "INDIPENDENTI_ALTRE_CATENE",
-  63: "CENTROLIBRI", 65: "INDIPENDENTI_ALTRE_CATENE", 72: "INDIPENDENTI_ALTRE_CATENE",
-  77: "FELTRINELLI", 80: "MONDADORI", 82: "AMAZON", 83: "UBIK", 88: "LIBRACCIO",
-  90: "LIBRACCIO", 91: "LIBRACCIO", 92: "LIBRACCIO", 94: "GDO",
+  0: "INDIPENDENTI_ALTRE_CATENE",
+  2: "FELTRINELLI",
+  4: "INDIPENDENTI_ALTRE_CATENE",
+  6: "LIB_RELIGIOSE",
+  8: "MONDADORI",
+  11: "LIBRACCIO",
+  12: "INDIPENDENTI_ALTRE_CATENE",
+  15: "INDIPENDENTI_ALTRE_CATENE",
+  18: "LIB_RELIGIOSE",
+  19: "LIB_RELIGIOSE",
+  21: "LIB_RELIGIOSE",
+  22: "INDIPENDENTI_ALTRE_CATENE",
+  23: "FELTRINELLI",
+  24: "INDIPENDENTI_ALTRE_CATENE",
+  25: "GROSSISTI",
+  28: "FASTBOOK",
+  30: "GROSSISTI",
+  32: "GIUNTI",
+  33: "ALTRI_ONLINE",
+  34: "MONDADORI",
+  36: "LIB_COOP",
+  38: "INDIPENDENTI_ALTRE_CATENE",
+  44: "GDO",
+  47: "INDIPENDENTI_ALTRE_CATENE",
+  48: "INDIPENDENTI_ALTRE_CATENE",
+  49: "INDIPENDENTI_ALTRE_CATENE",
+  50: "INDIPENDENTI_ALTRE_CATENE",
+  55: "INDIPENDENTI_ALTRE_CATENE",
+  56: "LIBRACCIO",
+  57: "LIB_RELIGIOSE",
+  58: "IBS",
+  59: "FELTRINELLI",
+  60: "INDIPENDENTI_ALTRE_CATENE",
+  61: "INDIPENDENTI_ALTRE_CATENE",
+  63: "CENTROLIBRI",
+  65: "INDIPENDENTI_ALTRE_CATENE",
+  72: "INDIPENDENTI_ALTRE_CATENE",
+  77: "FELTRINELLI",
+  80: "MONDADORI",
+  82: "AMAZON",
+  83: "UBIK",
+  88: "LIBRACCIO",
+  90: "LIBRACCIO",
+  91: "LIBRACCIO",
+  92: "LIBRACCIO",
+  94: "GDO",
 };
 
 const CANALI_LABELS = {
   FELTRINELLI: "Feltrinelli", GIUNTI: "Giunti", MONDADORI: "Mondadori",
   UBIK: "Ubik", LIBRACCIO: "Libraccio", INDIPENDENTI_ALTRE_CATENE: "Indip. & Altre Catene",
-  LIB_RELIGIOSE: "Lib. Religiose", ALTRI_ONLINE: "Altri Online", AMAZON: "Amazon",
-  IBS: "IBS", FASTBOOK: "Fastbook", GROSSISTI: "Grossisti", CENTROLIBRI: "Centrolibri",
-  GDO: "GDO", AURORA: "Aurora",
+  LIB_RELIGIOSE: "Lib. Religiose", LIB_COOP: "Lib. Coop", ALTRI_ONLINE: "Altri Online",
+  AMAZON: "Amazon", IBS: "IBS", FASTBOOK: "Fastbook", GROSSISTI: "Grossisti",
+  CENTROLIBRI: "Centrolibri", GDO: "GDO", AURORA: "Aurora",
 };
 
 export default function ModuloPrenotato({ token, titoli, onImportDone }) {
@@ -61,9 +94,7 @@ export default function ModuloPrenotato({ token, titoli, onImportDone }) {
         const data = XLSX.utils.sheet_to_json(ws, { defval: "" });
         setRighe(data);
 
-        // Aggrega per EAN × canale
         const aggMap = {};
-        // Aggrega per cliente × canale (totale, non per titolo)
         const aggCliMap = {};
 
         data.forEach(row => {
@@ -80,12 +111,10 @@ export default function ModuloPrenotato({ token, titoli, onImportDone }) {
             canale = GRUPPI_CANALE[gruppoInt] || "INDIPENDENTI_ALTRE_CATENE";
           }
 
-          // Per EAN × canale
           const key = `${ean}__${canale}`;
           if (!aggMap[key]) aggMap[key] = { ean, canale, qta: 0 };
           aggMap[key].qta += qta;
 
-          // Per cliente × canale (solo totale)
           if (codiceCliente) {
             const keyC = `${codiceCliente}__${canale}`;
             if (!aggCliMap[keyC]) aggCliMap[keyC] = { codice_cliente: codiceCliente, nome_cliente: nomeCliente, canale, qta: 0 };
@@ -127,7 +156,6 @@ export default function ModuloPrenotato({ token, titoli, onImportDone }) {
     const canaleMap = {};
     canaliDB.forEach(c => { canaleMap[c.codice] = c.id; });
 
-    // Import prenotato per EAN × canale
     const validi = aggregato.filter(r => r.found && r.titolo_id);
     const payload = validi.map(r => ({
       titolo_id: r.titolo_id,
@@ -141,7 +169,6 @@ export default function ModuloPrenotato({ token, titoli, onImportDone }) {
       body: JSON.stringify({ payload }),
     });
 
-    // Import prenotato clienti (cliente × canale, ~1500 righe max)
     const payloadClienti = aggregatoClienti.map(r => ({
       codice_cliente: r.codice_cliente,
       nome_cliente: r.nome_cliente,
@@ -197,22 +224,12 @@ export default function ModuloPrenotato({ token, titoli, onImportDone }) {
       {step === "preview" && (
         <div>
           <div style={{ display: "flex", gap: 12, marginBottom: 20, flexWrap: "wrap" }}>
-            <div style={{ background: T.surface, border: `1px solid ${T.border}`, borderRadius: 4, padding: "10px 16px" }}>
-              <div style={{ color: T.textMid, fontSize: "10px", textTransform: "uppercase", marginBottom: 4 }}>Righe lette</div>
-              <div style={{ color: T.text, fontWeight: "700", fontSize: "20px" }}>{righe.length.toLocaleString("it")}</div>
-            </div>
-            <div style={{ background: T.surface, border: `1px solid ${T.border}`, borderRadius: 4, padding: "10px 16px" }}>
-              <div style={{ color: T.textMid, fontSize: "10px", textTransform: "uppercase", marginBottom: 4 }}>Totale copie</div>
-              <div style={{ color: T.accent, fontWeight: "700", fontSize: "20px" }}>{totaleAggregato.toLocaleString("it")}</div>
-            </div>
-            <div style={{ background: T.surface, border: `1px solid ${T.green}44`, borderRadius: 4, padding: "10px 16px" }}>
-              <div style={{ color: T.textMid, fontSize: "10px", textTransform: "uppercase", marginBottom: 4 }}>Trovati in cedola</div>
-              <div style={{ color: T.green, fontWeight: "700", fontSize: "20px" }}>{totaleFound.toLocaleString("it")}</div>
-            </div>
-            <div style={{ background: T.surface, border: `1px solid ${T.red}44`, borderRadius: 4, padding: "10px 16px" }}>
-              <div style={{ color: T.textMid, fontSize: "10px", textTransform: "uppercase", marginBottom: 4 }}>Non trovati</div>
-              <div style={{ color: T.red, fontWeight: "700", fontSize: "20px" }}>{aggregato.filter(r => !r.found).length}</div>
-            </div>
+            {[["Righe lette", righe.length.toLocaleString("it"), T.text], ["Totale copie", totaleAggregato.toLocaleString("it"), T.accent], ["Trovati in cedola", totaleFound.toLocaleString("it"), T.green], ["Non trovati", aggregato.filter(r => !r.found).length, T.red]].map(([label, val, color]) => (
+              <div key={label} style={{ background: T.surface, border: `1px solid ${T.border}`, borderRadius: 4, padding: "10px 16px" }}>
+                <div style={{ color: T.textMid, fontSize: "10px", textTransform: "uppercase", marginBottom: 4 }}>{label}</div>
+                <div style={{ color, fontWeight: "700", fontSize: "20px" }}>{val}</div>
+              </div>
+            ))}
           </div>
 
           <div style={{ marginBottom: 20, background: T.surface, border: `1px solid ${T.border}`, borderRadius: 4, padding: 16 }}>
