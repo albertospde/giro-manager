@@ -410,10 +410,9 @@ function ModuloCedola({ titoli, giriList, onUpdateTitolo, spalmatura, prenotato,
 
   const exportAgenti = () => {
     const XLSX = window.XLSX;
-    const headers = ["N° CEDOLA","EAN","TITOLO","AUTORE","EDITORE","PREZZO","USCITA","NOTE","EAN GEM 1","TITOLO GEM 1","EAN GEM 2","TITOLO GEM 2","EAN GEM 3","TITOLO GEM 3","OBJ INDIPENDENTI & ALTRE CATENE"];
-    const rows = filtered.map(t => [t.n_cedola, t.ean, t.titolo, t.autore, t.editore_nome, t.prezzo, t.uscita, t.note_comunicazione || t.note, t.ean_gemello_1, t.titolo_gemello_1, t.ean_gemello_2, t.titolo_gemello_2, t.ean_gemello_3, t.titolo_gemello_3, getObjCanale(t, 'INDIPENDENTI_ALTRE_CATENE')]);
+    const headers = ["N° CEDOLA","EAN","TITOLO","AUTORE","COD.EDITORE","EDITORE","PREZZO","USCITA","NOTE","EAN GEM 1","TITOLO GEM 1","EAN GEM 2","TITOLO GEM 2","EAN GEM 3","TITOLO GEM 3","OBJ INDIPENDENTI & ALTRE CATENE"];
+    const rows = filtered.map(t => [t.n_cedola, t.ean, t.titolo, t.autore, t.codice_editore, t.editore_nome, t.prezzo, t.uscita, t.note_comunicazione || t.note, t.ean_gemello_1, t.titolo_gemello_1, t.ean_gemello_2, t.titolo_gemello_2, t.ean_gemello_3, t.titolo_gemello_3, getObjCanale(t, 'INDIPENDENTI_ALTRE_CATENE')]);
     const ws = XLSX.utils.aoa_to_sheet([headers, ...rows]);
-    ws["!cols"] = [14,16,40,25,20,8,10,30,16,30,16,30,16,30,14].map(w => ({ wch: w }));
     const wb = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(wb, ws, "CEDOLA AGENTI");
     XLSX.writeFile(wb, `CEDOLA_AGENTI_${giroLabelSel === "tutti" ? "TUTTI" : giroLabelSel}.xlsx`);
@@ -431,14 +430,12 @@ function ModuloCedola({ titoli, giriList, onUpdateTitolo, spalmatura, prenotato,
       { codice: 'ALTRI_ONLINE', label: 'Altri Online' }, { codice: 'FASTBOOK', label: 'Fastbook' },
       { codice: 'GROSSISTI', label: 'Grossisti' }, { codice: 'CENTROLIBRI', label: 'Centrolibri' }, { codice: 'GDO', label: 'GDO' },
     ];
-    const headersCedola = ["N° CEDOLA","EAN","TITOLO","AUTORE","EDITORE","PREZZO","OBJ TOTALE","NOTE","EAN GEM 1","TITOLO GEM 1","EAN GEM 2","TITOLO GEM 2","EAN GEM 3","TITOLO GEM 3"];
-    const rowsCedola = filtered.map(t => [t.n_cedola, t.ean, t.titolo, t.autore, t.editore_nome, t.prezzo, t.obiettivo_assegnato || 0, t.note_comunicazione || t.note, t.ean_gemello_1, t.titolo_gemello_1, t.ean_gemello_2, t.titolo_gemello_2, t.ean_gemello_3, t.titolo_gemello_3]);
+    const headersCedola = ["N° CEDOLA","EAN","TITOLO","AUTORE","COD.EDITORE","EDITORE","PREZZO","OBJ TOTALE","NOTE","EAN GEM 1","TITOLO GEM 1","EAN GEM 2","TITOLO GEM 2","EAN GEM 3","TITOLO GEM 3"];
+    const rowsCedola = filtered.map(t => [t.n_cedola, t.ean, t.titolo, t.autore, t.codice_editore, t.editore_nome, t.prezzo, t.obiettivo_assegnato || 0, t.note_comunicazione || t.note, t.ean_gemello_1, t.titolo_gemello_1, t.ean_gemello_2, t.titolo_gemello_2, t.ean_gemello_3, t.titolo_gemello_3]);
     const wsCedola = XLSX.utils.aoa_to_sheet([headersCedola, ...rowsCedola]);
-    wsCedola["!cols"] = [14,16,40,25,20,8,10,30,16,30,16,30,16,30].map(w => ({ wch: w }));
-    const headersObj = ["N° CEDOLA","EAN","TITOLO","AUTORE","EDITORE","PREZZO","OBJ TOTALE",...canaliDir.map(c => c.label)];
-    const rowsObj = filtered.map(t => { const objPerCanale = canaliDir.map(c => getObjCanale(t, c.codice)); return [t.n_cedola, t.ean, t.titolo, t.autore, t.editore_nome, t.prezzo, t.obiettivo_assegnato || 0, ...objPerCanale]; });
+    const headersObj = ["N° CEDOLA","EAN","TITOLO","AUTORE","COD.EDITORE","EDITORE","PREZZO","OBJ TOTALE",...canaliDir.map(c => c.label)];
+    const rowsObj = filtered.map(t => { const objPerCanale = canaliDir.map(c => getObjCanale(t, c.codice)); return [t.n_cedola, t.ean, t.titolo, t.autore, t.codice_editore, t.editore_nome, t.prezzo, t.obiettivo_assegnato || 0, ...objPerCanale]; });
     const wsObj = XLSX.utils.aoa_to_sheet([headersObj, ...rowsObj]);
-    wsObj["!cols"] = [14,16,40,25,20,8,10,...canaliDir.map(() => 14)].map(w => ({ wch: w }));
     const wb = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(wb, wsCedola, "CEDOLA");
     XLSX.utils.book_append_sheet(wb, wsObj, "OBIETTIVI");
@@ -500,9 +497,18 @@ function ModuloCedola({ titoli, giriList, onUpdateTitolo, spalmatura, prenotato,
         <table style={css.table}>
           <thead>
             <tr>
-              {[["n_cedola","Cedola"],["","EAN"],["","Titolo"],["","Autore"],["","Cod.Ed."],["editore","Editore"],["prezzo","€"],["","Obj"],["","Flag"],["","Gemelli"],["","Note"],["",""]].map(([key, label]) => (
-                <th key={label} style={css.th} onClick={() => key && setSortKey(key)}>{label}{key && sortKey === key ? " ↓" : ""}</th>
-              ))}
+              <th style={css.th} onClick={() => setSortKey("n_cedola")}>Cedola{sortKey === "n_cedola" ? " ↓" : ""}</th>
+              <th style={css.th}>EAN</th>
+              <th style={css.th}>Titolo</th>
+              <th style={css.th}>Autore</th>
+              <th style={css.th}>Cod.Ed.</th>
+              <th style={css.th} onClick={() => setSortKey("editore")}>Editore{sortKey === "editore" ? " ↓" : ""}</th>
+              <th style={css.th} onClick={() => setSortKey("prezzo")}>€{sortKey === "prezzo" ? " ↓" : ""}</th>
+              <th style={css.th}>Obj</th>
+              <th style={css.th}>Flag</th>
+              <th style={css.th}>Gemelli</th>
+              <th style={css.th}>Note</th>
+              <th style={css.th}></th>
             </tr>
           </thead>
           <tbody>
@@ -633,7 +639,7 @@ function ModuloFineGiro({ titoli, prenotato, canali, token, ruolo }) {
     .filter(t => filterAccount === "tutti" || t.account_editore === filterAccount)
     .filter(t => { if (!search) return true; const q = search.toLowerCase(); return t.titolo?.toLowerCase().includes(q) || t.ean?.includes(q); })
     .sort((a, b) => (a.ranking_editore ?? 99) - (b.ranking_editore ?? 99) || (a.ranking_titolo ?? 99) - (b.ranking_titolo ?? 99)),
-  [titoli, giroLabelSel, cedolaSel, filterEditore, filterAccount, search, extraSel]);
+  [titoli, giroLabelSel, extraSel, cedolaSel, filterEditore, filterAccount, search]);
 
   const totObj = titoliSel.reduce((s, t) => s + (t.obiettivo_assegnato || 0), 0);
 
@@ -692,15 +698,15 @@ function ModuloFineGiro({ titoli, prenotato, canali, token, ruolo }) {
   const exportExcel = () => {
     const XLSX = window.XLSX;
     const colCanali = ruolo === "agente" ? canaliTabella : canali;
-    const headers = ["N° CEDOLA","EAN","EDITORE","TITOLO","OBJ ASS.","PRENOTATO","AVANZ %",...colCanali.map(c => c.nome)];
+    const headers = ["N° CEDOLA","EAN","TITOLO","AUTORE","COD.EDITORE","EDITORE","PREZZO","OBJ ASS.","PRENOTATO","AVANZ %",...colCanali.map(c => c.nome)];
     const rows = righe.map(({ titolo: t, totPren, byCanale }) => {
       const pct = t.obiettivo_assegnato > 0 ? Math.round(totPren / t.obiettivo_assegnato * 100) : 0;
-      return [t.n_cedola, t.ean, t.editore_nome, t.titolo, t.obiettivo_assegnato, totPren, `${pct}%`, ...colCanali.map(c => byCanale[c.codice] ?? 0)];
+      return [t.n_cedola, t.ean, t.titolo, t.autore, t.codice_editore, t.editore_nome, t.prezzo, t.obiettivo_assegnato, totPren, `${pct}%`, ...colCanali.map(c => byCanale[c.codice] ?? 0)];
     });
     const ws = XLSX.utils.aoa_to_sheet([headers, ...rows]);
     const wb = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(wb, ws, "FINE GIRO");
-    XLSX.writeFile(wb, `FINE_GIRO_${giroLabelSel || "TUTTI"}.xlsx`);
+    XLSX.writeFile(wb, `FINE_GIRO_${giroLabelSel || extraSel || "TUTTI"}.xlsx`);
   };
 
   return (
@@ -787,9 +793,12 @@ function ModuloFineGiro({ titoli, prenotato, canali, token, ruolo }) {
           <thead>
             <tr>
               <th style={css.th}>Cedola</th>
-              <th style={css.th}>Editore</th>
-              <th style={css.th}>Titolo</th>
               <th style={css.th}>EAN</th>
+              <th style={css.th}>Titolo</th>
+              <th style={css.th}>Autore</th>
+              <th style={css.th}>Cod.Ed.</th>
+              <th style={css.th}>Editore</th>
+              <th style={css.th}>€</th>
               <th style={css.th}>Obj</th>
               <th style={css.th}>Pren.</th>
               <th style={css.th}>%</th>
