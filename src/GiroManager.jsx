@@ -467,7 +467,7 @@ function ModuloFineGiro({ titoli, prenotato, canali, token, ruolo }) {
 
   useEffect(() => {
     if (!clienteSel || !token) { setPrenotatoCliente([]); return; }
-    fetch(`${SUPABASE_URL}/rest/v1/prenotato_clienti?codice_cliente=eq.${encodeURIComponent(clienteSel)}&select=canale_id,quantita&limit=10000`, {
+    fetch(`${SUPABASE_URL}/rest/v1/prenotato_clienti?codice_cliente=eq.${encodeURIComponent(clienteSel)}&select=titolo_id,canale_id,quantita&limit=100000`, {
       headers: { "apikey": SUPABASE_KEY, "Authorization": `Bearer ${token}` }
     }).then(r => r.json()).then(data => { if (Array.isArray(data)) setPrenotatoCliente(data); });
   }, [clienteSel, token]);
@@ -512,14 +512,13 @@ function ModuloFineGiro({ titoli, prenotato, canali, token, ruolo }) {
   }, [titoli, giroLabelSel, extraSel, cedolaSel, filterEditore, filterAccount, search]);
 
   const canaliTabella = useMemo(() => {
-    let base = ruolo === "agente" ? canali.filter(c => CANALI_RETE.includes(c.codice)) : canali.filter(c => c.codice !== "AURORA");
-    if (filterCanale !== "tutti") base = base.filter(c => c.codice === filterCanale);
-    return base;
-  }, [canali, ruolo, filterCanale]);
+    if (ruolo === "agente") return canali.filter(c => CANALI_RETE.includes(c.codice));
+    return canali.filter(c => c.codice !== "AURORA");
+  }, [canali, ruolo]);
 
   const macrogruppiVis = ruolo === "agente" ? MACROGRUPPI.filter(mg => mg.id === "RETE") : MACROGRUPPI;
 
-  // Totali cliente per canale
+  // Totali cliente per canale (per riepilogo)
   const byCanaleCliente = useMemo(() => {
     if (!clienteSel || prenotatoCliente.length === 0) return null;
     const map = {};
@@ -527,7 +526,26 @@ function ModuloFineGiro({ titoli, prenotato, canali, token, ruolo }) {
     return map;
   }, [clienteSel, prenotatoCliente, canali]);
 
+  // Mappa titolo_id -> { canale_codice: quantita } per cliente selezionato
+  const prenotatoClienteByTitolo = useMemo(() => {
+    if (!clienteSel || prenotatoCliente.length === 0) return null;
+    const map = {};
+    prenotatoCliente.forEach(p => {
+      if (!p.titolo_id) return;
+      if (!map[p.titolo_id]) map[p.titolo_id] = {};
+      const c = canali.find(c => c.id === p.canale_id);
+      if (c) map[p.titolo_id][c.codice] = (map[p.titolo_id][c.codice] || 0) + p.quantita;
+    });
+    return map;
+  }, [clienteSel, prenotatoCliente, canali]);
+
   const righe = useMemo(() => titoliSel.map(t => {
+    // Se cliente selezionato, usa il prenotato del cliente per quel titolo
+    if (clienteSel && prenotatoClienteByTitolo) {
+      const byCanale = prenotatoClienteByTitolo[t.id] || {};
+      const totPren = Object.values(byCanale).reduce((s, v) => s + v, 0);
+      return { titolo: t, totPren, byCanale };
+    }
     const pren = prenotato.filter(p => p.titolo_id === t.id);
     const aurora = ruolo !== "agente" ? (auroraEdit[t.id] || 0) : 0;
     const totPrenBase = pren.reduce((s, p) => s + p.quantita, 0);
@@ -539,10 +557,13 @@ function ModuloFineGiro({ titoli, prenotato, canali, token, ruolo }) {
       return { titolo: t, totPren: totRete, byCanale };
     }
     return { titolo: t, totPren: totPrenBase + aurora, byCanale };
-  }), [titoliSel, prenotato, canali, auroraEdit, ruolo]);
+  }), [titoliSel, prenotato, canali, auroraEdit, ruolo, clienteSel, prenotatoClienteByTitolo]);
 
   // Applica filtro canale
-  const righeFiltrate = useMemo(() => righe, [righe]);
+  const righeFiltrate = useMemo(() => {
+    if (filterCanale === "tutti") return righe;
+    return righe.filter(({ byCanale }) => (byCanale[filterCanale] || 0) > 0);
+  }, [righe, filterCanale]);
 
   const totObj = righeFiltrate.reduce((s, r) => s + (r.titolo.obiettivo_assegnato || 0), 0);
   const totPrenotato = righeFiltrate.reduce((s, r) => s + r.totPren, 0);
@@ -560,7 +581,7 @@ function ModuloFineGiro({ titoli, prenotato, canali, token, ruolo }) {
 
   const exportExcel = () => {
     const XLSX = window.XLSX;
-    const colCanali = canaliTabella;
+    const colCanali = ruolo === "agente" ? canaliTabella : canali;
     const headers = ["N° CEDOLA","EAN","TITOLO","AUTORE","COD.EDITORE","EDITORE","PREZZO","OBJ ASS.","PRENOTATO","AVANZ %",...colCanali.map(c => c.nome)];
     const rows = righeFiltrate.map(({ titolo: t, totPren, byCanale }) => {
       const pct = t.obiettivo_assegnato > 0 ? Math.round(totPren / t.obiettivo_assegnato * 100) : 0;
@@ -710,7 +731,7 @@ function ModuloFineGiro({ titoli, prenotato, canali, token, ruolo }) {
               <th style={css.th}>Autore</th><th style={css.th}>Cod.Ed.</th><th style={css.th}>Editore</th>
               <th style={css.th}>€</th><th style={css.th}>Obj</th><th style={css.th}>Pren.</th><th style={css.th}>%</th>
               {canaliTabella.map(c => <th key={c.id} style={{ ...css.th, whiteSpace: "normal", maxWidth: 70, lineHeight: 1.2 }}>{c.nome}</th>)}
-              {ruolo !== "agente" && (filterCanale === "tutti" || filterCanale === "AURORA") && <th style={{ ...css.th, color: T.accent }}>Aurora ✎</th>}
+              {ruolo !== "agente" && <th style={{ ...css.th, color: T.accent }}>Aurora ✎</th>}
             </tr>
           </thead>
           <tbody>
@@ -730,7 +751,7 @@ function ModuloFineGiro({ titoli, prenotato, canali, token, ruolo }) {
                   <td style={{ ...css.td, color: T.green, fontWeight: "600" }}>{totPren > 0 ? totPren.toLocaleString("it") : "—"}</td>
                   <td style={css.td}><span style={{ color: pct >= 80 ? T.green : pct >= 50 ? T.accent : T.red, fontWeight: "700" }}>{pct}%</span></td>
                   {canaliTabella.map(c => <td key={c.id} style={{ ...css.td, color: byCanale[c.codice] ? T.text : T.textDim }}>{byCanale[c.codice]?.toLocaleString("it") ?? "—"}</td>)}
-                  {ruolo !== "agente" && (filterCanale === "tutti" || filterCanale === "AURORA") && (
+                  {ruolo !== "agente" && (
                     <td style={css.td}>
                       {isEditingAurora ? (
                         <div style={{ display: "flex", gap: 4 }}>
