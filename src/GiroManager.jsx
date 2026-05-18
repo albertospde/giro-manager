@@ -142,7 +142,7 @@ function EditModal({ titolo, onSave, onClose }) {
           <button style={css.btn()} onClick={onClose}>✕</button>
         </div>
         <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
-          {[["ean","EAN"]["titolo","Titolo","full"],["autore","Autore"],["editore_nome","Editore"],,["prezzo","Prezzo"],["uscita","Uscita"],["formato","Formato"],["eta","Età"],["account_editore","Account"],["promozione","Promozione"],["obiettivo_assegnato","Obiettivo assegnato"],["obiettivo_raggiunto","Obiettivo raggiunto"]].map(([k, label, span]) => (
+          {[["titolo","Titolo","full"],["autore","Autore"],["editore_nome","Editore"],["ean","EAN"],["prezzo","Prezzo"],["uscita","Uscita"],["formato","Formato"],["eta","Età"],["account_editore","Account"],["promozione","Promozione"],["obiettivo_assegnato","Obiettivo assegnato"],["obiettivo_raggiunto","Obiettivo raggiunto"]].map(([k, label, span]) => (
             <div key={k} style={span === "full" ? { gridColumn: "1/-1" } : {}}>
               <label style={{ color: T.textMid, fontSize: "10px", letterSpacing: "0.08em", textTransform: "uppercase", display: "block", marginBottom: 4 }}>{label}</label>
               <input style={{ ...css.input, width: "100%", boxSizing: "border-box" }} value={form[k] ?? ""} onChange={set(k)} />
@@ -500,7 +500,7 @@ function ModuloCedola({ titoli, giriList, onUpdateTitolo, spalmatura, prenotato,
         <table style={css.table}>
           <thead>
             <tr>
-              {[["n_cedola","Cedola"],["","EAN"],["editore","Editore"],["","Titolo"],["","Autore"],["prezzo","€"],["","Uscita"],["","Obj"],["","Flag"],["","Gemelli"],["","Note"],["",""]].map(([key, label]) => (
+              {[["n_cedola","Cedola"],["","EAN"],["","Titolo"],["","Autore"],["","Cod.Ed."],["editore","Editore"],["prezzo","€"],["","Obj"],["","Flag"],["","Gemelli"],["","Note"],["",""]].map(([key, label]) => (
                 <th key={label} style={css.th} onClick={() => key && setSortKey(key)}>{label}{key && sortKey === key ? " ↓" : ""}</th>
               ))}
             </tr>
@@ -510,13 +510,13 @@ function ModuloCedola({ titoli, giriList, onUpdateTitolo, spalmatura, prenotato,
               <tr key={t.id} style={{ background: i % 2 === 0 ? "transparent" : T.surface + "66" }}>
                 <td style={{ ...css.td, color: T.textMid, fontSize: "10px", whiteSpace: "nowrap" }}>{t.n_cedola}</td>
                 <td style={{ ...css.td, color: T.textDim, fontFamily: "monospace", fontSize: "11px" }}>{t.ean}</td>
-                <td style={{ ...css.td, color: T.accent, fontWeight: "600", whiteSpace: "nowrap" }}>{t.editore_nome}</td>
                 <td style={{ ...css.td, maxWidth: 260 }}>
                   <div style={{ fontWeight: "600", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{t.titolo}</div>
                 </td>
                 <td style={{ ...css.td, color: T.textMid }}>{t.autore}</td>
+                <td style={{ ...css.td, color: T.textMid, fontSize: "11px" }}>{t.codice_editore}</td>
+                <td style={{ ...css.td, color: T.accent, fontWeight: "600", whiteSpace: "nowrap" }}>{t.editore_nome}</td>
                 <td style={{ ...css.td, whiteSpace: "nowrap" }}>€ {t.prezzo?.toFixed(2)}</td>
-                <td style={{ ...css.td, color: T.textMid }}>{t.uscita}</td>
                 <td style={{ ...css.td, whiteSpace: "nowrap", minWidth: 120 }}>
                   {(() => { const pren = prenotato.filter(p => p.titolo_id === t.id).reduce((s,p) => s+p.quantita, 0); return (<><div style={{ fontSize: "11px", marginBottom: 4 }}>{pren.toLocaleString("it")} / {(t.obiettivo_assegnato||0).toLocaleString("it")}</div><ProgressBar value={pren} total={t.obiettivo_assegnato} /></>); })()}
                 </td>
@@ -789,7 +789,6 @@ function ModuloFineGiro({ titoli, prenotato, canali, token, ruolo }) {
               <th style={css.th}>Cedola</th>
               <th style={css.th}>Editore</th>
               <th style={css.th}>Titolo</th>
-              <th style={css.th}>Autore</th>
               <th style={css.th}>EAN</th>
               <th style={css.th}>Obj</th>
               <th style={css.th}>Pren.</th>
@@ -805,10 +804,12 @@ function ModuloFineGiro({ titoli, prenotato, canali, token, ruolo }) {
               return (
                 <tr key={t.id} style={{ background: i % 2 === 0 ? "transparent" : T.surface + "66" }}>
                   <td style={{ ...css.td, color: T.textMid, fontSize: "10px", whiteSpace: "nowrap" }}>{t.n_cedola}</td>
-                  <td style={{ ...css.td, color: T.accent, fontWeight: "600", whiteSpace: "nowrap" }}>{t.editore_nome}</td>
+                  <td style={{ ...css.td, fontFamily: "monospace", fontSize: "11px", color: T.textMid }}>{t.ean}</td>
                   <td style={{ ...css.td, maxWidth: 200 }}><div style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{t.titolo}</div></td>
                   <td style={{ ...css.td, color: T.textMid }}>{t.autore}</td>
-                  <td style={{ ...css.td, fontFamily: "monospace", fontSize: "11px", color: T.textMid }}>{t.ean}</td>
+                  <td style={{ ...css.td, color: T.textMid, fontSize: "11px" }}>{t.codice_editore}</td>
+                  <td style={{ ...css.td, color: T.accent, fontWeight: "600", whiteSpace: "nowrap" }}>{t.editore_nome}</td>
+                  <td style={{ ...css.td, whiteSpace: "nowrap" }}>€ {t.prezzo?.toFixed(2)}</td>
                   <td style={css.td}>{t.obiettivo_assegnato?.toLocaleString("it")}</td>
                   <td style={{ ...css.td, color: T.green, fontWeight: "600" }}>{totPren > 0 ? totPren.toLocaleString("it") : "—"}</td>
                   <td style={css.td}><span style={{ color: pct >= 80 ? T.green : pct >= 50 ? T.accent : T.red, fontWeight: "700" }}>{pct}%</span></td>
