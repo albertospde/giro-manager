@@ -541,12 +541,15 @@ const MACROGRUPPI_FG = [
 ];
 
 function ModuloFineGiro({ titoli, prenotato, canali, token, ruolo }) {
-  const giriLabel = useMemo(() => [...new Set(titoli.map(t => t.giro_label).filter(Boolean))].sort((a, b) => {
+  const giriLabel = useMemo(() => [...new Set(titoli.filter(t => t.giro_label !== "EXTRA").map(t => t.giro_label).filter(Boolean))].sort((a, b) => {
     const [na, ya] = a.split(" "); const [nb, yb] = b.split(" ");
     return Number(yb || 0) - Number(ya || 0) || Number(nb || 0) - Number(na || 0);
   }), [titoli]);
 
+  const cedoleExtra = useMemo(() => [...new Set(titoli.filter(t => t.giro_label === "EXTRA").map(t => t.n_cedola).filter(Boolean))].sort(), [titoli]);
+
   const [giroLabelSel, setGiroLabelSel] = useState(null);
+  const [extraSel, setExtraSel] = useState(null);
   const [cedolaSel, setCedolaSel] = useState("tutti");
   const [filterEditore, setFilterEditore] = useState("tutti");
   const [filterAccount, setFilterAccount] = useState("tutti");
@@ -624,13 +627,13 @@ function ModuloFineGiro({ titoli, prenotato, canali, token, ruolo }) {
   }, [titoli, giroLabelSel]);
 
   const titoliSel = useMemo(() => titoli
-    .filter(t => !giroLabelSel || t.giro_label === giroLabelSel)
+    .filter(t => extraSel ? (t.giro_label === "EXTRA" && t.n_cedola === extraSel) : (!giroLabelSel || t.giro_label === giroLabelSel))
     .filter(t => cedolaSel === "tutti" || t.n_cedola === cedolaSel)
     .filter(t => filterEditore === "tutti" || t.editore_nome === filterEditore)
     .filter(t => filterAccount === "tutti" || t.account_editore === filterAccount)
     .filter(t => { if (!search) return true; const q = search.toLowerCase(); return t.titolo?.toLowerCase().includes(q) || t.ean?.includes(q); })
     .sort((a, b) => (a.ranking_editore ?? 99) - (b.ranking_editore ?? 99) || (a.ranking_titolo ?? 99) - (b.ranking_titolo ?? 99)),
-  [titoli, giroLabelSel, cedolaSel, filterEditore, filterAccount, search]);
+  [titoli, giroLabelSel, cedolaSel, filterEditore, filterAccount, search, extraSel]);
 
   const totObj = titoliSel.reduce((s, t) => s + (t.obiettivo_assegnato || 0), 0);
 
@@ -703,9 +706,15 @@ function ModuloFineGiro({ titoli, prenotato, canali, token, ruolo }) {
   return (
     <div style={{ display: "flex", flexDirection: "column", height: "100%", overflow: "hidden" }}>
       <div style={{ padding: "12px 20px", borderBottom: `1px solid ${T.border}`, display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap" }}>
-        <select style={css.input} value={giroLabelSel || ""} onChange={e => { setGiroLabelSel(e.target.value); setCedolaSel("tutti"); setFilterEditore("tutti"); setFilterAccount("tutti"); }}>
+        <select style={css.input} value={giroLabelSel || ""} onChange={e => { setGiroLabelSel(e.target.value); setCedolaSel("tutti"); setFilterEditore("tutti"); setFilterAccount("tutti"); setExtraSel(null); }}>
           {giriLabel.map(g => <option key={g} value={g}>Giro {g}</option>)}
         </select>
+        {cedoleExtra.length > 0 && (
+          <select style={{ ...css.input, borderColor: extraSel ? T.accent : T.border }} value={extraSel || ""} onChange={e => { setExtraSel(e.target.value || null); if (e.target.value) { setGiroLabelSel(null); setCedolaSel("tutti"); } }}>
+            <option value="">— Cedole Extra —</option>
+            {cedoleExtra.map(c => <option key={c} value={c}>{c}</option>)}
+          </select>
+        )}
         <select style={css.input} value={cedolaSel} onChange={e => setCedolaSel(e.target.value)}>
           <option value="tutti">Tutte le cedole</option>
           {cedole.map(c => <option key={c} value={c}>{c}</option>)}
