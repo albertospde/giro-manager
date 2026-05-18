@@ -17,52 +17,19 @@ const css = {
 };
 
 const GRUPPI_CANALE = {
-  0: "INDIPENDENTI_ALTRE_CATENE",
-  2: "FELTRINELLI",
-  4: "INDIPENDENTI_ALTRE_CATENE",
-  6: "LIB_RELIGIOSE",
-  8: "MONDADORI",
-  11: "LIBRACCIO",
-  12: "INDIPENDENTI_ALTRE_CATENE",
-  15: "INDIPENDENTI_ALTRE_CATENE",
-  18: "LIB_RELIGIOSE",
-  19: "LIB_RELIGIOSE",
-  21: "LIB_RELIGIOSE",
-  22: "INDIPENDENTI_ALTRE_CATENE",
-  23: "FELTRINELLI",
-  24: "INDIPENDENTI_ALTRE_CATENE",
-  25: "GROSSISTI",
-  28: "FASTBOOK",
-  30: "GROSSISTI",
-  32: "GIUNTI",
-  33: "ALTRI_ONLINE",
-  34: "MONDADORI",
-  36: "LIB_COOP",
-  38: "INDIPENDENTI_ALTRE_CATENE",
-  44: "GDO",
-  47: "INDIPENDENTI_ALTRE_CATENE",
-  48: "INDIPENDENTI_ALTRE_CATENE",
-  49: "INDIPENDENTI_ALTRE_CATENE",
-  50: "INDIPENDENTI_ALTRE_CATENE",
-  55: "INDIPENDENTI_ALTRE_CATENE",
-  56: "LIBRACCIO",
-  57: "LIB_RELIGIOSE",
-  58: "IBS",
-  59: "FELTRINELLI",
-  60: "INDIPENDENTI_ALTRE_CATENE",
-  61: "INDIPENDENTI_ALTRE_CATENE",
-  63: "CENTROLIBRI",
-  65: "INDIPENDENTI_ALTRE_CATENE",
-  72: "INDIPENDENTI_ALTRE_CATENE",
-  77: "FELTRINELLI",
-  80: "MONDADORI",
-  82: "AMAZON",
-  83: "UBIK",
-  88: "LIBRACCIO",
-  90: "LIBRACCIO",
-  91: "LIBRACCIO",
-  92: "LIBRACCIO",
-  94: "GDO",
+  0: "INDIPENDENTI_ALTRE_CATENE", 2: "FELTRINELLI", 4: "INDIPENDENTI_ALTRE_CATENE",
+  6: "LIB_RELIGIOSE", 8: "MONDADORI", 11: "LIBRACCIO", 12: "INDIPENDENTI_ALTRE_CATENE",
+  15: "INDIPENDENTI_ALTRE_CATENE", 18: "LIB_RELIGIOSE", 19: "LIB_RELIGIOSE",
+  21: "LIB_RELIGIOSE", 22: "INDIPENDENTI_ALTRE_CATENE", 23: "FELTRINELLI",
+  24: "INDIPENDENTI_ALTRE_CATENE", 25: "GROSSISTI", 28: "FASTBOOK", 30: "GROSSISTI",
+  32: "GIUNTI", 33: "ALTRI_ONLINE", 34: "MONDADORI", 36: "LIB_COOP",
+  38: "INDIPENDENTI_ALTRE_CATENE", 44: "GDO", 47: "INDIPENDENTI_ALTRE_CATENE",
+  48: "INDIPENDENTI_ALTRE_CATENE", 49: "INDIPENDENTI_ALTRE_CATENE", 50: "INDIPENDENTI_ALTRE_CATENE",
+  55: "INDIPENDENTI_ALTRE_CATENE", 56: "LIBRACCIO", 57: "LIB_RELIGIOSE", 58: "IBS",
+  59: "FELTRINELLI", 60: "INDIPENDENTI_ALTRE_CATENE", 61: "INDIPENDENTI_ALTRE_CATENE",
+  63: "CENTROLIBRI", 65: "INDIPENDENTI_ALTRE_CATENE", 72: "INDIPENDENTI_ALTRE_CATENE",
+  77: "FELTRINELLI", 80: "MONDADORI", 82: "AMAZON", 83: "UBIK", 88: "LIBRACCIO",
+  90: "LIBRACCIO", 91: "LIBRACCIO", 92: "LIBRACCIO", 94: "GDO",
 };
 
 const CANALI_LABELS = {
@@ -94,7 +61,9 @@ export default function ModuloPrenotato({ token, titoli, onImportDone }) {
         const data = XLSX.utils.sheet_to_json(ws, { defval: "" });
         setRighe(data);
 
+        // Aggrega per EAN × canale (tabella prenotato)
         const aggMap = {};
+        // Aggrega per EAN × cliente × canale (tabella prenotato_clienti con titolo_id)
         const aggCliMap = {};
 
         data.forEach(row => {
@@ -111,13 +80,15 @@ export default function ModuloPrenotato({ token, titoli, onImportDone }) {
             canale = GRUPPI_CANALE[gruppoInt] || "INDIPENDENTI_ALTRE_CATENE";
           }
 
+          // Per EAN × canale
           const key = `${ean}__${canale}`;
           if (!aggMap[key]) aggMap[key] = { ean, canale, qta: 0 };
           aggMap[key].qta += qta;
 
+          // Per cliente × EAN × canale
           if (codiceCliente) {
-            const keyC = `${codiceCliente}__${canale}`;
-            if (!aggCliMap[keyC]) aggCliMap[keyC] = { codice_cliente: codiceCliente, nome_cliente: nomeCliente, canale, qta: 0 };
+            const keyC = `${codiceCliente}__${ean}__${canale}`;
+            if (!aggCliMap[keyC]) aggCliMap[keyC] = { codice_cliente: codiceCliente, nome_cliente: nomeCliente, ean, canale, qta: 0 };
             aggCliMap[keyC].qta += qta;
           }
         });
@@ -127,8 +98,13 @@ export default function ModuloPrenotato({ token, titoli, onImportDone }) {
           return { ...r, titolo: titolo?.titolo ?? "— non trovato —", found: !!titolo, titolo_id: titolo?.id };
         }).sort((a, b) => a.ean.localeCompare(b.ean));
 
+        const resultClienti = Object.values(aggCliMap).map(r => {
+          const titolo = titoli.find(t => t.ean === r.ean || t.ean === String(parseInt(r.ean)));
+          return { ...r, found: !!titolo, titolo_id: titolo?.id };
+        });
+
         setAggregato(result);
-        setAggregatoClienti(Object.values(aggCliMap));
+        setAggregatoClienti(resultClienti);
         setStep("preview");
       } catch (err) {
         alert("Errore lettura file: " + err.message);
@@ -156,6 +132,7 @@ export default function ModuloPrenotato({ token, titoli, onImportDone }) {
     const canaleMap = {};
     canaliDB.forEach(c => { canaleMap[c.codice] = c.id; });
 
+    // Import prenotato aggregato per EAN × canale
     const validi = aggregato.filter(r => r.found && r.titolo_id);
     const payload = validi.map(r => ({
       titolo_id: r.titolo_id,
@@ -169,18 +146,25 @@ export default function ModuloPrenotato({ token, titoli, onImportDone }) {
       body: JSON.stringify({ payload }),
     });
 
-    const payloadClienti = aggregatoClienti.map(r => ({
+    // Import prenotato_clienti con titolo_id
+    const validiClienti = aggregatoClienti.filter(r => r.found && r.titolo_id);
+    const payloadClienti = validiClienti.map(r => ({
       codice_cliente: r.codice_cliente,
       nome_cliente: r.nome_cliente,
       canale_id: canaleMap[r.canale] || null,
+      titolo_id: r.titolo_id,
       quantita: r.qta,
     })).filter(r => r.canale_id !== null);
 
-    await fetch(`${SUPABASE_URL}/rest/v1/rpc/upsert_prenotato_clienti`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json", "apikey": SUPABASE_KEY, "Authorization": `Bearer ${token}` },
-      body: JSON.stringify({ payload: payloadClienti }),
-    });
+    // Batch da 500
+    for (let i = 0; i < payloadClienti.length; i += 500) {
+      const batch = payloadClienti.slice(i, i + 500);
+      await fetch(`${SUPABASE_URL}/rest/v1/rpc/upsert_prenotato_clienti`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", "apikey": SUPABASE_KEY, "Authorization": `Bearer ${token}` },
+        body: JSON.stringify({ payload: batch }),
+      });
+    }
 
     if (res1.ok) {
       setDone({ ok: payload.length, totQta: totaleFound });
