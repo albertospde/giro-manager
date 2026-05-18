@@ -519,74 +519,122 @@ const accounts = useMemo(() => {
   );
 }
 
-function ModuloFineGiro({ titoli, prenotato, canali }) {
+function ModuloFineGiro({ titoli, prenotato, canali, token }) {
   const giriLabel = useMemo(() => [...new Set(titoli.map(t => t.giro_label).filter(Boolean))].sort((a, b) => {
     const [na, ya] = a.split(" "); const [nb, yb] = b.split(" ");
     return Number(yb || 0) - Number(ya || 0) || Number(nb || 0) - Number(na || 0);
   }), [titoli]);
 
-  const [giroLabelSel, setGiroLabelSel] = useState("tutti");
+  const [giroLabelSel, setGiroLabelSel] = useState(null);
   const [cedolaSel, setCedolaSel] = useState("tutti");
   const [filterEditore, setFilterEditore] = useState("tutti");
   const [filterAccount, setFilterAccount] = useState("tutti");
+  const [search, setSearch] = useState("");
+  const [clienteSearch, setClienteSearch] = useState("");
+  const [clienteSel, setClienteSel] = useState(null);
+  const [clientiList, setClientiList] = useState([]);
+  const [clienteDropdownOpen, setClienteDropdownOpen] = useState(false);
+  const [prenotatoCliente, setPrenotatoCliente] = useState([]);
+
+  useEffect(() => { if (giriLabel.length > 0 && !giroLabelSel) setGiroLabelSel(giriLabel[0]); }, [giriLabel]);
+
+  // Carica lista clienti da Supabase
+  useEffect(() => {
+    if (!token) return;
+    fetch(`${SUPABASE_URL}/rest/v1/prenotato_clienti?select=codice_cliente,nome_cliente&limit=10000`, {
+      headers: { "apikey": SUPABASE_KEY, "Authorization": `Bearer ${token}` }
+    }).then(r => r.json()).then(data => {
+      if (!Array.isArray(data)) return;
+      const map = {};
+      data.forEach(r => { map[r.codice_cliente] = r.nome_cliente; });
+      setClientiList(Object.entries(map).map(([cod, nome]) => ({ cod, nome })).sort((a, b) => a.nome.localeCompare(b.nome)));
+    });
+  }, [token]);
+
+  // Carica prenotato per cliente selezionato
+  useEffect(() => {
+    if (!clienteSel || !token) { setPrenotatoCliente([]); return; }
+    fetch(`${SUPABASE_URL}/rest/v1/prenotato_clienti?codice_cliente=eq.${clienteSel}&select=*&limit=10000`, {
+      headers: { "apikey": SUPABASE_KEY, "Authorization": `Bearer ${token}` }
+    }).then(r => r.json()).then(data => {
+      if (Array.isArray(data)) setPrenotatoCliente(data);
+    });
+  }, [clienteSel, token]);
 
   const cedole = useMemo(() => {
-    const t = giroLabelSel === "tutti" ? titoli : titoli.filter(t => t.giro_label === giroLabelSel);
+    const t = giroLabelSel ? titoli.filter(t => t.giro_label === giroLabelSel) : titoli;
     return [...new Set(t.map(t => t.n_cedola).filter(Boolean))].sort();
   }, [titoli, giroLabelSel]);
 
   const editori = useMemo(() => {
-    const t = giroLabelSel === "tutti" ? titoli : titoli.filter(t => t.giro_label === giroLabelSel);
+    const t = giroLabelSel ? titoli.filter(t => t.giro_label === giroLabelSel) : titoli;
     return [...new Set(t.map(t => t.editore_nome).filter(Boolean))].sort();
   }, [titoli, giroLabelSel]);
 
   const accounts = useMemo(() => {
-    const t = giroLabelSel === "tutti" ? titoli : titoli.filter(t => t.giro_label === giroLabelSel);
+    const t = giroLabelSel ? titoli.filter(t => t.giro_label === giroLabelSel) : titoli;
     return [...new Set(t.map(t => t.account_editore).filter(Boolean))].sort();
   }, [titoli, giroLabelSel]);
 
   const titoliSel = useMemo(() => titoli
-    .filter(t => giroLabelSel === "tutti" || t.giro_label === giroLabelSel)
+    .filter(t => !giroLabelSel || t.giro_label === giroLabelSel)
     .filter(t => cedolaSel === "tutti" || t.n_cedola === cedolaSel)
     .filter(t => filterEditore === "tutti" || t.editore_nome === filterEditore)
     .filter(t => filterAccount === "tutti" || t.account_editore === filterAccount)
+    .filter(t => {
+      if (!search) return true;
+      const q = search.toLowerCase();
+      return t.titolo?.toLowerCase().includes(q) || t.ean?.includes(q);
+    })
     .sort((a, b) => (a.ranking_editore ?? 99) - (b.ranking_editore ?? 99) || (a.ranking_titolo ?? 99) - (b.ranking_titolo ?? 99)),
-  [titoli, giroLabelSel, cedolaSel, filterEditore, filterAccount]);
+  [titoli, giroLabelSel, cedolaSel, filterEditore, filterAccount, search]);
 
   const totObj = titoliSel.reduce((s, t) => s + (t.obiettivo_assegnato || 0), 0);
 
   const righe = useMemo(() => titoliSel.map(t => {
+    // Se cliente selezionato, usa prenotato cliente
+    if (clienteSel) {
+      const prenCli = prenotatoCliente.filter(p => p.titolo_id === t.id);
+      const totPren = prenCli.reduce((s, p) => s + p.quantita, 0);
+      const byCanale = {};
+      prenCli.forEach(p => { const c = canali.find(c => c.id === p.canale_id); if (c) byCanale[c.codice] = p.quantita; });
+      return { titolo: t, totPren, byCanale };
+    }
     const pren = prenotato.filter(p => p.titolo_id === t.id);
     const totPren = pren.reduce((s, p) => s + p.quantita, 0);
     const byCanale = {};
     pren.forEach(p => { const c = canali.find(c => c.id === p.canale_id); if (c) byCanale[c.codice] = p.quantita; });
     return { titolo: t, totPren, byCanale };
-  }), [titoliSel, prenotato, canali]);
+  }), [titoliSel, prenotato, prenotatoCliente, clienteSel, canali]);
 
   const totPrenotato = righe.reduce((s, r) => s + r.totPren, 0);
   const pctTot = totObj > 0 ? Math.round(totPrenotato / totObj * 100) : 0;
-  const canaliPrincipali = canali;
+
+  const clientiFiltrati = useMemo(() => {
+    if (!clienteSearch) return clientiList;
+    const q = clienteSearch.toLowerCase();
+    return clientiList.filter(c => c.nome.toLowerCase().includes(q) || c.cod.includes(q));
+  }, [clientiList, clienteSearch]);
 
   const exportExcel = () => {
     const XLSX = window.XLSX;
-    const headers = ["N° CEDOLA","EAN","EDITORE","TITOLO","OBJ ASS.","PRENOTATO","AVANZ %", ...canaliPrincipali.map(c => c.nome)];
+    const headers = ["N° CEDOLA","EAN","EDITORE","TITOLO","OBJ ASS.","PRENOTATO","AVANZ %",...canali.map(c => c.nome)];
     const rows = righe.map(({ titolo: t, totPren, byCanale }) => {
       const pct = t.obiettivo_assegnato > 0 ? Math.round(totPren / t.obiettivo_assegnato * 100) : 0;
-      return [t.n_cedola, t.ean, t.editore_nome, t.titolo, t.obiettivo_assegnato, totPren, `${pct}%`, ...canaliPrincipali.map(c => byCanale[c.codice] ?? 0)];
+      return [t.n_cedola, t.ean, t.editore_nome, t.titolo, t.obiettivo_assegnato, totPren, `${pct}%`, ...canali.map(c => byCanale[c.codice] ?? 0)];
     });
     const ws = XLSX.utils.aoa_to_sheet([headers, ...rows]);
-    ws["!cols"] = [14,16,20,40,10,10,8,...canaliPrincipali.map(() => 12)].map(w => ({ wch: w }));
     const wb = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(wb, ws, "FINE GIRO");
-    const label = giroLabelSel === "tutti" ? "TUTTI" : giroLabelSel;
-    XLSX.writeFile(wb, `FINE_GIRO_${label}.xlsx`);
+    const label = giroLabelSel || "TUTTI";
+    const clienteLabel = clienteSel ? `_${clienteSel}` : "";
+    XLSX.writeFile(wb, `FINE_GIRO_${label}${clienteLabel}.xlsx`);
   };
 
   return (
     <div style={{ display: "flex", flexDirection: "column", height: "100%", overflow: "hidden" }}>
       <div style={{ padding: "12px 20px", borderBottom: `1px solid ${T.border}`, display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap" }}>
-        <select style={css.input} value={giroLabelSel} onChange={(e) => { setGiroLabelSel(e.target.value); setCedolaSel("tutti"); setFilterEditore("tutti"); setFilterAccount("tutti"); }}>
-          <option value="tutti">Tutti i giri</option>
+        <select style={css.input} value={giroLabelSel || ""} onChange={(e) => { setGiroLabelSel(e.target.value); setCedolaSel("tutti"); setFilterEditore("tutti"); setFilterAccount("tutti"); }}>
           {giriLabel.map(g => <option key={g} value={g}>Giro {g}</option>)}
         </select>
         <select style={css.input} value={cedolaSel} onChange={(e) => setCedolaSel(e.target.value)}>
@@ -601,14 +649,45 @@ function ModuloFineGiro({ titoli, prenotato, canali }) {
           <option value="tutti">Tutti gli account</option>
           {accounts.map(a => <option key={a} value={a}>{a}</option>)}
         </select>
+        <input style={{ ...css.input, width: 180 }} placeholder="Cerca EAN / titolo..." value={search} onChange={(e) => setSearch(e.target.value)} />
+
+        {/* Ricerca cliente */}
+        <div style={{ position: "relative" }}>
+          <button style={{ ...css.btn(clienteSel ? "accent" : "default"), minWidth: 180, display: "flex", justifyContent: "space-between", alignItems: "center", gap: 8 }}
+            onClick={() => setClienteDropdownOpen(o => !o)}>
+            <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", maxWidth: 150 }}>
+              {clienteSel ? clientiList.find(c => c.cod === clienteSel)?.nome || clienteSel : "Tutti i clienti"}
+            </span>
+            <span>▾</span>
+          </button>
+          {clienteDropdownOpen && (
+            <div style={{ position: "absolute", top: "100%", left: 0, zIndex: 50, background: T.surface, border: `1px solid ${T.borderHi}`, borderRadius: 4, minWidth: 260, maxHeight: 300, overflowY: "auto", marginTop: 4, boxShadow: "0 4px 20px #0008" }}>
+              <div style={{ padding: "8px 12px", borderBottom: `1px solid ${T.border}`, position: "sticky", top: 0, background: T.surface }}>
+                <input style={{ ...css.input, width: "100%", boxSizing: "border-box" }} placeholder="Cerca cliente..." value={clienteSearch} onChange={(e) => setClienteSearch(e.target.value)} autoFocus />
+              </div>
+              <div style={{ padding: "6px 12px", cursor: "pointer", color: !clienteSel ? T.accent : T.textMid, fontSize: "12px", borderBottom: `1px solid ${T.border}22` }}
+                onClick={() => { setClienteSel(null); setClienteDropdownOpen(false); setClienteSearch(""); }}>
+                Tutti i clienti
+              </div>
+              {clientiFiltrati.map(c => (
+                <div key={c.cod} style={{ padding: "6px 12px", cursor: "pointer", fontSize: "12px", color: clienteSel === c.cod ? T.accent : T.text, background: clienteSel === c.cod ? T.accent + "18" : "transparent", borderBottom: `1px solid ${T.border}22` }}
+                  onClick={() => { setClienteSel(c.cod); setClienteDropdownOpen(false); setClienteSearch(""); }}>
+                  <div style={{ fontWeight: "600" }}>{c.nome}</div>
+                  <div style={{ fontSize: "10px", color: T.textMid }}>{c.cod}</div>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+
         <div style={{ color: T.textMid, fontSize: "12px" }}>
           Obj: <span style={{ color: T.accent, fontWeight: "700" }}>{totObj.toLocaleString("it")}</span>
-          &nbsp;·&nbsp; Prenotato: <span style={{ color: T.green, fontWeight: "700" }}>{totPrenotato.toLocaleString("it")}</span>
+          &nbsp;·&nbsp; Pren: <span style={{ color: T.green, fontWeight: "700" }}>{totPrenotato.toLocaleString("it")}</span>
           &nbsp;·&nbsp; <span style={{ color: pctTot >= 80 ? T.green : pctTot >= 50 ? T.accent : T.red, fontWeight: "700" }}>{pctTot}%</span>
         </div>
         <button style={{ ...css.btn("accent"), marginLeft: "auto" }} onClick={exportExcel}>↓ Export Excel</button>
       </div>
-      <div style={{ flex: 1, overflowY: "auto" }}>
+      <div style={{ flex: 1, overflowY: "auto", overflowX: "auto" }}>
         <table style={css.table}>
           <thead>
             <tr>
@@ -619,7 +698,7 @@ function ModuloFineGiro({ titoli, prenotato, canali }) {
               <th style={css.th}>Obj. Ass.</th>
               <th style={css.th}>Prenotato</th>
               <th style={css.th}>Avanz.</th>
-              {canaliPrincipali.map(c => <th key={c.id} style={{ ...css.th, whiteSpace: "normal", maxWidth: 70, lineHeight: 1.2 }}>{c.nome}</th>)}
+              {canali.map(c => <th key={c.id} style={{ ...css.th, whiteSpace: "normal", maxWidth: 70, lineHeight: 1.2 }}>{c.nome}</th>)}
             </tr>
           </thead>
           <tbody>
@@ -634,7 +713,7 @@ function ModuloFineGiro({ titoli, prenotato, canali }) {
                   <td style={css.td}>{t.obiettivo_assegnato?.toLocaleString("it")}</td>
                   <td style={{ ...css.td, color: T.green, fontWeight: "600" }}>{totPren > 0 ? totPren.toLocaleString("it") : "—"}</td>
                   <td style={css.td}><span style={{ color: pct >= 80 ? T.green : pct >= 50 ? T.accent : T.red, fontWeight: "700" }}>{pct}%</span></td>
-                  {canaliPrincipali.map(c => <td key={c.id} style={{ ...css.td, color: byCanale[c.codice] ? T.text : T.textDim }}>{byCanale[c.codice]?.toLocaleString("it") ?? "—"}</td>)}
+                  {canali.map(c => <td key={c.id} style={{ ...css.td, color: byCanale[c.codice] ? T.text : T.textDim }}>{byCanale[c.codice]?.toLocaleString("it") ?? "—"}</td>)}
                 </tr>
               );
             })}
@@ -743,7 +822,7 @@ export default function App() {
           {activeModule === "dashboard" && <ModuloDashboard titoli={titoli} prenotato={prenotato} canali={canali} />}
           {activeModule === "cedola" && <ModuloCedola titoli={titoli} giriList={giriDB} onUpdateTitolo={updateTitolo} spalmatura={spalmatura} prenotato={prenotato} />}
           {activeModule === "prenotato" && <ModuloPrenotato token={session.token} titoli={titoli} onImportDone={() => sbFetch("prenotato?select=*", session.token).then(setPrenotato)} />}
-          {activeModule === "finegiro" && <ModuloFineGiro titoli={titoli} prenotato={prenotato} canali={canali} />}
+          {activeModule === "finegiro" && <ModuloFineGiro titoli={titoli} prenotato={prenotato} canali={canali} token={session.token} />}
           {activeModule === "import" && <ModuloImport giriList={giriDB} token={session.token} />}
         </div>
       </div>
