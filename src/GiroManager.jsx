@@ -560,7 +560,7 @@ function ModuloFineGiro({ titoli, prenotato, canali, token, ruolo }) {
 
   const exportExcel = () => {
     const XLSX = window.XLSX;
-    const colCanali = ruolo === "agente" ? canaliTabella : canali;
+    const colCanali = canaliTabella;
     const headers = ["N° CEDOLA","EAN","TITOLO","AUTORE","COD.EDITORE","EDITORE","PREZZO","OBJ ASS.","PRENOTATO","AVANZ %",...colCanali.map(c => c.nome)];
     const rows = righeFiltrate.map(({ titolo: t, totPren, byCanale }) => {
       const pct = t.obiettivo_assegnato > 0 ? Math.round(totPren / t.obiettivo_assegnato * 100) : 0;
