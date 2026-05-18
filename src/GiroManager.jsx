@@ -272,7 +272,7 @@ function ModuloDashboard({ titoli, prenotato, canali, ruolo }) {
               const c = canali.find(c => c.codice === codice); if (!c) return null;
               const qta = prenotatoPerCanale[codice] || 0;
               return (
-                <<div key={codice} style={{ display: "flex", alignItems: "center", gap: 12, padding: "5px 16px 5px 32px", borderBottom: `1px solid ${T.border}11` }}>
+                <div key={codice} style={{ display: "flex", alignItems: "center", gap: 12, padding: "5px 16px 5px 32px", borderBottom: `1px solid ${T.border}11` }}>
                   <div style={{ width: 184, fontSize: "12px", color: T.textMid }}>{c.nome}</div>
                   <div style={{ flex: 1, height: 4, background: T.borderHi, borderRadius: 2, overflow: "hidden" }}><div style={{ width: qta > 0 && totMacro[mg.id] > 0 ? `${(qta / totMacro[mg.id]) * 100}%` : "0%", height: "100%", background: T.blue }} /></div>
                   <div style={{ width: 80, textAlign: "right", color: qta > 0 ? T.text : T.textDim, fontSize: "12px" }}>{qta > 0 ? qta.toLocaleString("it") : "—"}</div>
