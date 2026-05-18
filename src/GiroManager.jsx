@@ -789,6 +789,7 @@ function ModuloFineGiro({ titoli, prenotato, canali, token, ruolo }) {
               <th style={css.th}>Cedola</th>
               <th style={css.th}>Editore</th>
               <th style={css.th}>Titolo</th>
+              <th style={css.th}>Autore</th>
               <th style={css.th}>EAN</th>
               <th style={css.th}>Obj</th>
               <th style={css.th}>Pren.</th>
@@ -806,6 +807,7 @@ function ModuloFineGiro({ titoli, prenotato, canali, token, ruolo }) {
                   <td style={{ ...css.td, color: T.textMid, fontSize: "10px", whiteSpace: "nowrap" }}>{t.n_cedola}</td>
                   <td style={{ ...css.td, color: T.accent, fontWeight: "600", whiteSpace: "nowrap" }}>{t.editore_nome}</td>
                   <td style={{ ...css.td, maxWidth: 200 }}><div style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{t.titolo}</div></td>
+                  <td style={{ ...css.td, color: T.textMid }}>{t.autore}</td>
                   <td style={{ ...css.td, fontFamily: "monospace", fontSize: "11px", color: T.textMid }}>{t.ean}</td>
                   <td style={css.td}>{t.obiettivo_assegnato?.toLocaleString("it")}</td>
                   <td style={{ ...css.td, color: T.green, fontWeight: "600" }}>{totPren > 0 ? totPren.toLocaleString("it") : "—"}</td>
