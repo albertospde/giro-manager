@@ -710,7 +710,7 @@ function ModuloFineGiro({ titoli, prenotato, canali, token, ruolo }) {
               <th style={css.th}>Autore</th><th style={css.th}>Cod.Ed.</th><th style={css.th}>Editore</th>
               <th style={css.th}>€</th><th style={css.th}>Obj</th><th style={css.th}>Pren.</th><th style={css.th}>%</th>
               {canaliTabella.map(c => <th key={c.id} style={{ ...css.th, whiteSpace: "normal", maxWidth: 70, lineHeight: 1.2 }}>{c.nome}</th>)}
-              {ruolo !== "agente" && <th style={{ ...css.th, color: T.accent }}>Aurora ✎</th>}
+              {ruolo !== "agente" && (filterCanale === "tutti" || filterCanale === "AURORA") && <th style={{ ...css.th, color: T.accent }}>Aurora ✎</th>}
             </tr>
           </thead>
           <tbody>
@@ -730,7 +730,7 @@ function ModuloFineGiro({ titoli, prenotato, canali, token, ruolo }) {
                   <td style={{ ...css.td, color: T.green, fontWeight: "600" }}>{totPren > 0 ? totPren.toLocaleString("it") : "—"}</td>
                   <td style={css.td}><span style={{ color: pct >= 80 ? T.green : pct >= 50 ? T.accent : T.red, fontWeight: "700" }}>{pct}%</span></td>
                   {canaliTabella.map(c => <td key={c.id} style={{ ...css.td, color: byCanale[c.codice] ? T.text : T.textDim }}>{byCanale[c.codice]?.toLocaleString("it") ?? "—"}</td>)}
-                  {ruolo !== "agente" && (
+                  {ruolo !== "agente" && (filterCanale === "tutti" || filterCanale === "AURORA") && (
                     <td style={css.td}>
                       {isEditingAurora ? (
                         <div style={{ display: "flex", gap: 4 }}>
