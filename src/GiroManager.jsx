@@ -32,9 +32,9 @@ const sb = {
 
 const sbFetch = async (path, token) => {
   const r = await fetch(`${SUPABASE_URL}/rest/v1/${path}`, {
-    headers: { 
-      "apikey": SUPABASE_KEY, 
-      "Authorization": `Bearer ${token}`, 
+    headers: {
+      "apikey": SUPABASE_KEY,
+      "Authorization": `Bearer ${token}`,
       "Accept": "application/json",
       "Range-Unit": "items",
       "Range": "0-9999",
@@ -62,7 +62,6 @@ const css = {
   td: { padding: "8px 12px", borderBottom: `1px solid ${T.border}22`, verticalAlign: "middle" },
 };
 
-// ─── LOGIN ────────────────────────────────────────────────────────────────────
 function LoginScreen({ onLogin }) {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -106,7 +105,6 @@ function LoginScreen({ onLogin }) {
   );
 }
 
-// ─── UI COMPONENTS ────────────────────────────────────────────────────────────
 function Badge({ label, color }) { return <span style={css.tag(color)}>{label}</span>; }
 
 function ProgressBar({ value, total, color = T.accent }) {
@@ -183,7 +181,6 @@ function EditModal({ titolo, onSave, onClose }) {
   );
 }
 
-// ─── MODULO: DASHBOARD ────────────────────────────────────────────────────────
 const MACROGRUPPI = [
   { id: "RETE", label: "Rete", canali: ["LIBRACCIO", "LIB_RELIGIOSE", "LIB_COOP", "INDIPENDENTI_ALTRE_CATENE"] },
   { id: "CATENE", label: "Catene Centralizzate", canali: ["FELTRINELLI", "MONDADORI", "UBIK", "GIUNTI"] },
@@ -238,7 +235,6 @@ function ModuloDashboard({ titoli, prenotato, canali }) {
     return Object.values(map).sort((a, b) => a.label.localeCompare(b.label));
   }, [titoliGiro, prenotatoGiro]);
 
-  // Prenotato per macrogruppo e canale
   const prenotatoPerCanale = useMemo(() => {
     const map = {};
     prenotatoGiro.forEach(p => {
@@ -251,9 +247,7 @@ function ModuloDashboard({ titoli, prenotato, canali }) {
 
   const totMacro = useMemo(() => {
     const map = {};
-    MACROGRUPPI.forEach(mg => {
-      map[mg.id] = mg.canali.reduce((s, cod) => s + (prenotatoPerCanale[cod] || 0), 0);
-    });
+    MACROGRUPPI.forEach(mg => { map[mg.id] = mg.canali.reduce((s, cod) => s + (prenotatoPerCanale[cod] || 0), 0); });
     return map;
   }, [prenotatoPerCanale]);
 
@@ -261,15 +255,12 @@ function ModuloDashboard({ titoli, prenotato, canali }) {
 
   return (
     <div style={{ flex: 1, overflowY: "auto", padding: 20 }}>
-      {/* Selezione giro */}
       <div style={{ display: "flex", gap: 12, alignItems: "center", marginBottom: 20 }}>
         <select style={{ ...css.input, fontSize: "14px", fontWeight: "600", color: T.accent }} value={giroSel || ""} onChange={e => setGiroSel(e.target.value)}>
           {giriLabel.map(g => <option key={g} value={g}>Giro {g}</option>)}
         </select>
         <span style={{ color: T.textMid, fontSize: "12px" }}>{kpiGiro.count} titoli · € {kpiGiro.valObj.toLocaleString("it", { maximumFractionDigits: 0 })} valore obiettivo</span>
       </div>
-
-      {/* KPI */}
       <div style={{ display: "flex", gap: 12, marginBottom: 24, flexWrap: "wrap" }}>
         <KpiCard label="Titoli" value={kpiGiro.count} color={T.text} />
         <KpiCard label="▲ Triangolo" value={kpiGiro.totTriangolo} color={T.purple} />
@@ -284,8 +275,6 @@ function ModuloDashboard({ titoli, prenotato, canali }) {
           <div style={{ color: T.textMid, fontSize: "11px", marginTop: 6 }}>{totPrenotatoGiro.toLocaleString("it")} / {kpiGiro.totObj.toLocaleString("it")}</div>
         </div>
       </div>
-
-      {/* Cedole */}
       <div style={{ marginBottom: 24 }}>
         <div style={{ color: T.textMid, fontSize: "11px", letterSpacing: "0.1em", textTransform: "uppercase", marginBottom: 12 }}>CEDOLE</div>
         <table style={{ width: "100%", borderCollapse: "collapse" }}>
@@ -315,13 +304,10 @@ function ModuloDashboard({ titoli, prenotato, canali }) {
           </tbody>
         </table>
       </div>
-
-      {/* Macrogruppi + dettaglio canali */}
       <div>
         <div style={{ color: T.textMid, fontSize: "11px", letterSpacing: "0.1em", textTransform: "uppercase", marginBottom: 12 }}>PRENOTATO PER CANALE</div>
         {MACROGRUPPI.map(mg => (
           <div key={mg.id} style={{ marginBottom: 20 }}>
-            {/* Macrogruppo header */}
             <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 8, padding: "10px 16px", background: T.surface, border: `1px solid ${T.borderHi}`, borderRadius: 4 }}>
               <div style={{ fontWeight: "700", color: T.accent, fontSize: "13px", width: 200 }}>{mg.label}</div>
               <div style={{ flex: 1, height: 8, background: T.borderHi, borderRadius: 2, overflow: "hidden" }}>
@@ -329,7 +315,6 @@ function ModuloDashboard({ titoli, prenotato, canali }) {
               </div>
               <div style={{ color: T.accent, fontWeight: "700", fontSize: "14px", width: 80, textAlign: "right" }}>{totMacro[mg.id].toLocaleString("it")}</div>
             </div>
-            {/* Dettaglio canali */}
             {mg.canali.map(codice => {
               const c = canali.find(c => c.codice === codice);
               if (!c) return null;
@@ -338,7 +323,7 @@ function ModuloDashboard({ titoli, prenotato, canali }) {
                 <div key={codice} style={{ display: "flex", alignItems: "center", gap: 12, padding: "5px 16px 5px 32px", borderBottom: `1px solid ${T.border}11` }}>
                   <div style={{ width: 184, fontSize: "12px", color: T.textMid }}>{c.nome}</div>
                   <div style={{ flex: 1, height: 4, background: T.borderHi, borderRadius: 2, overflow: "hidden" }}>
-                    <div style={{ width: qta > 0 ? `${(qta / totMacro[mg.id]) * 100}%` : "0%", height: "100%", background: T.blue }} />
+                    <div style={{ width: qta > 0 && totMacro[mg.id] > 0 ? `${(qta / totMacro[mg.id]) * 100}%` : "0%", height: "100%", background: T.blue }} />
                   </div>
                   <div style={{ width: 80, textAlign: "right", color: qta > 0 ? T.text : T.textDim, fontSize: "12px" }}>{qta > 0 ? qta.toLocaleString("it") : "—"}</div>
                 </div>
@@ -351,9 +336,6 @@ function ModuloDashboard({ titoli, prenotato, canali }) {
   );
 }
 
-
-
-// ─── MODULO: CEDOLA ───────────────────────────────────────────────────────────
 function ModuloCedola({ titoli, giriList, onUpdateTitolo, spalmatura, prenotato }) {
   const [giroLabelSel, setGiroLabelSel] = useState("tutti");
   const [giroSel, setGiroSel] = useState("tutti");
@@ -376,16 +358,14 @@ function ModuloCedola({ titoli, giriList, onUpdateTitolo, spalmatura, prenotato 
     const t = giroLabelSel === "tutti" ? titoli : titoli.filter(t => t.giro_label === giroLabelSel);
     return [...new Set(t.map(t => t.n_cedola).filter(Boolean))].sort();
   }, [titoli, giroLabelSel]);
-const accounts = useMemo(() => {
-    const t = giroSel === "tutti"
-      ? (giroLabelSel === "tutti" ? titoli : titoli.filter(t => t.giro_label === giroLabelSel))
-      : titoli.filter(t => t.n_cedola === giroSel);
+
+  const accounts = useMemo(() => {
+    const t = giroSel === "tutti" ? (giroLabelSel === "tutti" ? titoli : titoli.filter(t => t.giro_label === giroLabelSel)) : titoli.filter(t => t.n_cedola === giroSel);
     return [...new Set(t.map(t => t.account_editore).filter(Boolean))].sort();
   }, [titoli, giroLabelSel, giroSel]);
+
   const editori = useMemo(() => {
-    const t = giroSel === "tutti"
-      ? (giroLabelSel === "tutti" ? titoli : titoli.filter(t => t.giro_label === giroLabelSel))
-      : titoli.filter(t => t.n_cedola === giroSel);
+    const t = giroSel === "tutti" ? (giroLabelSel === "tutti" ? titoli : titoli.filter(t => t.giro_label === giroLabelSel)) : titoli.filter(t => t.n_cedola === giroSel);
     return [...new Set(t.map(t => t.editore_nome).filter(Boolean))].sort();
   }, [titoli, giroLabelSel, giroSel]);
 
@@ -417,8 +397,7 @@ const accounts = useMemo(() => {
   const editingTitolo = titoli.find(t => t.id === editingId);
   const avanzamento = useMemo(() => {
     const totObj = filtered.reduce((s, t) => s + (t.obiettivo_assegnato || 0), 0);
-    const totRag = filtered.reduce((s, t) => s + (t.obiettivo_raggiunto || 0), 0);
-    return { totObj, totRag, pct: totObj > 0 ? Math.round((totRag / totObj) * 100) : 0, count: filtered.length };
+    return { totObj, count: filtered.length };
   }, [filtered]);
 
   const getObjCanale = (titolo, canale_codice) => {
@@ -493,7 +472,7 @@ const accounts = useMemo(() => {
                   <span style={{ fontSize: "12px", color: filterEditori.includes(e) ? T.accent : T.text }}>{e}</span>
                 </label>
               ))}
-            <div style={{ padding: 8, borderTop: `1px solid ${T.border}` }}>
+              <div style={{ padding: 8, borderTop: `1px solid ${T.border}` }}>
                 <button style={{ ...css.btn("accent"), width: "100%" }} onClick={() => setEditoreDropdownOpen(false)}>Applica</button>
               </div>
             </div>
@@ -510,7 +489,7 @@ const accounts = useMemo(() => {
           </button>
         ))}
         <div style={{ marginLeft: "auto", color: T.textMid, fontSize: "11px" }}>
-          <span style={{ color: T.text }}>{avanzamento.count}</span> titoli &nbsp;·&nbsp; Obj: <span style={{ color: T.accent }}>{avanzamento.pct}%</span>
+          <span style={{ color: T.text }}>{avanzamento.count}</span> titoli
         </div>
         <button style={css.btn("accent")} onClick={exportAgenti}>↓ Download Agenti</button>
         <button style={css.btn("accent")} onClick={exportDirezionale}>↓ Download Direzionali</button>
@@ -674,22 +653,17 @@ function ModuloFineGiro({ titoli, prenotato, canali, token }) {
   const totPrenotato = righe.reduce((s, r) => s + r.totPren, 0);
   const pctTot = totObj > 0 ? Math.round(totPrenotato / totObj * 100) : 0;
 
-  // Totali per canale dai dati filtrati
   const prenotatoPerCanale = useMemo(() => {
     const map = {};
     righe.forEach(({ byCanale }) => {
-      Object.entries(byCanale).forEach(([cod, qta]) => {
-        map[cod] = (map[cod] || 0) + (qta || 0);
-      });
+      Object.entries(byCanale).forEach(([cod, qta]) => { map[cod] = (map[cod] || 0) + (qta || 0); });
     });
     return map;
   }, [righe]);
 
   const totMacro = useMemo(() => {
     const map = {};
-    MACROGRUPPI_FG.forEach(mg => {
-      map[mg.id] = mg.canali.reduce((s, cod) => s + (prenotatoPerCanale[cod] || 0), 0);
-    });
+    MACROGRUPPI_FG.forEach(mg => { map[mg.id] = mg.canali.reduce((s, cod) => s + (prenotatoPerCanale[cod] || 0), 0); });
     return map;
   }, [prenotatoPerCanale]);
 
@@ -714,7 +688,6 @@ function ModuloFineGiro({ titoli, prenotato, canali, token }) {
 
   return (
     <div style={{ display: "flex", flexDirection: "column", height: "100%", overflow: "hidden" }}>
-      {/* Filtri */}
       <div style={{ padding: "12px 20px", borderBottom: `1px solid ${T.border}`, display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap" }}>
         <select style={css.input} value={giroLabelSel || ""} onChange={e => { setGiroLabelSel(e.target.value); setCedolaSel("tutti"); setFilterEditore("tutti"); setFilterAccount("tutti"); }}>
           {giriLabel.map(g => <option key={g} value={g}>Giro {g}</option>)}
@@ -764,14 +737,11 @@ function ModuloFineGiro({ titoli, prenotato, canali, token }) {
         </div>
         <button style={{ ...css.btn("accent"), marginLeft: "auto" }} onClick={exportExcel}>↓ Export Excel</button>
       </div>
-
-      {/* Riepilogo macrogruppi */}
       <div style={{ padding: "12px 20px", borderBottom: `1px solid ${T.border}`, display: "flex", gap: 12, flexWrap: "wrap" }}>
         {MACROGRUPPI_FG.map(mg => (
           <div key={mg.id} style={{ background: T.surface, border: `1px solid ${T.border}`, borderRadius: 4, padding: "10px 14px", minWidth: 160 }}>
             <div style={{ color: T.accent, fontWeight: "700", fontSize: "11px", letterSpacing: "0.08em", textTransform: "uppercase", marginBottom: 8 }}>
-              {mg.label}
-              <span style={{ color: T.green, marginLeft: 8, fontSize: "13px" }}>{totMacro[mg.id].toLocaleString("it")}</span>
+              {mg.label} <span style={{ color: T.green, fontSize: "13px" }}>{totMacro[mg.id].toLocaleString("it")}</span>
             </div>
             {mg.canali.map(cod => {
               const c = canali.find(c => c.codice === cod);
@@ -787,8 +757,6 @@ function ModuloFineGiro({ titoli, prenotato, canali, token }) {
           </div>
         ))}
       </div>
-
-      {/* Tabella titoli */}
       <div style={{ flex: 1, overflowY: "auto", overflowX: "auto" }}>
         <table style={css.table}>
           <thead>
@@ -846,9 +814,6 @@ function ModuloFineGiro({ titoli, prenotato, canali, token }) {
   );
 }
 
-
-
-// ─── APP ROOT ─────────────────────────────────────────────────────────────────
 const MODULES = [
   { id: "dashboard", label: "Dashboard", icon: "◈" },
   { id: "cedola", label: "Giri e Cedole", icon: "≡" },
@@ -875,7 +840,7 @@ export default function App() {
     if (!session) return;
     sbFetch("giri?select=*&order=anno.desc,numero.desc", session.token).then(setGiriDB);
     sbFetch("titoli?select=*&order=ranking_editore.asc,ranking_titolo.asc", session.token).then(setTitoli);
-   sbFetch("prenotato?select=*&limit=100000", session.token).then(setPrenotato);
+    sbFetch("prenotato?select=*&limit=100000", session.token).then(setPrenotato);
     sbFetch("spalmatura_obiettivo?select=*", session.token).then(setSpalmatura);
     sbFetch("canali?select=*&order=nome.asc", session.token).then(setCanali);
   }, [session]);
@@ -903,9 +868,10 @@ export default function App() {
   const updateTitolo = useCallback((updated) => {
     setTitoli(prev => prev.map(t => t.id === updated.id ? { ...t, ...updated } : t));
   }, []);
+
   const refreshDati = useCallback(() => {
     if (!session) return;
-    sbFetch("prenotato?select=*", session.token).then(data => { if (Array.isArray(data)) setPrenotato(data); });
+    sbFetch("prenotato?select=*&limit=100000", session.token).then(data => { if (Array.isArray(data)) setPrenotato(data); });
     sbFetch("titoli?select=*&order=ranking_editore.asc,ranking_titolo.asc", session.token).then(data => { if (Array.isArray(data)) setTitoli(data); });
   }, [session]);
 
@@ -943,6 +909,9 @@ export default function App() {
             });
             if (r.ok) alert("Password aggiornata."); else alert("Errore aggiornamento password.");
           }}>Modifica password</button>
+          <button style={{ ...css.btn(), fontSize: "11px", padding: "4px 10px", width: "100%" }} onClick={handleLogout}>Esci</button>
+        </div>
+      </div>
       <div style={css.main}>
         <div style={css.header}>
           <span style={{ color: T.accent, fontSize: "11px", letterSpacing: "0.12em", textTransform: "uppercase" }}>{MODULES.find(m => m.id === activeModule)?.label}</span>
@@ -953,7 +922,7 @@ export default function App() {
         <div style={{ flex: 1, overflow: "hidden", display: "flex", flexDirection: "column" }}>
           {activeModule === "dashboard" && <ModuloDashboard titoli={titoli} prenotato={prenotato} canali={canali} />}
           {activeModule === "cedola" && <ModuloCedola titoli={titoli} giriList={giriDB} onUpdateTitolo={updateTitolo} spalmatura={spalmatura} prenotato={prenotato} />}
-          {activeModule === "prenotato" && <ModuloPrenotato token={session.token} titoli={titoli} onImportDone={() => sbFetch("prenotato?select=*", session.token).then(setPrenotato)} />}
+          {activeModule === "prenotato" && <ModuloPrenotato token={session.token} titoli={titoli} onImportDone={() => sbFetch("prenotato?select=*&limit=100000", session.token).then(setPrenotato)} />}
           {activeModule === "finegiro" && <ModuloFineGiro titoli={titoli} prenotato={prenotato} canali={canali} token={session.token} />}
           {activeModule === "import" && <ModuloImport giriList={giriDB} token={session.token} />}
         </div>
