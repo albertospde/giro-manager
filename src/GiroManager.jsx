@@ -716,7 +716,17 @@ function ModuloFineGiro({ titoli, prenotato, canali, token, ruolo }) {
           {giriLabel.map(g => <option key={g} value={g}>Giro {g}</option>)}
         </select>
         {cedoleExtra.length > 0 && (
-          <select style={{ ...css.input, borderColor: extraSel ? T.accent : T.border }} value={extraSel || ""} onChange={e => { setExtraSel(e.target.value || null); if (e.target.value) { setGiroLabelSel(null); setCedolaSel("tutti"); } }}>
+          <select style={{ ...css.input, borderColor: extraSel ? T.accent : T.border }} value={extraSel || ""} onChange={e => { 
+  const val = e.target.value || null; 
+  setExtraSel(val); 
+  if (val) { 
+    setGiroLabelSel(null); 
+    setCedolaSel("tutti"); 
+  } else { 
+    setGiroLabelSel(giriLabel[0] || null); 
+    setCedolaSel("tutti"); 
+  } 
+}}>
             <option value="">— Cedole Extra —</option>
             {cedoleExtra.map(c => <option key={c} value={c}>{c}</option>)}
           </select>
