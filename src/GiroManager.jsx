@@ -931,6 +931,16 @@ export default function App() {
         </nav>
         <div style={{ padding: "12px 16px", borderTop: `1px solid ${T.border}` }}>
           <div style={{ color: T.textDim, fontSize: "10px", marginBottom: 6 }}>{session.user?.email}</div>
+          <button style={{ ...css.btn(), fontSize: "11px", padding: "4px 10px", width: "100%", marginBottom: 4 }} onClick={async () => {
+            const nuova = prompt("Nuova password (min. 6 caratteri):");
+            if (!nuova || nuova.length < 6) { alert("Password troppo corta."); return; }
+            const r = await fetch(`${SUPABASE_URL}/auth/v1/user`, {
+              method: "PUT",
+              headers: { "Content-Type": "application/json", "apikey": SUPABASE_KEY, "Authorization": `Bearer ${session.token}` },
+              body: JSON.stringify({ password: nuova }),
+            });
+            if (r.ok) alert("Password aggiornata."); else alert("Errore aggiornamento password.");
+          }}>Modifica password</button>
           <button style={{ ...css.btn(), fontSize: "11px", padding: "4px 10px", width: "100%" }} onClick={handleLogout}>Esci</button>
         </div>
       </div>
