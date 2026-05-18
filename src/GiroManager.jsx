@@ -184,6 +184,13 @@ function EditModal({ titolo, onSave, onClose }) {
 }
 
 // ─── MODULO: DASHBOARD ────────────────────────────────────────────────────────
+const MACROGRUPPI = [
+  { id: "RETE", label: "Rete", canali: ["LIBRACCIO", "LIB_RELIGIOSE", "LIB_COOP", "INDIPENDENTI_ALTRE_CATENE"] },
+  { id: "CATENE", label: "Catene Centralizzate", canali: ["FELTRINELLI", "MONDADORI", "UBIK", "GIUNTI"] },
+  { id: "GROSSISTI", label: "Grossisti", canali: ["FASTBOOK", "CENTROLIBRI", "AURORA", "GROSSISTI"] },
+  { id: "ONLINE", label: "Online", canali: ["AMAZON", "IBS", "ALTRI_ONLINE"] },
+];
+
 function ModuloDashboard({ titoli, prenotato, canali }) {
   const giriLabel = useMemo(() => {
     return [...new Set(titoli.map(t => t.giro_label).filter(Boolean))].sort((a, b) => {
@@ -198,53 +205,63 @@ function ModuloDashboard({ titoli, prenotato, canali }) {
   const titoliGiro = useMemo(() => giroSel ? titoli.filter(t => t.giro_label === giroSel) : [], [titoli, giroSel]);
 
   const prenotatoGiro = useMemo(() => {
-    const titoliIds = new Set(titoliGiro.map(t => t.id));
-    return prenotato.filter(p => titoliIds.has(p.titolo_id));
+    const ids = new Set(titoliGiro.map(t => t.id));
+    return prenotato.filter(p => ids.has(p.titolo_id));
   }, [prenotato, titoliGiro]);
 
   const totPrenotatoGiro = useMemo(() => prenotatoGiro.reduce((s, p) => s + p.quantita, 0), [prenotatoGiro]);
 
   const kpiGiro = useMemo(() => {
     const totObj = titoliGiro.reduce((s, t) => s + (t.obiettivo_assegnato || 0), 0);
-    const totRag = totPrenotatoGiro;
     const valObj = titoliGiro.reduce((s, t) => s + (t.prezzo || 0) * (t.obiettivo_assegnato || 0), 0);
     const totTriangolo = titoliGiro.filter(t => t.il_triangolo === true).length;
     const totTop100 = titoliGiro.filter(t => t.top_100 === true).length;
-    return { totObj, totRag, valObj, totTriangolo, totTop100, count: titoliGiro.length, pct: totObj > 0 ? Math.round(totRag / totObj * 100) : 0 };
+    return { totObj, valObj, totTriangolo, totTop100, count: titoliGiro.length, pct: totObj > 0 ? Math.round(totPrenotatoGiro / totObj * 100) : 0 };
   }, [titoliGiro, totPrenotatoGiro]);
 
   const cedole = useMemo(() => {
-    const prenotatoMap = {};
+    const prenMap = {};
     prenotatoGiro.forEach(p => {
       const t = titoliGiro.find(t => t.id === p.titolo_id);
       if (!t) return;
       const c = t.n_cedola || "—";
-      prenotatoMap[c] = (prenotatoMap[c] || 0) + p.quantita;
+      prenMap[c] = (prenMap[c] || 0) + p.quantita;
     });
     const map = {};
     titoliGiro.forEach(t => {
       const c = t.n_cedola || "—";
       if (!map[c]) map[c] = { label: c, totObj: 0, totRag: 0, count: 0 };
       map[c].totObj += t.obiettivo_assegnato || 0;
-      map[c].totRag = prenotatoMap[c] || 0;
+      map[c].totRag = prenMap[c] || 0;
       map[c].count++;
     });
     return Object.values(map).sort((a, b) => a.label.localeCompare(b.label));
   }, [titoliGiro, prenotatoGiro]);
 
+  // Prenotato per macrogruppo e canale
   const prenotatoPerCanale = useMemo(() => {
     const map = {};
     prenotatoGiro.forEach(p => {
       const c = canali.find(c => c.id === p.canale_id);
       if (!c) return;
-      map[c.nome] = (map[c.nome] || 0) + p.quantita;
+      map[c.codice] = (map[c.codice] || 0) + p.quantita;
     });
-    return Object.entries(map).sort((a, b) => b[1] - a[1]);
+    return map;
   }, [prenotatoGiro, canali]);
-  const maxCanale = prenotatoPerCanale[0]?.[1] || 1;
+
+  const totMacro = useMemo(() => {
+    const map = {};
+    MACROGRUPPI.forEach(mg => {
+      map[mg.id] = mg.canali.reduce((s, cod) => s + (prenotatoPerCanale[cod] || 0), 0);
+    });
+    return map;
+  }, [prenotatoPerCanale]);
+
+  const maxMacro = Math.max(...Object.values(totMacro), 1);
 
   return (
     <div style={{ flex: 1, overflowY: "auto", padding: 20 }}>
+      {/* Selezione giro */}
       <div style={{ display: "flex", gap: 12, alignItems: "center", marginBottom: 20 }}>
         <select style={{ ...css.input, fontSize: "14px", fontWeight: "600", color: T.accent }} value={giroSel || ""} onChange={e => setGiroSel(e.target.value)}>
           {giriLabel.map(g => <option key={g} value={g}>Giro {g}</option>)}
@@ -252,6 +269,7 @@ function ModuloDashboard({ titoli, prenotato, canali }) {
         <span style={{ color: T.textMid, fontSize: "12px" }}>{kpiGiro.count} titoli · € {kpiGiro.valObj.toLocaleString("it", { maximumFractionDigits: 0 })} valore obiettivo</span>
       </div>
 
+      {/* KPI */}
       <div style={{ display: "flex", gap: 12, marginBottom: 24, flexWrap: "wrap" }}>
         <KpiCard label="Titoli" value={kpiGiro.count} color={T.text} />
         <KpiCard label="▲ Triangolo" value={kpiGiro.totTriangolo} color={T.purple} />
@@ -263,10 +281,11 @@ function ModuloDashboard({ titoli, prenotato, canali }) {
           <div style={{ height: 6, background: T.borderHi, borderRadius: 3, overflow: "hidden" }}>
             <div style={{ width: `${kpiGiro.pct}%`, height: "100%", background: kpiGiro.pct >= 80 ? T.green : kpiGiro.pct >= 50 ? T.accent : T.red }} />
           </div>
-          <div style={{ color: T.textMid, fontSize: "11px", marginTop: 6 }}>{kpiGiro.totRag.toLocaleString("it")} / {kpiGiro.totObj.toLocaleString("it")}</div>
+          <div style={{ color: T.textMid, fontSize: "11px", marginTop: 6 }}>{totPrenotatoGiro.toLocaleString("it")} / {kpiGiro.totObj.toLocaleString("it")}</div>
         </div>
       </div>
 
+      {/* Cedole */}
       <div style={{ marginBottom: 24 }}>
         <div style={{ color: T.textMid, fontSize: "11px", letterSpacing: "0.1em", textTransform: "uppercase", marginBottom: 12 }}>CEDOLE</div>
         <table style={{ width: "100%", borderCollapse: "collapse" }}>
@@ -297,23 +316,37 @@ function ModuloDashboard({ titoli, prenotato, canali }) {
         </table>
       </div>
 
-      {prenotatoPerCanale.length > 0 && (
-        <div>
-          <div style={{ color: T.textMid, fontSize: "11px", letterSpacing: "0.1em", textTransform: "uppercase", marginBottom: 12 }}>PRENOTATO PER CANALE</div>
-          {prenotatoPerCanale.map(([nome, qta]) => (
-            <div key={nome} style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 6 }}>
-              <div style={{ width: 200, fontSize: "12px" }}>{nome}</div>
+      {/* Macrogruppi + dettaglio canali */}
+      <div>
+        <div style={{ color: T.textMid, fontSize: "11px", letterSpacing: "0.1em", textTransform: "uppercase", marginBottom: 12 }}>PRENOTATO PER CANALE</div>
+        {MACROGRUPPI.map(mg => (
+          <div key={mg.id} style={{ marginBottom: 20 }}>
+            {/* Macrogruppo header */}
+            <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 8, padding: "10px 16px", background: T.surface, border: `1px solid ${T.borderHi}`, borderRadius: 4 }}>
+              <div style={{ fontWeight: "700", color: T.accent, fontSize: "13px", width: 200 }}>{mg.label}</div>
               <div style={{ flex: 1, height: 8, background: T.borderHi, borderRadius: 2, overflow: "hidden" }}>
-                <div style={{ width: `${(qta / maxCanale) * 100}%`, height: "100%", background: T.blue }} />
+                <div style={{ width: `${(totMacro[mg.id] / maxMacro) * 100}%`, height: "100%", background: T.accent }} />
               </div>
-              <div style={{ width: 70, textAlign: "right", color: T.accent, fontSize: "12px", fontWeight: "600" }}>{qta.toLocaleString("it")}</div>
+              <div style={{ color: T.accent, fontWeight: "700", fontSize: "14px", width: 80, textAlign: "right" }}>{totMacro[mg.id].toLocaleString("it")}</div>
             </div>
-          ))}
-          <div style={{ display: "flex", justifyContent: "flex-end", marginTop: 8, paddingTop: 8, borderTop: `1px solid ${T.border}` }}>
-            <span style={{ color: T.textMid, fontSize: "12px" }}>Totale: <span style={{ color: T.green, fontWeight: "700" }}>{totPrenotatoGiro.toLocaleString("it")}</span></span>
+            {/* Dettaglio canali */}
+            {mg.canali.map(codice => {
+              const c = canali.find(c => c.codice === codice);
+              if (!c) return null;
+              const qta = prenotatoPerCanale[codice] || 0;
+              return (
+                <div key={codice} style={{ display: "flex", alignItems: "center", gap: 12, padding: "5px 16px 5px 32px", borderBottom: `1px solid ${T.border}11` }}>
+                  <div style={{ width: 184, fontSize: "12px", color: T.textMid }}>{c.nome}</div>
+                  <div style={{ flex: 1, height: 4, background: T.borderHi, borderRadius: 2, overflow: "hidden" }}>
+                    <div style={{ width: qta > 0 ? `${(qta / totMacro[mg.id]) * 100}%` : "0%", height: "100%", background: T.blue }} />
+                  </div>
+                  <div style={{ width: 80, textAlign: "right", color: qta > 0 ? T.text : T.textDim, fontSize: "12px" }}>{qta > 0 ? qta.toLocaleString("it") : "—"}</div>
+                </div>
+              );
+            })}
           </div>
-        </div>
-      )}
+        ))}
+      </div>
     </div>
   );
 }
@@ -535,10 +568,12 @@ function ModuloFineGiro({ titoli, prenotato, canali, token }) {
   const [clientiList, setClientiList] = useState([]);
   const [clienteDropdownOpen, setClienteDropdownOpen] = useState(false);
   const [prenotatoCliente, setPrenotatoCliente] = useState([]);
+  // Aurora editabile: { titolo_id: quantita }
+  const [auroraEdit, setAuroraEdit] = useState({});
+  const [auroraEditing, setAuroraEditing] = useState(null);
 
   useEffect(() => { if (giriLabel.length > 0 && !giroLabelSel) setGiroLabelSel(giriLabel[0]); }, [giriLabel]);
 
-  // Carica lista clienti da Supabase
   useEffect(() => {
     if (!token) return;
     fetch(`${SUPABASE_URL}/rest/v1/prenotato_clienti?select=codice_cliente,nome_cliente&limit=10000`, {
@@ -551,7 +586,6 @@ function ModuloFineGiro({ titoli, prenotato, canali, token }) {
     });
   }, [token]);
 
-  // Carica prenotato per cliente selezionato
   useEffect(() => {
     if (!clienteSel || !token) { setPrenotatoCliente([]); return; }
     fetch(`${SUPABASE_URL}/rest/v1/prenotato_clienti?codice_cliente=eq.${clienteSel}&select=*&limit=10000`, {
@@ -560,6 +594,33 @@ function ModuloFineGiro({ titoli, prenotato, canali, token }) {
       if (Array.isArray(data)) setPrenotatoCliente(data);
     });
   }, [clienteSel, token]);
+
+  // Carica Aurora esistente
+  useEffect(() => {
+    if (!token) return;
+    const auroraCanale = canali.find(c => c.codice === "AURORA");
+    if (!auroraCanale) return;
+    fetch(`${SUPABASE_URL}/rest/v1/prenotato?canale_id=eq.${auroraCanale.id}&select=titolo_id,quantita&limit=10000`, {
+      headers: { "apikey": SUPABASE_KEY, "Authorization": `Bearer ${token}` }
+    }).then(r => r.json()).then(data => {
+      if (!Array.isArray(data)) return;
+      const map = {};
+      data.forEach(r => { map[r.titolo_id] = r.quantita; });
+      setAuroraEdit(map);
+    });
+  }, [token, canali]);
+
+  const saveAurora = async (titoloId, qta) => {
+    const auroraCanale = canali.find(c => c.codice === "AURORA");
+    if (!auroraCanale) return;
+    await fetch(`${SUPABASE_URL}/rest/v1/rpc/upsert_prenotato`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "apikey": SUPABASE_KEY, "Authorization": `Bearer ${token}` },
+      body: JSON.stringify({ payload: [{ titolo_id: titoloId, canale_id: auroraCanale.id, quantita: parseInt(qta) || 0 }] }),
+    });
+    setAuroraEdit(prev => ({ ...prev, [titoloId]: parseInt(qta) || 0 }));
+    setAuroraEditing(null);
+  };
 
   const cedole = useMemo(() => {
     const t = giroLabelSel ? titoli.filter(t => t.giro_label === giroLabelSel) : titoli;
@@ -581,18 +642,16 @@ function ModuloFineGiro({ titoli, prenotato, canali, token }) {
     .filter(t => cedolaSel === "tutti" || t.n_cedola === cedolaSel)
     .filter(t => filterEditore === "tutti" || t.editore_nome === filterEditore)
     .filter(t => filterAccount === "tutti" || t.account_editore === filterAccount)
-    .filter(t => {
-      if (!search) return true;
-      const q = search.toLowerCase();
-      return t.titolo?.toLowerCase().includes(q) || t.ean?.includes(q);
-    })
+    .filter(t => { if (!search) return true; const q = search.toLowerCase(); return t.titolo?.toLowerCase().includes(q) || t.ean?.includes(q); })
     .sort((a, b) => (a.ranking_editore ?? 99) - (b.ranking_editore ?? 99) || (a.ranking_titolo ?? 99) - (b.ranking_titolo ?? 99)),
   [titoli, giroLabelSel, cedolaSel, filterEditore, filterAccount, search]);
 
   const totObj = titoliSel.reduce((s, t) => s + (t.obiettivo_assegnato || 0), 0);
 
+  // Canali per colonne (escludi Aurora — ha colonna dedicata)
+  const canaliTabella = useMemo(() => canali.filter(c => c.codice !== "AURORA"), [canali]);
+
   const righe = useMemo(() => titoliSel.map(t => {
-    // Se cliente selezionato, usa prenotato cliente
     if (clienteSel) {
       const prenCli = prenotatoCliente.filter(p => p.titolo_id === t.id);
       const totPren = prenCli.reduce((s, p) => s + p.quantita, 0);
@@ -601,11 +660,13 @@ function ModuloFineGiro({ titoli, prenotato, canali, token }) {
       return { titolo: t, totPren, byCanale };
     }
     const pren = prenotato.filter(p => p.titolo_id === t.id);
+    const aurora = auroraEdit[t.id] || 0;
     const totPren = pren.reduce((s, p) => s + p.quantita, 0);
     const byCanale = {};
     pren.forEach(p => { const c = canali.find(c => c.id === p.canale_id); if (c) byCanale[c.codice] = p.quantita; });
-    return { titolo: t, totPren, byCanale };
-  }), [titoliSel, prenotato, prenotatoCliente, clienteSel, canali]);
+    byCanale["AURORA"] = aurora;
+    return { titolo: t, totPren: totPren + aurora, byCanale };
+  }), [titoliSel, prenotato, prenotatoCliente, clienteSel, canali, auroraEdit]);
 
   const totPrenotato = righe.reduce((s, r) => s + r.totPren, 0);
   const pctTot = totObj > 0 ? Math.round(totPrenotato / totObj * 100) : 0;
@@ -626,30 +687,28 @@ function ModuloFineGiro({ titoli, prenotato, canali, token }) {
     const ws = XLSX.utils.aoa_to_sheet([headers, ...rows]);
     const wb = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(wb, ws, "FINE GIRO");
-    const label = giroLabelSel || "TUTTI";
-    const clienteLabel = clienteSel ? `_${clienteSel}` : "";
-    XLSX.writeFile(wb, `FINE_GIRO_${label}${clienteLabel}.xlsx`);
+    XLSX.writeFile(wb, `FINE_GIRO_${giroLabelSel || "TUTTI"}.xlsx`);
   };
 
   return (
     <div style={{ display: "flex", flexDirection: "column", height: "100%", overflow: "hidden" }}>
       <div style={{ padding: "12px 20px", borderBottom: `1px solid ${T.border}`, display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap" }}>
-        <select style={css.input} value={giroLabelSel || ""} onChange={(e) => { setGiroLabelSel(e.target.value); setCedolaSel("tutti"); setFilterEditore("tutti"); setFilterAccount("tutti"); }}>
+        <select style={css.input} value={giroLabelSel || ""} onChange={e => { setGiroLabelSel(e.target.value); setCedolaSel("tutti"); setFilterEditore("tutti"); setFilterAccount("tutti"); }}>
           {giriLabel.map(g => <option key={g} value={g}>Giro {g}</option>)}
         </select>
-        <select style={css.input} value={cedolaSel} onChange={(e) => setCedolaSel(e.target.value)}>
+        <select style={css.input} value={cedolaSel} onChange={e => setCedolaSel(e.target.value)}>
           <option value="tutti">Tutte le cedole</option>
           {cedole.map(c => <option key={c} value={c}>{c}</option>)}
         </select>
-        <select style={css.input} value={filterEditore} onChange={(e) => setFilterEditore(e.target.value)}>
+        <select style={css.input} value={filterEditore} onChange={e => setFilterEditore(e.target.value)}>
           <option value="tutti">Tutti gli editori</option>
           {editori.map(e => <option key={e} value={e}>{e}</option>)}
         </select>
-        <select style={css.input} value={filterAccount} onChange={(e) => setFilterAccount(e.target.value)}>
+        <select style={css.input} value={filterAccount} onChange={e => setFilterAccount(e.target.value)}>
           <option value="tutti">Tutti gli account</option>
           {accounts.map(a => <option key={a} value={a}>{a}</option>)}
         </select>
-        <input style={{ ...css.input, width: 180 }} placeholder="Cerca EAN / titolo..." value={search} onChange={(e) => setSearch(e.target.value)} />
+        <input style={{ ...css.input, width: 180 }} placeholder="Cerca EAN / titolo..." value={search} onChange={e => setSearch(e.target.value)} />
 
         {/* Ricerca cliente */}
         <div style={{ position: "relative" }}>
@@ -663,7 +722,7 @@ function ModuloFineGiro({ titoli, prenotato, canali, token }) {
           {clienteDropdownOpen && (
             <div style={{ position: "absolute", top: "100%", left: 0, zIndex: 50, background: T.surface, border: `1px solid ${T.borderHi}`, borderRadius: 4, minWidth: 260, maxHeight: 300, overflowY: "auto", marginTop: 4, boxShadow: "0 4px 20px #0008" }}>
               <div style={{ padding: "8px 12px", borderBottom: `1px solid ${T.border}`, position: "sticky", top: 0, background: T.surface }}>
-                <input style={{ ...css.input, width: "100%", boxSizing: "border-box" }} placeholder="Cerca cliente..." value={clienteSearch} onChange={(e) => setClienteSearch(e.target.value)} autoFocus />
+                <input style={{ ...css.input, width: "100%", boxSizing: "border-box" }} placeholder="Cerca cliente..." value={clienteSearch} onChange={e => setClienteSearch(e.target.value)} autoFocus />
               </div>
               <div style={{ padding: "6px 12px", cursor: "pointer", color: !clienteSel ? T.accent : T.textMid, fontSize: "12px", borderBottom: `1px solid ${T.border}22` }}
                 onClick={() => { setClienteSel(null); setClienteDropdownOpen(false); setClienteSearch(""); }}>
@@ -687,6 +746,7 @@ function ModuloFineGiro({ titoli, prenotato, canali, token }) {
         </div>
         <button style={{ ...css.btn("accent"), marginLeft: "auto" }} onClick={exportExcel}>↓ Export Excel</button>
       </div>
+
       <div style={{ flex: 1, overflowY: "auto", overflowX: "auto" }}>
         <table style={css.table}>
           <thead>
@@ -695,25 +755,46 @@ function ModuloFineGiro({ titoli, prenotato, canali, token }) {
               <th style={css.th}>Editore</th>
               <th style={css.th}>Titolo</th>
               <th style={css.th}>EAN</th>
-              <th style={css.th}>Obj. Ass.</th>
-              <th style={css.th}>Prenotato</th>
-              <th style={css.th}>Avanz.</th>
-              {canali.map(c => <th key={c.id} style={{ ...css.th, whiteSpace: "normal", maxWidth: 70, lineHeight: 1.2 }}>{c.nome}</th>)}
+              <th style={css.th}>Obj</th>
+              <th style={css.th}>Pren.</th>
+              <th style={css.th}>%</th>
+              {canaliTabella.map(c => <th key={c.id} style={{ ...css.th, whiteSpace: "normal", maxWidth: 70, lineHeight: 1.2 }}>{c.nome}</th>)}
+              <th style={{ ...css.th, color: T.accent }}>Aurora ✎</th>
             </tr>
           </thead>
           <tbody>
             {righe.map(({ titolo: t, totPren, byCanale }, i) => {
               const pct = t.obiettivo_assegnato > 0 ? Math.round(totPren / t.obiettivo_assegnato * 100) : 0;
+              const isEditingAurora = auroraEditing === t.id;
               return (
                 <tr key={t.id} style={{ background: i % 2 === 0 ? "transparent" : T.surface + "66" }}>
                   <td style={{ ...css.td, color: T.textMid, fontSize: "10px", whiteSpace: "nowrap" }}>{t.n_cedola}</td>
                   <td style={{ ...css.td, color: T.accent, fontWeight: "600", whiteSpace: "nowrap" }}>{t.editore_nome}</td>
-                  <td style={{ ...css.td, maxWidth: 220 }}><div style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{t.titolo}</div></td>
+                  <td style={{ ...css.td, maxWidth: 200 }}><div style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{t.titolo}</div></td>
                   <td style={{ ...css.td, fontFamily: "monospace", fontSize: "11px", color: T.textMid }}>{t.ean}</td>
                   <td style={css.td}>{t.obiettivo_assegnato?.toLocaleString("it")}</td>
                   <td style={{ ...css.td, color: T.green, fontWeight: "600" }}>{totPren > 0 ? totPren.toLocaleString("it") : "—"}</td>
                   <td style={css.td}><span style={{ color: pct >= 80 ? T.green : pct >= 50 ? T.accent : T.red, fontWeight: "700" }}>{pct}%</span></td>
-                  {canali.map(c => <td key={c.id} style={{ ...css.td, color: byCanale[c.codice] ? T.text : T.textDim }}>{byCanale[c.codice]?.toLocaleString("it") ?? "—"}</td>)}
+                  {canaliTabella.map(c => <td key={c.id} style={{ ...css.td, color: byCanale[c.codice] ? T.text : T.textDim }}>{byCanale[c.codice]?.toLocaleString("it") ?? "—"}</td>)}
+                  <td style={css.td}>
+                    {isEditingAurora ? (
+                      <div style={{ display: "flex", gap: 4 }}>
+                        <input type="number" defaultValue={auroraEdit[t.id] || 0}
+                          style={{ ...css.input, width: 70, padding: "2px 6px" }}
+                          id={`aurora-${t.id}`}
+                          autoFocus
+                          onKeyDown={e => { if (e.key === "Enter") saveAurora(t.id, e.target.value); if (e.key === "Escape") setAuroraEditing(null); }}
+                        />
+                        <button style={{ ...css.btn("accent"), padding: "2px 8px", fontSize: "11px" }}
+                          onClick={() => saveAurora(t.id, document.getElementById(`aurora-${t.id}`).value)}>✓</button>
+                      </div>
+                    ) : (
+                      <div style={{ display: "flex", alignItems: "center", gap: 6, cursor: "pointer" }} onClick={() => setAuroraEditing(t.id)}>
+                        <span style={{ color: auroraEdit[t.id] ? T.text : T.textDim }}>{auroraEdit[t.id]?.toLocaleString("it") || "—"}</span>
+                        <span style={{ color: T.accent, fontSize: "11px" }}>✎</span>
+                      </div>
+                    )}
+                  </td>
                 </tr>
               );
             })}
@@ -723,6 +804,7 @@ function ModuloFineGiro({ titoli, prenotato, canali, token }) {
     </div>
   );
 }
+
 
 
 // ─── APP ROOT ─────────────────────────────────────────────────────────────────
