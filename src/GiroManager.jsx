@@ -934,6 +934,8 @@ export default function App() {
           <button style={{ ...css.btn(), fontSize: "11px", padding: "4px 10px", width: "100%", marginBottom: 4 }} onClick={async () => {
             const nuova = prompt("Nuova password (min. 6 caratteri):");
             if (!nuova || nuova.length < 6) { alert("Password troppo corta."); return; }
+            const conferma = prompt("Conferma nuova password:");
+            if (nuova !== conferma) { alert("Le password non coincidono."); return; }
             const r = await fetch(`${SUPABASE_URL}/auth/v1/user`, {
               method: "PUT",
               headers: { "Content-Type": "application/json", "apikey": SUPABASE_KEY, "Authorization": `Bearer ${session.token}` },
@@ -941,9 +943,6 @@ export default function App() {
             });
             if (r.ok) alert("Password aggiornata."); else alert("Errore aggiornamento password.");
           }}>Modifica password</button>
-          <button style={{ ...css.btn(), fontSize: "11px", padding: "4px 10px", width: "100%" }} onClick={handleLogout}>Esci</button>
-        </div>
-      </div>
       <div style={css.main}>
         <div style={css.header}>
           <span style={{ color: T.accent, fontSize: "11px", letterSpacing: "0.12em", textTransform: "uppercase" }}>{MODULES.find(m => m.id === activeModule)?.label}</span>
