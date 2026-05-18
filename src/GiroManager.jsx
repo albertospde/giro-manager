@@ -186,7 +186,7 @@ function EditModal({ titolo, onSave, onClose }) {
 const MACROGRUPPI = [
   { id: "RETE", label: "Rete", canali: ["LIBRACCIO", "LIB_RELIGIOSE", "LIB_COOP", "INDIPENDENTI_ALTRE_CATENE"] },
   { id: "CATENE", label: "Catene Centralizzate", canali: ["FELTRINELLI", "MONDADORI", "UBIK", "GIUNTI"] },
-  { id: "GROSSISTI", label: "Grossisti", canali: ["FASTBOOK", "CENTROLIBRI", "AURORA", "GROSSISTI"] },
+  { id: "GROSSISTI", label: "Grossisti", canali: ["FASTBOOK", "CENTROLIBRI", "GROSSISTI", "AURORA"] },
   { id: "ONLINE", label: "Online", canali: ["AMAZON", "IBS", "ALTRI_ONLINE"] },
 ];
 
@@ -539,7 +539,7 @@ function ModuloCedola({ titoli, giriList, onUpdateTitolo, spalmatura, prenotato,
 const MACROGRUPPI_FG = [
   { id: "RETE", label: "Rete", canali: ["LIBRACCIO", "LIB_RELIGIOSE", "LIB_COOP", "INDIPENDENTI_ALTRE_CATENE"] },
   { id: "CATENE", label: "Catene Centralizzate", canali: ["FELTRINELLI", "MONDADORI", "UBIK", "GIUNTI"] },
-  { id: "GROSSISTI", label: "Grossisti", canali: ["FASTBOOK", "CENTROLIBRI", "AURORA", "GROSSISTI"] },
+  { id: "GROSSISTI", label: "Grossisti", canali: ["FASTBOOK", "CENTROLIBRI", "GROSSISTI", "AURORA"] },
   { id: "ONLINE", label: "Online", canali: ["AMAZON", "IBS", "ALTRI_ONLINE"] },
 ];
 
@@ -590,7 +590,7 @@ function ModuloFineGiro({ titoli, prenotato, canali, token, ruolo }) {
 
   useEffect(() => {
     if (!clienteSel || !token) { setPrenotatoCliente([]); return; }
-    fetch(`${SUPABASE_URL}/rest/v1/prenotato_clienti?codice_cliente=eq.${clienteSel}&select=*&limit=10000`, {
+    fetch(`${SUPABASE_URL}/rest/v1/prenotato_clienti?codice_cliente=eq.${encodeURIComponent(clienteSel)}&select=canale_id,quantita&limit=10000`, {
       headers: { "apikey": SUPABASE_KEY, "Authorization": `Bearer ${token}` }
     }).then(r => r.json()).then(data => {
       if (Array.isArray(data)) setPrenotatoCliente(data);
@@ -659,12 +659,24 @@ function ModuloFineGiro({ titoli, prenotato, canali, token, ruolo }) {
 
   const macrogruppiVis = ruolo === "agente" ? MACROGRUPPI_FG.filter(mg => mg.id === "RETE") : MACROGRUPPI_FG;
 
+  // Quando cliente selezionato, mostra totali canale del cliente (non per titolo)
+  const byCanaleCliente = useMemo(() => {
+    if (!clienteSel || prenotatoCliente.length === 0) return null;
+    const map = {};
+    prenotatoCliente.forEach(p => {
+      const c = canali.find(c => c.id === p.canale_id);
+      if (c) map[c.codice] = (map[c.codice] || 0) + p.quantita;
+    });
+    return map;
+  }, [clienteSel, prenotatoCliente, canali]);
+
   const righe = useMemo(() => titoliSel.map(t => {
-    if (clienteSel) {
-      const prenCli = prenotatoCliente.filter(p => p.titolo_id === t.id);
-      const totPren = prenCli.reduce((s, p) => s + p.quantita, 0);
+    if (clienteSel && byCanaleCliente) {
+      // Per cliente: mostra prenotato normale del titolo ma evidenzia il cliente nel riepilogo
+      const pren = prenotato.filter(p => p.titolo_id === t.id);
+      const totPren = pren.reduce((s, p) => s + p.quantita, 0);
       const byCanale = {};
-      prenCli.forEach(p => { const c = canali.find(c => c.id === p.canale_id); if (c) byCanale[c.codice] = p.quantita; });
+      pren.forEach(p => { const c = canali.find(c => c.id === p.canale_id); if (c) byCanale[c.codice] = p.quantita; });
       return { titolo: t, totPren, byCanale };
     }
     const pren = prenotato.filter(p => p.titolo_id === t.id);
@@ -712,8 +724,24 @@ function ModuloFineGiro({ titoli, prenotato, canali, token, ruolo }) {
       return [t.n_cedola, t.ean, t.titolo, t.autore, t.codice_editore, t.editore_nome, t.prezzo, t.obiettivo_assegnato, totPren, `${pct}%`, ...colCanali.map(c => byCanale[c.codice] ?? 0)];
     });
     const ws = XLSX.utils.aoa_to_sheet([headers, ...rows]);
+
+    // Foglio RIEPILOGO macrogruppi
+    const riepilogoRows = [["MACROGRUPPO","CANALE","PRENOTATO"]];
+    macrogruppiVis.forEach(mg => {
+      const totMgQta = mg.canali.reduce((s, cod) => s + (prenotatoPerCanale[cod] || 0), 0);
+      riepilogoRows.push([mg.label, "TOTALE", totMgQta]);
+      mg.canali.forEach(cod => {
+        const c = canali.find(c => c.codice === cod);
+        if (c) riepilogoRows.push(["", c.nome, prenotatoPerCanale[cod] || 0]);
+      });
+      riepilogoRows.push(["", "", ""]);
+    });
+    const wsRiepilogo = XLSX.utils.aoa_to_sheet(riepilogoRows);
+    wsRiepilogo["!cols"] = [{ wch: 25 }, { wch: 30 }, { wch: 12 }];
+
     const wb = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(wb, ws, "FINE GIRO");
+    XLSX.utils.book_append_sheet(wb, wsRiepilogo, "RIEPILOGO");
     XLSX.writeFile(wb, `FINE_GIRO_${giroLabelSel || extraSel || "EXPORT"}.xlsx`);
   };
 
@@ -802,6 +830,28 @@ function ModuloFineGiro({ titoli, prenotato, canali, token, ruolo }) {
         <button style={{ ...css.btn("accent"), marginLeft: "auto" }} onClick={exportExcel}>↓ Export Excel</button>
       </div>
       <div style={{ padding: "12px 20px", borderBottom: `1px solid ${T.border}`, display: "flex", gap: 12, flexWrap: "wrap" }}>
+        {clienteSel && byCanaleCliente && (
+          <div style={{ width: "100%", background: T.accent + "18", border: `1px solid ${T.accent}44`, borderRadius: 4, padding: "8px 14px", marginBottom: 4 }}>
+            <div style={{ color: T.accent, fontWeight: "700", fontSize: "11px", marginBottom: 6 }}>
+              RIEPILOGO CLIENTE: {clientiList.find(c => c.cod === clienteSel)?.nome || clienteSel}
+            </div>
+            <div style={{ display: "flex", flexWrap: "wrap", gap: 16 }}>
+              {Object.entries(byCanaleCliente).sort((a,b) => b[1]-a[1]).map(([cod, qta]) => {
+                const c = canali.find(c => c.codice === cod);
+                return c ? (
+                  <div key={cod} style={{ fontSize: "12px" }}>
+                    <span style={{ color: T.textMid }}>{c.nome}: </span>
+                    <span style={{ color: T.green, fontWeight: "700" }}>{qta.toLocaleString("it")}</span>
+                  </div>
+                ) : null;
+              })}
+              <div style={{ fontSize: "12px", marginLeft: "auto" }}>
+                <span style={{ color: T.textMid }}>Totale: </span>
+                <span style={{ color: T.accent, fontWeight: "700" }}>{Object.values(byCanaleCliente).reduce((s,v)=>s+v,0).toLocaleString("it")}</span>
+              </div>
+            </div>
+          </div>
+        )}
         {macrogruppiVis.map(mg => (
           <div key={mg.id} style={{ background: T.surface, border: `1px solid ${T.border}`, borderRadius: 4, padding: "10px 14px", minWidth: 160 }}>
             <div style={{ color: T.accent, fontWeight: "700", fontSize: "11px", letterSpacing: "0.08em", textTransform: "uppercase", marginBottom: 8 }}>
