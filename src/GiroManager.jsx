@@ -552,6 +552,13 @@ const accounts = useMemo(() => {
   );
 }
 
+const MACROGRUPPI_FG = [
+  { id: "RETE", label: "Rete", canali: ["LIBRACCIO", "LIB_RELIGIOSE", "LIB_COOP", "INDIPENDENTI_ALTRE_CATENE"] },
+  { id: "CATENE", label: "Catene Centralizzate", canali: ["FELTRINELLI", "MONDADORI", "UBIK", "GIUNTI"] },
+  { id: "GROSSISTI", label: "Grossisti", canali: ["FASTBOOK", "CENTROLIBRI", "AURORA", "GROSSISTI"] },
+  { id: "ONLINE", label: "Online", canali: ["AMAZON", "IBS", "ALTRI_ONLINE"] },
+];
+
 function ModuloFineGiro({ titoli, prenotato, canali, token }) {
   const giriLabel = useMemo(() => [...new Set(titoli.map(t => t.giro_label).filter(Boolean))].sort((a, b) => {
     const [na, ya] = a.split(" "); const [nb, yb] = b.split(" ");
@@ -568,7 +575,6 @@ function ModuloFineGiro({ titoli, prenotato, canali, token }) {
   const [clientiList, setClientiList] = useState([]);
   const [clienteDropdownOpen, setClienteDropdownOpen] = useState(false);
   const [prenotatoCliente, setPrenotatoCliente] = useState([]);
-  // Aurora editabile: { titolo_id: quantita }
   const [auroraEdit, setAuroraEdit] = useState({});
   const [auroraEditing, setAuroraEditing] = useState(null);
 
@@ -595,7 +601,6 @@ function ModuloFineGiro({ titoli, prenotato, canali, token }) {
     });
   }, [clienteSel, token]);
 
-  // Carica Aurora esistente
   useEffect(() => {
     if (!token) return;
     const auroraCanale = canali.find(c => c.codice === "AURORA");
@@ -647,8 +652,6 @@ function ModuloFineGiro({ titoli, prenotato, canali, token }) {
   [titoli, giroLabelSel, cedolaSel, filterEditore, filterAccount, search]);
 
   const totObj = titoliSel.reduce((s, t) => s + (t.obiettivo_assegnato || 0), 0);
-
-  // Canali per colonne (escludi Aurora — ha colonna dedicata)
   const canaliTabella = useMemo(() => canali.filter(c => c.codice !== "AURORA"), [canali]);
 
   const righe = useMemo(() => titoliSel.map(t => {
@@ -671,6 +674,25 @@ function ModuloFineGiro({ titoli, prenotato, canali, token }) {
   const totPrenotato = righe.reduce((s, r) => s + r.totPren, 0);
   const pctTot = totObj > 0 ? Math.round(totPrenotato / totObj * 100) : 0;
 
+  // Totali per canale dai dati filtrati
+  const prenotatoPerCanale = useMemo(() => {
+    const map = {};
+    righe.forEach(({ byCanale }) => {
+      Object.entries(byCanale).forEach(([cod, qta]) => {
+        map[cod] = (map[cod] || 0) + (qta || 0);
+      });
+    });
+    return map;
+  }, [righe]);
+
+  const totMacro = useMemo(() => {
+    const map = {};
+    MACROGRUPPI_FG.forEach(mg => {
+      map[mg.id] = mg.canali.reduce((s, cod) => s + (prenotatoPerCanale[cod] || 0), 0);
+    });
+    return map;
+  }, [prenotatoPerCanale]);
+
   const clientiFiltrati = useMemo(() => {
     if (!clienteSearch) return clientiList;
     const q = clienteSearch.toLowerCase();
@@ -692,6 +714,7 @@ function ModuloFineGiro({ titoli, prenotato, canali, token }) {
 
   return (
     <div style={{ display: "flex", flexDirection: "column", height: "100%", overflow: "hidden" }}>
+      {/* Filtri */}
       <div style={{ padding: "12px 20px", borderBottom: `1px solid ${T.border}`, display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap" }}>
         <select style={css.input} value={giroLabelSel || ""} onChange={e => { setGiroLabelSel(e.target.value); setCedolaSel("tutti"); setFilterEditore("tutti"); setFilterAccount("tutti"); }}>
           {giriLabel.map(g => <option key={g} value={g}>Giro {g}</option>)}
@@ -709,8 +732,6 @@ function ModuloFineGiro({ titoli, prenotato, canali, token }) {
           {accounts.map(a => <option key={a} value={a}>{a}</option>)}
         </select>
         <input style={{ ...css.input, width: 180 }} placeholder="Cerca EAN / titolo..." value={search} onChange={e => setSearch(e.target.value)} />
-
-        {/* Ricerca cliente */}
         <div style={{ position: "relative" }}>
           <button style={{ ...css.btn(clienteSel ? "accent" : "default"), minWidth: 180, display: "flex", justifyContent: "space-between", alignItems: "center", gap: 8 }}
             onClick={() => setClienteDropdownOpen(o => !o)}>
@@ -725,9 +746,7 @@ function ModuloFineGiro({ titoli, prenotato, canali, token }) {
                 <input style={{ ...css.input, width: "100%", boxSizing: "border-box" }} placeholder="Cerca cliente..." value={clienteSearch} onChange={e => setClienteSearch(e.target.value)} autoFocus />
               </div>
               <div style={{ padding: "6px 12px", cursor: "pointer", color: !clienteSel ? T.accent : T.textMid, fontSize: "12px", borderBottom: `1px solid ${T.border}22` }}
-                onClick={() => { setClienteSel(null); setClienteDropdownOpen(false); setClienteSearch(""); }}>
-                Tutti i clienti
-              </div>
+                onClick={() => { setClienteSel(null); setClienteDropdownOpen(false); setClienteSearch(""); }}>Tutti i clienti</div>
               {clientiFiltrati.map(c => (
                 <div key={c.cod} style={{ padding: "6px 12px", cursor: "pointer", fontSize: "12px", color: clienteSel === c.cod ? T.accent : T.text, background: clienteSel === c.cod ? T.accent + "18" : "transparent", borderBottom: `1px solid ${T.border}22` }}
                   onClick={() => { setClienteSel(c.cod); setClienteDropdownOpen(false); setClienteSearch(""); }}>
@@ -738,7 +757,6 @@ function ModuloFineGiro({ titoli, prenotato, canali, token }) {
             </div>
           )}
         </div>
-
         <div style={{ color: T.textMid, fontSize: "12px" }}>
           Obj: <span style={{ color: T.accent, fontWeight: "700" }}>{totObj.toLocaleString("it")}</span>
           &nbsp;·&nbsp; Pren: <span style={{ color: T.green, fontWeight: "700" }}>{totPrenotato.toLocaleString("it")}</span>
@@ -747,6 +765,30 @@ function ModuloFineGiro({ titoli, prenotato, canali, token }) {
         <button style={{ ...css.btn("accent"), marginLeft: "auto" }} onClick={exportExcel}>↓ Export Excel</button>
       </div>
 
+      {/* Riepilogo macrogruppi */}
+      <div style={{ padding: "12px 20px", borderBottom: `1px solid ${T.border}`, display: "flex", gap: 12, flexWrap: "wrap" }}>
+        {MACROGRUPPI_FG.map(mg => (
+          <div key={mg.id} style={{ background: T.surface, border: `1px solid ${T.border}`, borderRadius: 4, padding: "10px 14px", minWidth: 160 }}>
+            <div style={{ color: T.accent, fontWeight: "700", fontSize: "11px", letterSpacing: "0.08em", textTransform: "uppercase", marginBottom: 8 }}>
+              {mg.label}
+              <span style={{ color: T.green, marginLeft: 8, fontSize: "13px" }}>{totMacro[mg.id].toLocaleString("it")}</span>
+            </div>
+            {mg.canali.map(cod => {
+              const c = canali.find(c => c.codice === cod);
+              if (!c) return null;
+              const qta = prenotatoPerCanale[cod] || 0;
+              return (
+                <div key={cod} style={{ display: "flex", justifyContent: "space-between", fontSize: "11px", padding: "2px 0", borderTop: `1px solid ${T.border}22` }}>
+                  <span style={{ color: T.textMid }}>{c.nome}</span>
+                  <span style={{ color: qta > 0 ? T.text : T.textDim, fontWeight: qta > 0 ? "600" : "400" }}>{qta > 0 ? qta.toLocaleString("it") : "—"}</span>
+                </div>
+              );
+            })}
+          </div>
+        ))}
+      </div>
+
+      {/* Tabella titoli */}
       <div style={{ flex: 1, overflowY: "auto", overflowX: "auto" }}>
         <table style={css.table}>
           <thead>
@@ -781,8 +823,7 @@ function ModuloFineGiro({ titoli, prenotato, canali, token }) {
                       <div style={{ display: "flex", gap: 4 }}>
                         <input type="number" defaultValue={auroraEdit[t.id] || 0}
                           style={{ ...css.input, width: 70, padding: "2px 6px" }}
-                          id={`aurora-${t.id}`}
-                          autoFocus
+                          id={`aurora-${t.id}`} autoFocus
                           onKeyDown={e => { if (e.key === "Enter") saveAurora(t.id, e.target.value); if (e.key === "Escape") setAuroraEditing(null); }}
                         />
                         <button style={{ ...css.btn("accent"), padding: "2px 8px", fontSize: "11px" }}
