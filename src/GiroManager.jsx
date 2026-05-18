@@ -512,9 +512,11 @@ function ModuloFineGiro({ titoli, prenotato, canali, token, ruolo }) {
   }, [titoli, giroLabelSel, extraSel, cedolaSel, filterEditore, filterAccount, search]);
 
   const canaliTabella = useMemo(() => {
-    if (ruolo === "agente") return canali.filter(c => CANALI_RETE.includes(c.codice));
-    return canali.filter(c => c.codice !== "AURORA");
-  }, [canali, ruolo]);
+    let base = ruolo === "agente" ? canali.filter(c => CANALI_RETE.includes(c.codice)) : canali.filter(c => c.codice !== "AURORA");
+    if (filterCanale !== "tutti") base = base.filter(c => c.codice === filterCanale);
+    if (clienteSel && byCanaleCliente) base = base.filter(c => (byCanaleCliente[c.codice] || 0) > 0);
+    return base;
+  }, [canali, ruolo, filterCanale, clienteSel, byCanaleCliente]);
 
   const macrogruppiVis = ruolo === "agente" ? MACROGRUPPI.filter(mg => mg.id === "RETE") : MACROGRUPPI;
 
