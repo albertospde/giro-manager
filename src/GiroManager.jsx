@@ -31,21 +31,6 @@ const sbFetch = async (path, token) => {
   return r.json();
 };
 
-// FIX 5: Funzione per salvare un titolo su Supabase (PATCH)
-const sbUpdateTitolo = async (id, updates, token) => {
-  const r = await fetch(`${SUPABASE_URL}/rest/v1/titoli?id=eq.${id}`, {
-    method: "PATCH",
-    headers: {
-      "apikey": SUPABASE_KEY,
-      "Authorization": `Bearer ${token}`,
-      "Content-Type": "application/json",
-      "Prefer": "return=minimal",
-    },
-    body: JSON.stringify(updates),
-  });
-  return r.ok;
-};
-
 const T = {
   bg: "#1a2140", surface: "#212d54", border: "#2e3d6b", borderHi: "#3d4f82",
   text: "#f0f2f8", textMid: "#8b9cc8", textDim: "#4a5a8a",
@@ -67,24 +52,12 @@ const css = {
 
 const CANALI_RETE = ["LIBRACCIO", "LIB_RELIGIOSE", "LIB_COOP", "INDIPENDENTI_ALTRE_CATENE"];
 
-// MOD 1: Gruppo 94 (AURORA → DIRETTI_TIPOGRAFIA) ora in GROSSISTI
-// MOD 2: "Aurora" rinominata in "Diretti da Tipografia"
 const MACROGRUPPI = [
   { id: "RETE", label: "Rete", canali: ["LIBRACCIO", "LIB_RELIGIOSE", "LIB_COOP", "INDIPENDENTI_ALTRE_CATENE"] },
   { id: "CATENE", label: "Catene Centralizzate", canali: ["FELTRINELLI", "MONDADORI", "UBIK", "GIUNTI"] },
   { id: "GROSSISTI", label: "Grossisti", canali: ["FASTBOOK", "CENTROLIBRI", "GROSSISTI", "AURORA"] },
   { id: "ONLINE", label: "Online", canali: ["AMAZON", "IBS", "ALTRI_ONLINE"] },
 ];
-
-// Label di visualizzazione canali (MOD 2: AURORA → "Diretti da Tipografia")
-const CANALE_DISPLAY_NAMES = {
-  AURORA: "Diretti da Tipografia",
-};
-// Helper per ottenere il nome visualizzato di un canale
-const getCanaleDisplayName = (canale) => {
-  if (!canale) return "";
-  return CANALE_DISPLAY_NAMES[canale.codice] || canale.nome;
-};
 
 function LoginScreen({ onLogin }) {
   const [email, setEmail] = useState("");
@@ -146,42 +119,9 @@ function KpiCard({ label, value, sub, color = T.accent }) {
   );
 }
 
-// FIX 5: EditModal ora riceve anche token e onSaveDB per salvare su Supabase
-function EditModal({ titolo, onSave, onClose, token }) {
+function EditModal({ titolo, onSave, onClose }) {
   const [form, setForm] = useState({ ...titolo });
-  const [saving, setSaving] = useState(false);
   const set = k => e => setForm(f => ({ ...f, [k]: e.target.type === "checkbox" ? e.target.checked : e.target.value }));
-
-  const handleSave = async () => {
-    setSaving(true);
-    // Prepara l'oggetto con solo i campi modificabili
-    const payload = {};
-    const editableFields = [
-      "titolo","autore","editore_nome","ean","prezzo","uscita","formato","eta",
-      "account_editore","promozione","obiettivo_assegnato","obiettivo_raggiunto",
-      "il_triangolo","top_100","ean_gemello_1","titolo_gemello_1","ean_gemello_2",
-      "titolo_gemello_2","ean_gemello_3","titolo_gemello_3","note_comunicazione","note"
-    ];
-    editableFields.forEach(k => {
-      if (form[k] !== titolo[k]) {
-        let val = form[k];
-        // Converti numeri
-        if (["prezzo","obiettivo_assegnato","obiettivo_raggiunto"].includes(k)) {
-          val = val === "" || val === null || val === undefined ? null : Number(val);
-        }
-        payload[k] = val;
-      }
-    });
-
-    if (Object.keys(payload).length > 0 && token) {
-      const ok = await sbUpdateTitolo(form.id, payload, token);
-      if (!ok) { alert("Errore nel salvataggio su database."); setSaving(false); return; }
-    }
-    onSave(form);
-    setSaving(false);
-    onClose();
-  };
-
   return (
     <div style={{ position: "fixed", inset: 0, background: "#000a", zIndex: 100, display: "flex", alignItems: "center", justifyContent: "center" }} onClick={onClose}>
       <div style={{ background: T.surface, border: `1px solid ${T.borderHi}`, borderRadius: 6, padding: 24, width: 640, maxHeight: "85vh", overflowY: "auto" }} onClick={e => e.stopPropagation()}>
@@ -224,101 +164,14 @@ function EditModal({ titolo, onSave, onClose, token }) {
         </div>
         <div style={{ marginTop: 20, display: "flex", justifyContent: "flex-end", gap: 8 }}>
           <button style={css.btn()} onClick={onClose}>Annulla</button>
-          <button style={css.btn("accent")} onClick={handleSave} disabled={saving}>
-            {saving ? "Salvataggio..." : "Salva"}
-          </button>
+          <button style={css.btn("accent")} onClick={() => { onSave(form); onClose(); }}>Salva</button>
         </div>
       </div>
     </div>
   );
 }
 
-// MOD 3: Sezione obiettivi per canale nella Dashboard
-function ObiettivisCanaleSection({ titoli, prenotato, canali, spalmatura, ruolo }) {
-  const macrogruppiVis = ruolo === "agente" ? MACROGRUPPI.filter(mg => mg.id === "RETE") : MACROGRUPPI;
-
-  // Calcola obiettivo assegnato per canale usando la spalmatura
-  const obiPerCanale = useMemo(() => {
-    const map = {};
-    canali.forEach(c => {
-      let assegnato = 0;
-      titoli.forEach(t => {
-        const spRow = spalmatura.find(s => s.editore_nome === t.editore_nome && s.formato === (t.formato || 'Cover') && s.canale_codice === c.codice);
-        if (spRow && t.obiettivo_assegnato) {
-          assegnato += Math.round(t.obiettivo_assegnato * spRow.percentuale);
-        }
-      });
-      // Raggiunto = prenotato effettivo su quel canale
-      const raggiunto = prenotato.filter(p => p.canale_id === c.id).reduce((s, p) => s + p.quantita, 0);
-      map[c.codice] = { assegnato, raggiunto };
-    });
-    return map;
-  }, [titoli, prenotato, canali, spalmatura]);
-
-  return (
-    <div>
-      <div style={{ color: T.textMid, fontSize: "11px", letterSpacing: "0.1em", textTransform: "uppercase", marginBottom: 12 }}>OBIETTIVI PER CANALE</div>
-      {macrogruppiVis.map(mg => {
-        const totAss = mg.canali.reduce((s, cod) => s + (obiPerCanale[cod]?.assegnato || 0), 0);
-        const totRag = mg.canali.reduce((s, cod) => s + (obiPerCanale[cod]?.raggiunto || 0), 0);
-        const pctMg = totAss > 0 ? Math.round(totRag / totAss * 100) : 0;
-        return (
-          <div key={mg.id} style={{ marginBottom: 20 }}>
-            <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 8, padding: "10px 16px", background: T.surface, border: `1px solid ${T.borderHi}`, borderRadius: 4 }}>
-              <div style={{ fontWeight: "700", color: T.accent, fontSize: "13px", width: 200 }}>{mg.label}</div>
-              <div style={{ flex: 1, display: "flex", alignItems: "center", gap: 12 }}>
-                <div style={{ fontSize: "12px", color: T.textMid }}>Ass: <span style={{ color: T.text, fontWeight: "600" }}>{totAss.toLocaleString("it")}</span></div>
-                <div style={{ fontSize: "12px", color: T.textMid }}>Rag: <span style={{ color: T.green, fontWeight: "600" }}>{totRag.toLocaleString("it")}</span></div>
-              </div>
-              <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                <div style={{ width: 80, height: 6, background: T.borderHi, borderRadius: 3, overflow: "hidden" }}>
-                  <div style={{ width: `${Math.min(100, pctMg)}%`, height: "100%", background: pctMg >= 80 ? T.green : pctMg >= 50 ? T.accent : T.red }} />
-                </div>
-                <span style={{ color: pctMg >= 80 ? T.green : pctMg >= 50 ? T.accent : T.red, fontWeight: "700", fontSize: "12px", width: 40, textAlign: "right" }}>{pctMg}%</span>
-              </div>
-            </div>
-            <table style={{ width: "100%", borderCollapse: "collapse" }}>
-              <thead>
-                <tr>
-                  <th style={{ ...css.th, background: "transparent" }}>Canale</th>
-                  <th style={{ ...css.th, background: "transparent", textAlign: "right" }}>Assegnato</th>
-                  <th style={{ ...css.th, background: "transparent", textAlign: "right" }}>Raggiunto</th>
-                  <th style={{ ...css.th, background: "transparent", width: 140 }}>Avanzamento</th>
-                </tr>
-              </thead>
-              <tbody>
-                {mg.canali.map(codice => {
-                  const c = canali.find(c => c.codice === codice); if (!c) return null;
-                  const { assegnato, raggiunto } = obiPerCanale[codice] || { assegnato: 0, raggiunto: 0 };
-                  const pct = assegnato > 0 ? Math.round(raggiunto / assegnato * 100) : 0;
-                  return (
-                    <tr key={codice} style={{ borderBottom: `1px solid ${T.border}11` }}>
-                      <td style={{ padding: "6px 12px 6px 32px", fontSize: "12px", color: T.textMid }}>{getCanaleDisplayName(c)}</td>
-                      <td style={{ padding: "6px 12px", fontSize: "12px", textAlign: "right" }}>{assegnato > 0 ? assegnato.toLocaleString("it") : "—"}</td>
-                      <td style={{ padding: "6px 12px", fontSize: "12px", textAlign: "right", color: T.green }}>{raggiunto > 0 ? raggiunto.toLocaleString("it") : "—"}</td>
-                      <td style={{ padding: "6px 12px" }}>
-                        {assegnato > 0 ? (
-                          <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                            <div style={{ width: 80, height: 4, background: T.borderHi, borderRadius: 2, overflow: "hidden" }}>
-                              <div style={{ width: `${Math.min(100, pct)}%`, height: "100%", background: pct >= 80 ? T.green : pct >= 50 ? T.accent : T.red }} />
-                            </div>
-                            <span style={{ color: pct >= 80 ? T.green : pct >= 50 ? T.accent : T.red, fontSize: "11px", fontWeight: "700" }}>{pct}%</span>
-                          </div>
-                        ) : <span style={{ color: T.textDim, fontSize: "11px" }}>—</span>}
-                      </td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
-          </div>
-        );
-      })}
-    </div>
-  );
-}
-
-function ModuloDashboard({ titoli, prenotato, canali, spalmatura, ruolo }) {
+function ModuloDashboard({ titoli, prenotato, canali, ruolo }) {
   const giriLabel = useMemo(() => {
     return [...new Set(titoli.map(t => t.giro_label).filter(Boolean))].sort((a, b) => {
       const [na, ya] = a.split(" "); const [nb, yb] = b.split(" ");
@@ -381,8 +234,6 @@ function ModuloDashboard({ titoli, prenotato, canali, spalmatura, ruolo }) {
           <div style={{ color: T.textMid, fontSize: "11px", marginTop: 6 }}>{totPrenotatoGiro.toLocaleString("it")} / {kpiGiro.totObj.toLocaleString("it")}</div>
         </div>
       </div>
-
-      {/* CEDOLE */}
       <div style={{ marginBottom: 24 }}>
         <div style={{ color: T.textMid, fontSize: "11px", letterSpacing: "0.1em", textTransform: "uppercase", marginBottom: 12 }}>CEDOLE</div>
         <table style={{ width: "100%", borderCollapse: "collapse" }}>
@@ -408,13 +259,6 @@ function ModuloDashboard({ titoli, prenotato, canali, spalmatura, ruolo }) {
           </tbody>
         </table>
       </div>
-
-      {/* MOD 3: OBIETTIVI PER CANALE */}
-      <div style={{ marginBottom: 24 }}>
-        <ObiettivisCanaleSection titoli={titoliGiro} prenotato={prenotatoGiro} canali={canali} spalmatura={spalmatura} ruolo={ruolo} />
-      </div>
-
-      {/* PRENOTATO PER CANALE */}
       <div>
         <div style={{ color: T.textMid, fontSize: "11px", letterSpacing: "0.1em", textTransform: "uppercase", marginBottom: 12 }}>PRENOTATO PER CANALE</div>
         {macrogruppiVis.map(mg => (
@@ -429,7 +273,7 @@ function ModuloDashboard({ titoli, prenotato, canali, spalmatura, ruolo }) {
               const qta = prenotatoPerCanale[codice] || 0;
               return (
                 <div key={codice} style={{ display: "flex", alignItems: "center", gap: 12, padding: "5px 16px 5px 32px", borderBottom: `1px solid ${T.border}11` }}>
-                  <div style={{ width: 184, fontSize: "12px", color: T.textMid }}>{getCanaleDisplayName(c)}</div>
+                  <div style={{ width: 184, fontSize: "12px", color: T.textMid }}>{c.nome}</div>
                   <div style={{ flex: 1, height: 4, background: T.borderHi, borderRadius: 2, overflow: "hidden" }}><div style={{ width: qta > 0 && totMacro[mg.id] > 0 ? `${(qta / totMacro[mg.id]) * 100}%` : "0%", height: "100%", background: T.blue }} /></div>
                   <div style={{ width: 80, textAlign: "right", color: qta > 0 ? T.text : T.textDim, fontSize: "12px" }}>{qta > 0 ? qta.toLocaleString("it") : "—"}</div>
                   <div style={{ width: 40, textAlign: "right", color: T.textMid, fontSize: "11px" }}>{totPrenotatoGiro > 0 && qta > 0 ? `${Math.round(qta / totPrenotatoGiro * 100)}%` : ""}</div>
@@ -443,8 +287,7 @@ function ModuloDashboard({ titoli, prenotato, canali, spalmatura, ruolo }) {
   );
 }
 
-// FIX 5: ModuloCedola ora riceve token per passarlo alla EditModal
-function ModuloCedola({ titoli, giriList, onUpdateTitolo, spalmatura, prenotato, ruolo, token }) {
+function ModuloCedola({ titoli, giriList, onUpdateTitolo, spalmatura, prenotato, ruolo }) {
   const [giroLabelSel, setGiroLabelSel] = useState("tutti");
   const [giroSel, setGiroSel] = useState("tutti");
   const [search, setSearch] = useState("");
@@ -503,8 +346,7 @@ function ModuloCedola({ titoli, giriList, onUpdateTitolo, spalmatura, prenotato,
 
   return (
     <div style={{ display: "flex", flexDirection: "column", height: "100%", overflow: "hidden" }}>
-      {/* FIX 5: Passato token alla EditModal */}
-      {editingTitolo && <EditModal titolo={editingTitolo} onSave={onUpdateTitolo} onClose={() => setEditingId(null)} token={token} />}
+      {editingTitolo && <EditModal titolo={editingTitolo} onSave={onUpdateTitolo} onClose={() => setEditingId(null)} />}
       <div style={{ padding: "12px 20px", borderBottom: `1px solid ${T.border}`, display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap" }}>
         <select style={css.input} value={giroLabelSel} onChange={e => { setGiroLabelSel(e.target.value); setGiroSel("tutti"); setFilterEditori([]); }}>
           <option value="tutti">Tutti i giri</option>
@@ -587,7 +429,7 @@ function ModuloCedola({ titoli, giriList, onUpdateTitolo, spalmatura, prenotato,
   );
 }
 
-function ModuloFineGiro({ titoli, prenotato, canali, token, ruolo, spalmatura }) {
+function ModuloFineGiro({ titoli, prenotato, canali, token, ruolo }) {
   const giriLabel = useMemo(() => [...new Set(titoli.filter(t => t.giro_label !== "EXTRA").map(t => t.giro_label).filter(Boolean))].sort((a, b) => {
     const [na, ya] = a.split(" "); const [nb, yb] = b.split(" ");
     return Number(yb || 0) - Number(ya || 0) || Number(nb || 0) - Number(na || 0);
@@ -678,6 +520,7 @@ function ModuloFineGiro({ titoli, prenotato, canali, token, ruolo, spalmatura })
 
   const macrogruppiVis = ruolo === "agente" ? MACROGRUPPI.filter(mg => mg.id === "RETE") : MACROGRUPPI;
 
+  // Totali cliente per canale (per riepilogo)
   const byCanaleCliente = useMemo(() => {
     if (!clienteSel || prenotatoCliente.length === 0) return null;
     const map = {};
@@ -685,6 +528,7 @@ function ModuloFineGiro({ titoli, prenotato, canali, token, ruolo, spalmatura })
     return map;
   }, [clienteSel, prenotatoCliente, canali]);
 
+  // Mappa titolo_id -> { canale_codice: quantita } per cliente selezionato
   const prenotatoClienteByTitolo = useMemo(() => {
     if (!clienteSel || prenotatoCliente.length === 0) return null;
     const map = {};
@@ -698,6 +542,7 @@ function ModuloFineGiro({ titoli, prenotato, canali, token, ruolo, spalmatura })
   }, [clienteSel, prenotatoCliente, canali]);
 
   const righe = useMemo(() => titoliSel.map(t => {
+    // Se cliente selezionato, usa il prenotato del cliente per quel titolo
     if (clienteSel && prenotatoClienteByTitolo) {
       const byCanale = prenotatoClienteByTitolo[t.id] || {};
       const totPren = Object.values(byCanale).reduce((s, v) => s + v, 0);
@@ -716,6 +561,7 @@ function ModuloFineGiro({ titoli, prenotato, canali, token, ruolo, spalmatura })
     return { titolo: t, totPren: totPrenBase + aurora, byCanale };
   }), [titoliSel, prenotato, canali, auroraEdit, ruolo, clienteSel, prenotatoClienteByTitolo]);
 
+  // Applica filtro canale
   const righeFiltrate = useMemo(() => {
     if (filterCanale === "tutti") return righe;
     return righe.filter(({ byCanale }) => (byCanale[filterCanale] || 0) > 0);
@@ -733,53 +579,27 @@ function ModuloFineGiro({ titoli, prenotato, canali, token, ruolo, spalmatura })
 
   const totMacro = useMemo(() => { const map = {}; macrogruppiVis.forEach(mg => { map[mg.id] = mg.canali.reduce((s, cod) => s + (prenotatoPerCanale[cod] || 0), 0); }); return map; }, [prenotatoPerCanale, macrogruppiVis]);
 
-  // MOD 4: Calcolo obiettivi per canale nello scarico (Fine Giro)
-  const obiPerCanaleFinGiro = useMemo(() => {
-    const map = {};
-    canali.forEach(c => {
-      let assegnato = 0;
-      righeFiltrate.forEach(({ titolo: t }) => {
-        const spRow = spalmatura.find(s => s.editore_nome === t.editore_nome && s.formato === (t.formato || 'Cover') && s.canale_codice === c.codice);
-        if (spRow && t.obiettivo_assegnato) {
-          assegnato += Math.round(t.obiettivo_assegnato * spRow.percentuale);
-        }
-      });
-      const raggiunto = prenotatoPerCanale[c.codice] || 0;
-      map[c.codice] = { assegnato, raggiunto };
-    });
-    return map;
-  }, [righeFiltrate, canali, spalmatura, prenotatoPerCanale]);
-
   const clientiFiltrati = useMemo(() => { if (!clienteSearch) return clientiList; const q = clienteSearch.toLowerCase(); return clientiList.filter(c => c.nome.toLowerCase().includes(q) || c.cod.includes(q)); }, [clientiList, clienteSearch]);
 
   const exportExcel = () => {
     const XLSX = window.XLSX;
     const colCanali = ruolo === "agente" ? canaliTabella : canali;
-    const headers = ["N° CEDOLA","EAN","TITOLO","AUTORE","COD.EDITORE","EDITORE","PREZZO","OBJ ASS.","PRENOTATO","AVANZ %",...colCanali.map(c => getCanaleDisplayName(c))];
+    const headers = ["N° CEDOLA","EAN","TITOLO","AUTORE","COD.EDITORE","EDITORE","PREZZO","OBJ ASS.","PRENOTATO","AVANZ %",...colCanali.map(c => c.nome)];
     const rows = righeFiltrate.map(({ titolo: t, totPren, byCanale }) => {
       const pct = t.obiettivo_assegnato > 0 ? Math.round(totPren / t.obiettivo_assegnato * 100) : 0;
       return [t.n_cedola, t.ean, t.titolo, t.autore, t.codice_editore, t.editore_nome, t.prezzo, t.obiettivo_assegnato, totPren, `${pct}%`, ...colCanali.map(c => byCanale[c.codice] ?? 0)];
     });
     const ws = XLSX.utils.aoa_to_sheet([headers, ...rows]);
-    // Foglio RIEPILOGO con obiettivi per canale
-    const riepilogoRows = [["MACROGRUPPO","CANALE","OBJ ASSEGNATO","PRENOTATO","AVANZ %"]];
+    // Foglio RIEPILOGO
+    const riepilogoRows = [["MACROGRUPPO","CANALE","PRENOTATO"]];
     macrogruppiVis.forEach(mg => {
-      const totMgAss = mg.canali.reduce((s, cod) => s + (obiPerCanaleFinGiro[cod]?.assegnato || 0), 0);
-      const totMgRag = mg.canali.reduce((s, cod) => s + (obiPerCanaleFinGiro[cod]?.raggiunto || 0), 0);
-      const pctMg = totMgAss > 0 ? Math.round(totMgRag / totMgAss * 100) : 0;
-      riepilogoRows.push([mg.label, "TOTALE", totMgAss, totMgRag, `${pctMg}%`]);
-      mg.canali.forEach(cod => {
-        const c = canali.find(c => c.codice === cod);
-        if (c) {
-          const { assegnato, raggiunto } = obiPerCanaleFinGiro[cod] || { assegnato: 0, raggiunto: 0 };
-          const pctC = assegnato > 0 ? Math.round(raggiunto / assegnato * 100) : 0;
-          riepilogoRows.push(["", getCanaleDisplayName(c), assegnato, raggiunto, assegnato > 0 ? `${pctC}%` : "—"]);
-        }
-      });
-      riepilogoRows.push(["", "", "", "", ""]);
+      const totMgQta = mg.canali.reduce((s, cod) => s + (prenotatoPerCanale[cod] || 0), 0);
+      riepilogoRows.push([mg.label, "TOTALE", totMgQta]);
+      mg.canali.forEach(cod => { const c = canali.find(c => c.codice === cod); if (c) riepilogoRows.push(["", c.nome, prenotatoPerCanale[cod] || 0]); });
+      riepilogoRows.push(["", "", ""]);
     });
     const wsRiepilogo = XLSX.utils.aoa_to_sheet(riepilogoRows);
-    wsRiepilogo["!cols"] = [{ wch: 25 }, { wch: 30 }, { wch: 14 }, { wch: 12 }, { wch: 10 }];
+    wsRiepilogo["!cols"] = [{ wch: 25 }, { wch: 30 }, { wch: 12 }];
     const wb = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(wb, ws, "FINE GIRO");
     XLSX.utils.book_append_sheet(wb, wsRiepilogo, "RIEPILOGO");
@@ -828,7 +648,7 @@ function ModuloFineGiro({ titoli, prenotato, canali, token, ruolo, spalmatura })
         </select>
         <select style={{ ...css.input, borderColor: filterCanale !== "tutti" ? T.accent : T.border }} value={filterCanale} onChange={e => setFilterCanale(e.target.value)}>
           <option value="tutti">Tutti i canali</option>
-          {canali.map(c => <option key={c.id} value={c.codice}>{getCanaleDisplayName(c)}</option>)}
+          {canali.map(c => <option key={c.id} value={c.codice}>{c.nome}</option>)}
         </select>
         <input style={{ ...css.input, width: 160 }} placeholder="Cerca EAN / titolo..." value={search} onChange={e => setSearch(e.target.value)} />
         {ruolo !== "agente" && (
@@ -873,7 +693,7 @@ function ModuloFineGiro({ titoli, prenotato, canali, token, ruolo, spalmatura })
           <div style={{ display: "flex", flexWrap: "wrap", gap: 16 }}>
             {Object.entries(byCanaleCliente).sort((a,b) => b[1]-a[1]).map(([cod, qta]) => {
               const c = canali.find(c => c.codice === cod);
-              return c ? <div key={cod} style={{ fontSize: "12px" }}><span style={{ color: T.textMid }}>{getCanaleDisplayName(c)}: </span><span style={{ color: T.green, fontWeight: "700" }}>{qta.toLocaleString("it")}</span></div> : null;
+              return c ? <div key={cod} style={{ fontSize: "12px" }}><span style={{ color: T.textMid }}>{c.nome}: </span><span style={{ color: T.green, fontWeight: "700" }}>{qta.toLocaleString("it")}</span></div> : null;
             })}
             <div style={{ fontSize: "12px", marginLeft: "auto" }}>
               <span style={{ color: T.textMid }}>Totale: </span>
@@ -883,40 +703,25 @@ function ModuloFineGiro({ titoli, prenotato, canali, token, ruolo, spalmatura })
         </div>
       )}
 
-      {/* MOD 4: Macrogruppi con obiettivi assegnato/raggiunto nello scarico */}
+      {/* Macrogruppi */}
       <div style={{ padding: "12px 20px", borderBottom: `1px solid ${T.border}`, display: "flex", gap: 12, flexWrap: "wrap" }}>
-        {macrogruppiVis.map(mg => {
-          const totMgAss = mg.canali.reduce((s, cod) => s + (obiPerCanaleFinGiro[cod]?.assegnato || 0), 0);
-          const totMgRag = mg.canali.reduce((s, cod) => s + (obiPerCanaleFinGiro[cod]?.raggiunto || 0), 0);
-          const pctMg = totMgAss > 0 ? Math.round(totMgRag / totMgAss * 100) : 0;
-          return (
-            <div key={mg.id} style={{ background: T.surface, border: `1px solid ${T.border}`, borderRadius: 4, padding: "10px 14px", minWidth: 180 }}>
-              <div style={{ color: T.accent, fontWeight: "700", fontSize: "11px", letterSpacing: "0.08em", textTransform: "uppercase", marginBottom: 4 }}>
-                {mg.label}
-              </div>
-              {/* Totali macrogruppo: assegnato / raggiunto / % */}
-              <div style={{ display: "flex", gap: 10, alignItems: "center", marginBottom: 8, paddingBottom: 6, borderBottom: `1px solid ${T.border}44` }}>
-                <div style={{ fontSize: "10px", color: T.textMid }}>Ass: <span style={{ color: T.text, fontWeight: "600" }}>{totMgAss.toLocaleString("it")}</span></div>
-                <div style={{ fontSize: "10px", color: T.textMid }}>Rag: <span style={{ color: T.green, fontWeight: "600" }}>{totMgRag.toLocaleString("it")}</span></div>
-                <span style={{ color: pctMg >= 80 ? T.green : pctMg >= 50 ? T.accent : T.red, fontSize: "11px", fontWeight: "700" }}>{pctMg}%</span>
-              </div>
-              {mg.canali.map(cod => {
-                const c = canali.find(c => c.codice === cod); if (!c) return null;
-                const { assegnato, raggiunto } = obiPerCanaleFinGiro[cod] || { assegnato: 0, raggiunto: 0 };
-                const qta = prenotatoPerCanale[cod] || 0;
-                const pctC = assegnato > 0 ? Math.round(raggiunto / assegnato * 100) : 0;
-                return (
-                  <div key={cod} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", fontSize: "11px", padding: "3px 0", borderTop: `1px solid ${T.border}22` }}>
-                    <span style={{ color: T.textMid, flex: 1 }}>{getCanaleDisplayName(c)}</span>
-                    <span style={{ color: T.textDim, fontSize: "10px", width: 50, textAlign: "right" }}>{assegnato > 0 ? assegnato.toLocaleString("it") : "—"}</span>
-                    <span style={{ color: qta > 0 ? T.green : T.textDim, fontWeight: qta > 0 ? "600" : "400", width: 50, textAlign: "right" }}>{qta > 0 ? qta.toLocaleString("it") : "—"}</span>
-                    <span style={{ color: pctC >= 80 ? T.green : pctC >= 50 ? T.accent : T.red, fontWeight: "700", width: 36, textAlign: "right", fontSize: "10px" }}>{assegnato > 0 ? `${pctC}%` : ""}</span>
-                  </div>
-                );
-              })}
+        {macrogruppiVis.map(mg => (
+          <div key={mg.id} style={{ background: T.surface, border: `1px solid ${T.border}`, borderRadius: 4, padding: "10px 14px", minWidth: 160 }}>
+            <div style={{ color: T.accent, fontWeight: "700", fontSize: "11px", letterSpacing: "0.08em", textTransform: "uppercase", marginBottom: 8 }}>
+              {mg.label} <span style={{ color: T.green, fontSize: "13px" }}>{totMacro[mg.id]?.toLocaleString("it")}</span>
             </div>
-          );
-        })}
+            {mg.canali.map(cod => {
+              const c = canali.find(c => c.codice === cod); if (!c) return null;
+              const qta = prenotatoPerCanale[cod] || 0;
+              return (
+                <div key={cod} style={{ display: "flex", justifyContent: "space-between", fontSize: "11px", padding: "2px 0", borderTop: `1px solid ${T.border}22` }}>
+                  <span style={{ color: T.textMid }}>{c.nome}</span>
+                  <span style={{ color: qta > 0 ? T.text : T.textDim, fontWeight: qta > 0 ? "600" : "400" }}>{qta > 0 ? qta.toLocaleString("it") : "—"}</span>
+                </div>
+              );
+            })}
+          </div>
+        ))}
       </div>
 
       {/* Tabella */}
@@ -927,8 +732,8 @@ function ModuloFineGiro({ titoli, prenotato, canali, token, ruolo, spalmatura })
               <th style={css.th}>Cedola</th><th style={css.th}>EAN</th><th style={css.th}>Titolo</th>
               <th style={css.th}>Autore</th><th style={css.th}>Cod.Ed.</th><th style={css.th}>Editore</th>
               <th style={css.th}>€</th><th style={css.th}>Obj</th><th style={css.th}>Pren.</th><th style={css.th}>%</th>
-              {canaliTabella.map(c => <th key={c.id} style={{ ...css.th, whiteSpace: "normal", maxWidth: 70, lineHeight: 1.2 }}>{getCanaleDisplayName(c)}</th>)}
-              {ruolo !== "agente" && <th style={{ ...css.th, color: T.accent }}>Dir. Tipografia ✎</th>}
+              {canaliTabella.map(c => <th key={c.id} style={{ ...css.th, whiteSpace: "normal", maxWidth: 70, lineHeight: 1.2 }}>{c.nome}</th>)}
+              {ruolo !== "agente" && <th style={{ ...css.th, color: T.accent }}>Aurora ✎</th>}
             </tr>
           </thead>
           <tbody>
@@ -1069,13 +874,10 @@ export default function App() {
           {ruolo !== "agente" && <button style={{ ...css.btn(), marginLeft: "auto", fontSize: "11px", padding: "4px 10px" }} onClick={refreshDati}>↺ Aggiorna</button>}
         </div>
         <div style={{ flex: 1, overflow: "hidden", display: "flex", flexDirection: "column" }}>
-          {/* MOD 3: Passato spalmatura alla Dashboard */}
-          {activeModule === "dashboard" && <ModuloDashboard titoli={titoli} prenotato={prenotato} canali={canali} spalmatura={spalmatura} ruolo={ruolo} />}
-          {/* FIX 5: Passato token a ModuloCedola */}
-          {activeModule === "cedola" && <ModuloCedola titoli={titoli} giriList={giriDB} onUpdateTitolo={updateTitolo} spalmatura={spalmatura} prenotato={prenotato} ruolo={ruolo} token={session.token} />}
+          {activeModule === "dashboard" && <ModuloDashboard titoli={titoli} prenotato={prenotato} canali={canali} ruolo={ruolo} />}
+          {activeModule === "cedola" && <ModuloCedola titoli={titoli} giriList={giriDB} onUpdateTitolo={updateTitolo} spalmatura={spalmatura} prenotato={prenotato} ruolo={ruolo} />}
           {activeModule === "prenotato" && <ModuloPrenotato token={session.token} titoli={titoli} onImportDone={() => sbFetch("prenotato?select=*&limit=100000", session.token).then(setPrenotato)} />}
-          {/* MOD 4: Passato spalmatura a ModuloFineGiro */}
-          {activeModule === "finegiro" && <ModuloFineGiro titoli={titoli} prenotato={prenotato} canali={canali} token={session.token} ruolo={ruolo} spalmatura={spalmatura} />}
+          {activeModule === "finegiro" && <ModuloFineGiro titoli={titoli} prenotato={prenotato} canali={canali} token={session.token} ruolo={ruolo} />}
           {activeModule === "import" && <ModuloImport giriList={giriDB} token={session.token} />}
         </div>
       </div>
