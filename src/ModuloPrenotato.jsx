@@ -37,7 +37,7 @@ const CANALI_LABELS = {
   UBIK: "Ubik", LIBRACCIO: "Libraccio", INDIPENDENTI_ALTRE_CATENE: "Indip. & Altre Catene",
   LIB_RELIGIOSE: "Lib. Religiose", LIB_COOP: "Lib. Coop", ALTRI_ONLINE: "Altri Online",
   AMAZON: "Amazon", IBS: "IBS", FASTBOOK: "Fastbook", GROSSISTI: "Grossisti",
-  CENTROLIBRI: "Centrolibri", GDO: "GDO", DIRETTI DA STAMPATORE: "Diretti da Stampatore",
+  CENTROLIBRI: "Centrolibri", GDO: "GDO", AURORA: "Aurora",
 };
 
 export default function ModuloPrenotato({ token, titoli, onImportDone }) {
