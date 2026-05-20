@@ -29,7 +29,7 @@ const GRUPPI_CANALE = {
   59: "FELTRINELLI", 60: "INDIPENDENTI_ALTRE_CATENE", 61: "INDIPENDENTI_ALTRE_CATENE",
   63: "CENTROLIBRI", 65: "INDIPENDENTI_ALTRE_CATENE", 72: "INDIPENDENTI_ALTRE_CATENE",
   77: "FELTRINELLI", 80: "MONDADORI", 82: "AMAZON", 83: "UBIK", 88: "LIBRACCIO",
-  90: "LIBRACCIO", 91: "LIBRACCIO", 92: "LIBRACCIO", 94: "GDO",
+  90: "LIBRACCIO", 91: "LIBRACCIO", 92: "LIBRACCIO", 94: "GROSSISTI",
 };
 
 const CANALI_LABELS = {
@@ -37,7 +37,7 @@ const CANALI_LABELS = {
   UBIK: "Ubik", LIBRACCIO: "Libraccio", INDIPENDENTI_ALTRE_CATENE: "Indip. & Altre Catene",
   LIB_RELIGIOSE: "Lib. Religiose", LIB_COOP: "Lib. Coop", ALTRI_ONLINE: "Altri Online",
   AMAZON: "Amazon", IBS: "IBS", FASTBOOK: "Fastbook", GROSSISTI: "Grossisti",
-  CENTROLIBRI: "Centrolibri", GDO: "GDO", AURORA: "Aurora",
+  CENTROLIBRI: "Centrolibri", GDO: "GDO", DIRETTI DA STAMPATORE: "Diretti da Stampatore",
 };
 
 export default function ModuloPrenotato({ token, titoli, onImportDone }) {
