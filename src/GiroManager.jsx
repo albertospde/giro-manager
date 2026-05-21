@@ -233,91 +233,6 @@ function EditModal({ titolo, onSave, onClose, token }) {
   );
 }
 
-// MOD 3: Sezione obiettivi per canale nella Dashboard
-function ObiettivisCanaleSection({ titoli, prenotato, canali, spalmatura, ruolo }) {
-  const macrogruppiVis = ruolo === "agente" ? MACROGRUPPI.filter(mg => mg.id === "RETE") : MACROGRUPPI;
-
-  // Calcola obiettivo assegnato per canale usando la spalmatura
-  const obiPerCanale = useMemo(() => {
-    const map = {};
-    canali.forEach(c => {
-      let assegnato = 0;
-      titoli.forEach(t => {
-        const spRow = spalmatura.find(s => s.editore_nome === t.editore_nome && s.formato === (t.formato || 'Cover') && s.canale_codice === c.codice);
-        if (spRow && t.obiettivo_assegnato) {
-          assegnato += Math.round(t.obiettivo_assegnato * spRow.percentuale);
-        }
-      });
-      // Raggiunto = prenotato effettivo su quel canale
-      const raggiunto = prenotato.filter(p => p.canale_id === c.id).reduce((s, p) => s + p.quantita, 0);
-      map[c.codice] = { assegnato, raggiunto };
-    });
-    return map;
-  }, [titoli, prenotato, canali, spalmatura]);
-
-  return (
-    <div>
-      <div style={{ color: T.textMid, fontSize: "11px", letterSpacing: "0.1em", textTransform: "uppercase", marginBottom: 12 }}>OBIETTIVI PER CANALE</div>
-      {macrogruppiVis.map(mg => {
-        const totAss = mg.canali.reduce((s, cod) => s + (obiPerCanale[cod]?.assegnato || 0), 0);
-        const totRag = mg.canali.reduce((s, cod) => s + (obiPerCanale[cod]?.raggiunto || 0), 0);
-        const pctMg = totAss > 0 ? Math.round(totRag / totAss * 100) : 0;
-        return (
-          <div key={mg.id} style={{ marginBottom: 20 }}>
-            <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 8, padding: "10px 16px", background: T.surface, border: `1px solid ${T.borderHi}`, borderRadius: 4 }}>
-              <div style={{ fontWeight: "700", color: T.accent, fontSize: "13px", width: 200 }}>{mg.label}</div>
-              <div style={{ flex: 1, display: "flex", alignItems: "center", gap: 12 }}>
-                <div style={{ fontSize: "12px", color: T.textMid }}>Ass: <span style={{ color: T.text, fontWeight: "600" }}>{totAss.toLocaleString("it")}</span></div>
-                <div style={{ fontSize: "12px", color: T.textMid }}>Rag: <span style={{ color: T.green, fontWeight: "600" }}>{totRag.toLocaleString("it")}</span></div>
-              </div>
-              <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                <div style={{ width: 80, height: 6, background: T.borderHi, borderRadius: 3, overflow: "hidden" }}>
-                  <div style={{ width: `${Math.min(100, pctMg)}%`, height: "100%", background: pctMg >= 80 ? T.green : pctMg >= 50 ? T.accent : T.red }} />
-                </div>
-                <span style={{ color: pctMg >= 80 ? T.green : pctMg >= 50 ? T.accent : T.red, fontWeight: "700", fontSize: "12px", width: 40, textAlign: "right" }}>{pctMg}%</span>
-              </div>
-            </div>
-            <table style={{ width: "100%", borderCollapse: "collapse" }}>
-              <thead>
-                <tr>
-                  <th style={{ ...css.th, background: "transparent" }}>Canale</th>
-                  <th style={{ ...css.th, background: "transparent", textAlign: "right" }}>Assegnato</th>
-                  <th style={{ ...css.th, background: "transparent", textAlign: "right" }}>Raggiunto</th>
-                  <th style={{ ...css.th, background: "transparent", width: 140 }}>Avanzamento</th>
-                </tr>
-              </thead>
-              <tbody>
-                {mg.canali.map(codice => {
-                  const c = canali.find(c => c.codice === codice); if (!c) return null;
-                  const { assegnato, raggiunto } = obiPerCanale[codice] || { assegnato: 0, raggiunto: 0 };
-                  const pct = assegnato > 0 ? Math.round(raggiunto / assegnato * 100) : 0;
-                  return (
-                    <tr key={codice} style={{ borderBottom: `1px solid ${T.border}11` }}>
-                      <td style={{ padding: "6px 12px 6px 32px", fontSize: "12px", color: T.textMid }}>{getCanaleDisplayName(c)}</td>
-                      <td style={{ padding: "6px 12px", fontSize: "12px", textAlign: "right" }}>{assegnato > 0 ? assegnato.toLocaleString("it") : "—"}</td>
-                      <td style={{ padding: "6px 12px", fontSize: "12px", textAlign: "right", color: T.green }}>{raggiunto > 0 ? raggiunto.toLocaleString("it") : "—"}</td>
-                      <td style={{ padding: "6px 12px" }}>
-                        {assegnato > 0 ? (
-                          <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                            <div style={{ width: 80, height: 4, background: T.borderHi, borderRadius: 2, overflow: "hidden" }}>
-                              <div style={{ width: `${Math.min(100, pct)}%`, height: "100%", background: pct >= 80 ? T.green : pct >= 50 ? T.accent : T.red }} />
-                            </div>
-                            <span style={{ color: pct >= 80 ? T.green : pct >= 50 ? T.accent : T.red, fontSize: "11px", fontWeight: "700" }}>{pct}%</span>
-                          </div>
-                        ) : <span style={{ color: T.textDim, fontSize: "11px" }}>—</span>}
-                      </td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
-          </div>
-        );
-      })}
-    </div>
-  );
-}
-
 function ModuloDashboard({ titoli, prenotato, canali, spalmatura, ruolo }) {
   const giriLabel = useMemo(() => {
     return [...new Set(titoli.map(t => t.giro_label).filter(Boolean))].sort((a, b) => {
@@ -358,6 +273,20 @@ function ModuloDashboard({ titoli, prenotato, canali, spalmatura, ruolo }) {
   const macrogruppiVis = ruolo === "agente" ? MACROGRUPPI.filter(mg => mg.id === "RETE") : MACROGRUPPI;
   const totMacro = useMemo(() => { const map = {}; macrogruppiVis.forEach(mg => { map[mg.id] = mg.canali.reduce((s, cod) => s + (prenotatoPerCanale[cod] || 0), 0); }); return map; }, [prenotatoPerCanale, macrogruppiVis]);
   const maxMacro = Math.max(...Object.values(totMacro), 1);
+
+  // Obiettivo per canale (via spalmatura) integrato nella sezione unica
+  const obiPerCanale = useMemo(() => {
+    const map = {};
+    canali.forEach(c => {
+      let assegnato = 0;
+      titoliGiro.forEach(t => {
+        const spRow = spalmatura.find(s => s.editore_nome === t.editore_nome && s.formato === (t.formato || 'Cover') && s.canale_codice === c.codice);
+        if (spRow && t.obiettivo_assegnato) assegnato += Math.round(t.obiettivo_assegnato * spRow.percentuale);
+      });
+      map[c.codice] = { assegnato };
+    });
+    return map;
+  }, [titoliGiro, canali, spalmatura]);
 
   return (
     <div style={{ flex: 1, overflowY: "auto", padding: 20 }}>
@@ -409,35 +338,60 @@ function ModuloDashboard({ titoli, prenotato, canali, spalmatura, ruolo }) {
         </table>
       </div>
 
-      {/* MOD 3: OBIETTIVI PER CANALE */}
-      <div style={{ marginBottom: 24 }}>
-        <ObiettivisCanaleSection titoli={titoliGiro} prenotato={prenotatoGiro} canali={canali} spalmatura={spalmatura} ruolo={ruolo} />
-      </div>
-
-      {/* PRENOTATO PER CANALE */}
+      {/* CANALI: prenotato + obiettivi integrati */}
       <div>
-        <div style={{ color: T.textMid, fontSize: "11px", letterSpacing: "0.1em", textTransform: "uppercase", marginBottom: 12 }}>PRENOTATO PER CANALE</div>
-        {macrogruppiVis.map(mg => (
-          <div key={mg.id} style={{ marginBottom: 20 }}>
-            <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 8, padding: "10px 16px", background: T.surface, border: `1px solid ${T.borderHi}`, borderRadius: 4 }}>
-              <div style={{ fontWeight: "700", color: T.accent, fontSize: "13px", width: 200 }}>{mg.label}</div>
-              <div style={{ flex: 1, height: 8, background: T.borderHi, borderRadius: 2, overflow: "hidden" }}><div style={{ width: `${(totMacro[mg.id] / maxMacro) * 100}%`, height: "100%", background: T.accent }} /></div>
-              <div style={{ color: T.accent, fontWeight: "700", fontSize: "14px", width: 80, textAlign: "right" }}>{totMacro[mg.id]?.toLocaleString("it")}</div>
-            </div>
-            {mg.canali.map(codice => {
-              const c = canali.find(c => c.codice === codice); if (!c) return null;
-              const qta = prenotatoPerCanale[codice] || 0;
-              return (
-                <div key={codice} style={{ display: "flex", alignItems: "center", gap: 12, padding: "5px 16px 5px 32px", borderBottom: `1px solid ${T.border}11` }}>
-                  <div style={{ width: 184, fontSize: "12px", color: T.textMid }}>{getCanaleDisplayName(c)}</div>
-                  <div style={{ flex: 1, height: 4, background: T.borderHi, borderRadius: 2, overflow: "hidden" }}><div style={{ width: qta > 0 && totMacro[mg.id] > 0 ? `${(qta / totMacro[mg.id]) * 100}%` : "0%", height: "100%", background: T.blue }} /></div>
-                  <div style={{ width: 80, textAlign: "right", color: qta > 0 ? T.text : T.textDim, fontSize: "12px" }}>{qta > 0 ? qta.toLocaleString("it") : "—"}</div>
-                  <div style={{ width: 40, textAlign: "right", color: T.textMid, fontSize: "11px" }}>{totPrenotatoGiro > 0 && qta > 0 ? `${Math.round(qta / totPrenotatoGiro * 100)}%` : ""}</div>
+        <div style={{ color: T.textMid, fontSize: "11px", letterSpacing: "0.1em", textTransform: "uppercase", marginBottom: 12 }}>CANALI</div>
+        {macrogruppiVis.map(mg => {
+          const totMgPren = totMacro[mg.id] || 0;
+          const totMgAss = mg.canali.reduce((s, cod) => s + (obiPerCanale[cod]?.assegnato || 0), 0);
+          const pctMg = totMgAss > 0 ? Math.round(totMgPren / totMgAss * 100) : 0;
+          return (
+            <div key={mg.id} style={{ marginBottom: 20 }}>
+              {/* Header macrogruppo */}
+              <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 4, padding: "10px 16px", background: T.surface, border: `1px solid ${T.borderHi}`, borderRadius: 4 }}>
+                <div style={{ fontWeight: "700", color: T.accent, fontSize: "13px", minWidth: 170 }}>{mg.label}</div>
+                <div style={{ flex: 1, height: 8, background: T.borderHi, borderRadius: 2, overflow: "hidden" }}>
+                  <div style={{ width: `${(totMgPren / maxMacro) * 100}%`, height: "100%", background: T.accent }} />
                 </div>
-              );
-            })}
-          </div>
-        ))}
+                <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+                  <div style={{ textAlign: "right" }}>
+                    <span style={{ color: T.green, fontWeight: "700", fontSize: "14px" }}>{totMgPren.toLocaleString("it")}</span>
+                    {totMgAss > 0 && <span style={{ color: T.textDim, fontSize: "11px" }}> / {totMgAss.toLocaleString("it")}</span>}
+                  </div>
+                  {totMgAss > 0 && (
+                    <span style={{ color: pctMg >= 80 ? T.green : pctMg >= 50 ? T.accent : T.red, fontWeight: "700", fontSize: "12px", minWidth: 36, textAlign: "right" }}>{pctMg}%</span>
+                  )}
+                </div>
+              </div>
+              {/* Righe canale */}
+              {mg.canali.map(codice => {
+                const c = canali.find(c => c.codice === codice); if (!c) return null;
+                const qta = prenotatoPerCanale[codice] || 0;
+                const obj = obiPerCanale[codice]?.assegnato || 0;
+                const pctC = obj > 0 ? Math.round(qta / obj * 100) : 0;
+                return (
+                  <div key={codice} style={{ display: "flex", alignItems: "center", gap: 12, padding: "5px 16px 5px 32px", borderBottom: `1px solid ${T.border}11` }}>
+                    <div style={{ width: 170, fontSize: "12px", color: T.textMid }}>{getCanaleDisplayName(c)}</div>
+                    <div style={{ flex: 1, height: 4, background: T.borderHi, borderRadius: 2, overflow: "hidden" }}>
+                      <div style={{ width: qta > 0 && totMgPren > 0 ? `${(qta / totMgPren) * 100}%` : "0%", height: "100%", background: T.blue }} />
+                    </div>
+                    <div style={{ width: 100, textAlign: "right", fontSize: "12px" }}>
+                      <span style={{ color: qta > 0 ? T.text : T.textDim, fontWeight: "600" }}>{qta > 0 ? qta.toLocaleString("it") : "—"}</span>
+                      {obj > 0 && <span style={{ color: T.textDim, fontSize: "10px" }}> / {obj.toLocaleString("it")}</span>}
+                    </div>
+                    <div style={{ width: 44, textAlign: "right" }}>
+                      {obj > 0 ? (
+                        <span style={{ color: pctC >= 80 ? T.green : pctC >= 50 ? T.accent : T.red, fontSize: "11px", fontWeight: "700" }}>{pctC}%</span>
+                      ) : (
+                        <span style={{ color: T.textMid, fontSize: "11px" }}>{totPrenotatoGiro > 0 && qta > 0 ? `${Math.round(qta / totPrenotatoGiro * 100)}%` : ""}</span>
+                      )}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          );
+        })}
       </div>
     </div>
   );
