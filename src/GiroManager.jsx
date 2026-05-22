@@ -162,14 +162,17 @@ function EditModal({ titolo, onSave, onClose, token }) {
       "il_triangolo","top_100","ean_gemello_1","titolo_gemello_1","ean_gemello_2",
       "titolo_gemello_2","ean_gemello_3","titolo_gemello_3","note_comunicazione","note"
     ];
+    const numFields = ["prezzo","obiettivo_assegnato","obiettivo_raggiunto"];
     editableFields.forEach(k => {
-      if (form[k] !== titolo[k]) {
-        let val = form[k];
-        // Converti numeri
-        if (["prezzo","obiettivo_assegnato","obiettivo_raggiunto"].includes(k)) {
-          val = val === "" || val === null || val === undefined ? null : Number(val);
-        }
-        payload[k] = val;
+      let valForm = form[k];
+      let valOrig = titolo[k];
+      // Normalizza numerici per confronto corretto (input restituisce stringhe)
+      if (numFields.includes(k)) {
+        valForm = valForm === "" || valForm == null ? null : Number(valForm);
+        valOrig = valOrig == null ? null : Number(valOrig);
+      }
+      if (valForm !== valOrig) {
+        payload[k] = valForm;
       }
     });
 
@@ -177,7 +180,12 @@ function EditModal({ titolo, onSave, onClose, token }) {
       const ok = await sbUpdateTitolo(form.id, payload, token);
       if (!ok) { alert("Errore nel salvataggio su database."); setSaving(false); return; }
     }
-    onSave(form);
+    // Normalizza i tipi numerici prima di aggiornare lo state React
+    const formNorm = { ...form };
+    ["prezzo","obiettivo_assegnato","obiettivo_raggiunto"].forEach(k => {
+      if (formNorm[k] !== "" && formNorm[k] != null) formNorm[k] = Number(formNorm[k]);
+    });
+    onSave(formNorm);
     setSaving(false);
     onClose();
   };
@@ -625,7 +633,7 @@ function ModuloFineGiro({ titoli, prenotato, canali, token, ruolo, spalmatura })
   }, [titoli, giroLabelSel, extraSel, cedolaSel, filterEditore, filterAccount, search]);
 
   const canaliTabella = useMemo(() => {
-    let base = ruolo === "agente" ? canali.filter(c => CANALI_RETE.includes(c.codice)) : canali;
+    let base = ruolo === "agente" ? canali.filter(c => CANALI_RETE.includes(c.codice)) : canali.filter(c => c.codice !== "AURORA");
     if (filterCanale !== "tutti") base = base.filter(c => c.codice === filterCanale);
     return base;
   }, [canali, ruolo, filterCanale]);
@@ -798,7 +806,7 @@ function ModuloFineGiro({ titoli, prenotato, canali, token, ruolo, spalmatura })
         </select>
         <select style={{ ...css.input, borderColor: filterCanale !== "tutti" ? T.accent : T.border }} value={filterCanale} onChange={e => setFilterCanale(e.target.value)}>
           <option value="tutti">Tutti i canali</option>
-          {canali.map(c => <option key={c.id} value={c.codice}>{getCanaleDisplayName(c)}</option>)}
+          {canali.filter(c => c.codice !== "AURORA").map(c => <option key={c.id} value={c.codice}>{getCanaleDisplayName(c)}</option>)}
         </select>
         <input style={{ ...css.input, width: 160 }} placeholder="Cerca EAN / titolo..." value={search} onChange={e => setSearch(e.target.value)} />
         {ruolo !== "agente" && (
