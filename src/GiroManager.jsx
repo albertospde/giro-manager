@@ -26,7 +26,7 @@ const sb = {
 
 const sbFetch = async (path, token) => {
   const r = await fetch(`${SUPABASE_URL}/rest/v1/${path}`, {
-    headers: { "apikey": SUPABASE_KEY, "Authorization": `Bearer ${token}`, "Accept": "application/json", "Range-Unit": "items", "Range": "0-4999999" },
+    headers: { "apikey": SUPABASE_KEY, "Authorization": `Bearer ${token}`, "Accept": "application/json", "Range-Unit": "items", "Range": "0-499999" },
   });
   return r.json();
 };
@@ -797,7 +797,7 @@ function ModuloFineGiro({ titoli, prenotato, canali, token, ruolo, spalmatura })
 
   const exportExcel = () => {
     const XLSX = window.XLSX;
-    const colCanali = ruolo === "agente" ? canaliTabella : canali;
+    const colCanali = canaliTabella;
     const dirStampHeaders = ruolo !== "agente" ? ["DIR. STAMPATORE"] : [];
     const headers = ["N° CEDOLA","EAN","TITOLO","AUTORE","COD.EDITORE","EDITORE","PREZZO","OBJ ASS.","PRENOTATO","AVANZ %",...colCanali.map(c => getCanaleDisplayName(c)),...dirStampHeaders];
     const rows = righeFiltrate.map(({ titolo: t, totPren, byCanale, dirStampatore }) => {
