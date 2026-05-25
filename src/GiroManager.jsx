@@ -562,6 +562,7 @@ function ModuloFineGiro({ titoli, prenotato, canali, token, ruolo, spalmatura })
   const [cedolaSel, setCedolaSel] = useState("tutti");
   const [filterEditori, setFilterEditori] = useState([]);
   const [editoreDropdownOpenFG, setEditoreDropdownOpenFG] = useState(false);
+  const [searchEditore, setSearchEditore] = useState("");
   const [filterAccount, setFilterAccount] = useState("tutti");
   const [filterCanale, setFilterCanale] = useState("tutti");
   const [search, setSearch] = useState("");
@@ -573,7 +574,7 @@ function ModuloFineGiro({ titoli, prenotato, canali, token, ruolo, spalmatura })
   const [auroraEdit, setAuroraEdit] = useState({});
   const [auroraEditing, setAuroraEditing] = useState(null);
 
-  const resetFiltri = () => { setGiroLabelSel(null); setExtraSel(null); setCedolaSel("tutti"); setFilterEditori([]); setFilterAccount("tutti"); setFilterCanale("tutti"); setSearch(""); setClienteSel(null); };
+  const resetFiltri = () => { setGiroLabelSel(null); setExtraSel(null); setCedolaSel("tutti"); setFilterEditori([]); setSearchEditore(""); setFilterAccount("tutti"); setFilterCanale("tutti"); setSearch(""); setClienteSel(null); };
 
   useEffect(() => {
     if (!token) return;
@@ -631,7 +632,7 @@ function ModuloFineGiro({ titoli, prenotato, canali, token, ruolo, spalmatura })
       .filter(t => filterAccount === "tutti" || t.account_editore === filterAccount)
       .filter(t => { if (!search) return true; const q = search.toLowerCase(); return t.titolo?.toLowerCase().includes(q) || t.ean?.includes(q); })
       .sort((a, b) => (a.ranking_editore ?? 99) - (b.ranking_editore ?? 99) || (a.ranking_titolo ?? 99) - (b.ranking_titolo ?? 99));
-  }, [titoli, giroLabelSel, extraSel, cedolaSel, filterEditore, filterAccount, search]);
+  }, [titoli, giroLabelSel, extraSel, cedolaSel, filterEditori, filterAccount, search]);
 
   const macrogruppiVis = ruolo === "agente" ? MACROGRUPPI.filter(mg => mg.id === "RETE") : MACROGRUPPI;
 
@@ -808,19 +809,24 @@ function ModuloFineGiro({ titoli, prenotato, canali, token, ruolo, spalmatura })
             <span>{filterEditori.length === 0 ? "Tutti gli editori" : `${filterEditori.length} selezionati`}</span><span>▾</span>
           </button>
           {editoreDropdownOpenFG && (
-            <div style={{ position: "absolute", top: "100%", left: 0, zIndex: 50, background: T.surface, border: `1px solid ${T.borderHi}`, borderRadius: 4, minWidth: 220, maxHeight: 300, overflowY: "auto", marginTop: 4, boxShadow: "0 4px 20px #0008" }}>
-              <div style={{ padding: "8px 12px", borderBottom: `1px solid ${T.border}`, display: "flex", justifyContent: "space-between" }}>
-                <span style={{ color: T.textMid, fontSize: "11px" }}>{editori.length} editori</span>
-                <span style={{ color: T.accent, fontSize: "11px", cursor: "pointer" }} onClick={() => setFilterEditori([])}>Deseleziona tutti</span>
+            <div style={{ position: "absolute", top: "100%", left: 0, zIndex: 50, background: T.surface, border: `1px solid ${T.borderHi}`, borderRadius: 4, minWidth: 240, maxHeight: 340, display: "flex", flexDirection: "column", marginTop: 4, boxShadow: "0 4px 20px #0008" }}>
+              <div style={{ padding: "8px 12px", borderBottom: `1px solid ${T.border}`, flexShrink: 0 }}>
+                <input style={{ ...css.input, width: "100%", boxSizing: "border-box", marginBottom: 6 }} placeholder="Cerca editore..." value={searchEditore} onChange={e => setSearchEditore(e.target.value)} autoFocus />
+                <div style={{ display: "flex", justifyContent: "space-between" }}>
+                  <span style={{ color: T.textMid, fontSize: "11px" }}>{editori.length} editori</span>
+                  <span style={{ color: T.accent, fontSize: "11px", cursor: "pointer" }} onClick={() => setFilterEditori([])}>Deseleziona tutti</span>
+                </div>
               </div>
-              {editori.map(e => (
-                <label key={e} style={{ display: "flex", alignItems: "center", gap: 8, padding: "7px 12px", cursor: "pointer", borderBottom: `1px solid ${T.border}22`, background: filterEditori.includes(e) ? T.accent + "18" : "transparent" }}>
-                  <input type="checkbox" checked={filterEditori.includes(e)} onChange={() => setFilterEditori(prev => prev.includes(e) ? prev.filter(x => x !== e) : [...prev, e])} style={{ accentColor: T.accent }} />
-                  <span style={{ fontSize: "12px", color: filterEditori.includes(e) ? T.accent : T.text }}>{e}</span>
-                </label>
-              ))}
-              <div style={{ padding: 8, borderTop: `1px solid ${T.border}` }}>
-                <button style={{ ...css.btn("accent"), width: "100%" }} onClick={() => setEditoreDropdownOpenFG(false)}>Applica</button>
+              <div style={{ overflowY: "auto", flex: 1 }}>
+                {editori.filter(e => e.toLowerCase().includes(searchEditore.toLowerCase())).map(e => (
+                  <label key={e} style={{ display: "flex", alignItems: "center", gap: 8, padding: "7px 12px", cursor: "pointer", borderBottom: `1px solid ${T.border}22`, background: filterEditori.includes(e) ? T.accent + "18" : "transparent" }}>
+                    <input type="checkbox" checked={filterEditori.includes(e)} onChange={() => setFilterEditori(prev => prev.includes(e) ? prev.filter(x => x !== e) : [...prev, e])} style={{ accentColor: T.accent }} />
+                    <span style={{ fontSize: "12px", color: filterEditori.includes(e) ? T.accent : T.text }}>{e}</span>
+                  </label>
+                ))}
+              </div>
+              <div style={{ padding: 8, borderTop: `1px solid ${T.border}`, flexShrink: 0 }}>
+                <button style={{ ...css.btn("accent"), width: "100%" }} onClick={() => { setEditoreDropdownOpenFG(false); setSearchEditore(""); }}>Applica</button>
               </div>
             </div>
           )}
