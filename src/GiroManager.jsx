@@ -974,8 +974,11 @@ function ModuloFineGiro({ titoli, prenotato, canali, token, ruolo, spalmatura })
 const MODULES = [
   { id: "dashboard", label: "Dashboard", icon: "◈" },
   { id: "cedola", label: "Giri e Cedole", icon: "≡" },
-  { id: "import", label: "Import Cedola", icon: "↑" },
   { id: "finegiro", label: "Fine Giro", icon: "⊞" },
+];
+
+const MODULES_IMPORT = [
+  { id: "import", label: "Import Cedola", icon: "↑" },
   { id: "prenotato", label: "Import Prenotato", icon: "↳" },
 ];
 
@@ -1028,6 +1031,7 @@ export default function App() {
   if (!session) return <LoginScreen onLogin={handleLogin} />;
 
   const moduliVis = ruolo === "agente" ? MODULES.filter(m => ["dashboard","cedola","finegiro"].includes(m.id)) : MODULES;
+  const moduliImport = ruolo !== "agente" ? MODULES_IMPORT : [];
 
   return (
     <div style={{ ...css.app, display: "flex", height: "100vh" }}>
@@ -1038,13 +1042,28 @@ export default function App() {
           </div>
           <div style={{ color: T.accent, fontSize: "13px", fontWeight: "700", letterSpacing: "0.06em" }}>GIRO MANAGER</div>
         </div>
-        <nav style={{ flex: 1, padding: "8px 0" }}>
-          {moduliVis.map(m => (
-            <button key={m.id} style={{ width: "100%", textAlign: "left", padding: "10px 16px", border: "none", background: activeModule === m.id ? T.accent + "18" : "transparent", color: activeModule === m.id ? T.accent : T.textMid, cursor: "pointer", fontFamily: "inherit", fontSize: "12px", borderLeft: `2px solid ${activeModule === m.id ? T.accent : "transparent"}`, display: "flex", alignItems: "center", gap: 10, letterSpacing: "0.04em" }}
-              onClick={() => setActiveModule(m.id)}>
-              <span style={{ fontSize: "14px" }}>{m.icon}</span> {m.label}
-            </button>
-          ))}
+        <nav style={{ flex: 1, padding: "8px 0", display: "flex", flexDirection: "column" }}>
+          <div style={{ flex: 1 }}>
+            {moduliVis.map(m => (
+              <button key={m.id} style={{ width: "100%", textAlign: "left", padding: "10px 16px", border: "none", background: activeModule === m.id ? T.accent + "18" : "transparent", color: activeModule === m.id ? T.accent : T.textMid, cursor: "pointer", fontFamily: "inherit", fontSize: "12px", borderLeft: `2px solid ${activeModule === m.id ? T.accent : "transparent"}`, display: "flex", alignItems: "center", gap: 10, letterSpacing: "0.04em" }}
+                onClick={() => setActiveModule(m.id)}>
+                <span style={{ fontSize: "14px" }}>{m.icon}</span> {m.label}
+              </button>
+            ))}
+          </div>
+          {moduliImport.length > 0 && (
+            <div>
+              <div style={{ borderTop: `1px solid ${T.border}`, margin: "8px 0", padding: "6px 16px 2px" }}>
+                <span style={{ color: T.textDim, fontSize: "9px", letterSpacing: "0.1em", textTransform: "uppercase" }}>Import</span>
+              </div>
+              {moduliImport.map(m => (
+                <button key={m.id} style={{ width: "100%", textAlign: "left", padding: "8px 16px", border: "none", background: activeModule === m.id ? T.accent + "18" : "transparent", color: activeModule === m.id ? T.accent : T.textDim, cursor: "pointer", fontFamily: "inherit", fontSize: "11px", borderLeft: `2px solid ${activeModule === m.id ? T.accent : "transparent"}`, display: "flex", alignItems: "center", gap: 10, letterSpacing: "0.04em" }}
+                  onClick={() => setActiveModule(m.id)}>
+                  <span style={{ fontSize: "13px" }}>{m.icon}</span> {m.label}
+                </button>
+              ))}
+            </div>
+          )}
         </nav>
         <div style={{ padding: "12px 16px", borderTop: `1px solid ${T.border}` }}>
           <div style={{ color: T.textDim, fontSize: "10px", marginBottom: 2 }}>{session.user?.email}</div>
