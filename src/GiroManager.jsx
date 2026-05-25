@@ -652,6 +652,13 @@ function ModuloFineGiro({ titoli, prenotato, canali, token, ruolo, spalmatura })
     } else if (filterCanale !== "tutti") {
       base = base.filter(c => c.codice === filterCanale);
     }
+    // Ordina seguendo l'ordine dei MACROGRUPPI (Rete → Catene → Grossisti → Online)
+    const ordine = MACROGRUPPI.flatMap(mg => mg.canali);
+    base = [...base].sort((a, b) => {
+      const ia = ordine.indexOf(a.codice);
+      const ib = ordine.indexOf(b.codice);
+      return (ia === -1 ? 999 : ia) - (ib === -1 ? 999 : ib);
+    });
     return base;
   }, [canali, ruolo, filterCanale, clienteSel, byCanaleCliente]);
 
