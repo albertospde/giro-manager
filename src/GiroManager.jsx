@@ -26,7 +26,7 @@ const sb = {
 
 const sbFetch = async (path, token) => {
   const r = await fetch(`${SUPABASE_URL}/rest/v1/${path}`, {
-    headers: { "apikey": SUPABASE_KEY, "Authorization": `Bearer ${token}`, "Accept": "application/json", "Range-Unit": "items", "Range": "0-9999" },
+    headers: { "apikey": SUPABASE_KEY, "Authorization": `Bearer ${token}`, "Accept": "application/json", "Range-Unit": "items", "Range": "0-4999999" },
   });
   return r.json();
 };
