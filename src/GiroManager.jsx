@@ -104,6 +104,7 @@ function LoginScreen({ onLogin }) {
     <div style={{ ...css.app, display: "flex", alignItems: "center", justifyContent: "center", height: "100vh" }}>
       <div style={{ background: T.surface, border: `1px solid ${T.border}`, borderRadius: 6, padding: 40, width: 340 }}>
         <div style={{ textAlign: "center", marginBottom: 32 }}>
+          <img src="https://raw.githubusercontent.com/albertospde/giro-manager/main/.github/logo_pde.png" style={{ height: 48, marginBottom: 16 }} alt="PDE" />
           <div style={{ color: T.accent, fontSize: "24px", fontWeight: "700", letterSpacing: "0.1em" }}>GIRO</div>
           <div style={{ color: T.textMid, fontSize: "11px", letterSpacing: "0.15em", marginTop: 4 }}>MANAGER</div>
         </div>
@@ -117,6 +118,7 @@ function LoginScreen({ onLogin }) {
         </div>
         {error && <div style={{ color: T.red, fontSize: "12px", marginBottom: 16, textAlign: "center" }}>{error}</div>}
         <button style={{ ...css.btn("accent"), width: "100%", padding: "10px" }} onClick={handleLogin} disabled={loading}>{loading ? "Accesso..." : "Accedi"}</button>
+        <div style={{ textAlign: "center", marginTop: 20, color: T.textDim, fontSize: "10px", letterSpacing: "0.06em" }}>Powered by PDE</div>
       </div>
     </div>
   );
@@ -693,7 +695,7 @@ function ModuloFineGiro({ titoli, prenotato, canali, token, ruolo, spalmatura })
   }, [clienteSel, prenotatoCliente, canali]);
 
   const canaliTabella = useMemo(() => {
-    let base = ruolo === "agente" ? canali.filter(c => CANALI_RETE.includes(c.codice)) : canali.filter(c => c.codice !== "AURORA");
+    let base = ruolo === "agente" ? canali.filter(c => CANALI_RETE.includes(c.codice)) : canali.filter(c => c.codice !== "AURORA" && c.codice !== "GDO");
     // Se c'è un cliente selezionato, mostra solo la colonna del suo canale
     if (clienteSel && byCanaleCliente) {
       const codiciCliente = Object.keys(byCanaleCliente);
@@ -859,7 +861,7 @@ function ModuloFineGiro({ titoli, prenotato, canali, token, ruolo, spalmatura })
         )}
         <SearchableMultiSelect values={filterEditori} onChange={setFilterEditori} options={editori} placeholder="Tutti gli editori" width={190} />
         <SearchableSelect value={filterAccount} onChange={setFilterAccount} options={accounts} placeholder="Tutti gli account" width={160} />
-        <SearchableSelect value={filterCanale} onChange={setFilterCanale} options={canali.filter(c => c.codice !== "AURORA")} placeholder="Tutti i canali" labelKey="nome" valueKey="codice" width={170} />
+        <SearchableSelect value={filterCanale} onChange={setFilterCanale} options={canali.filter(c => c.codice !== "AURORA" && c.codice !== "GDO")} placeholder="Tutti i canali" labelKey="nome" valueKey="codice" width={170} />
         <input style={{ ...css.input, width: 160 }} placeholder="Cerca EAN / titolo..." value={search} onChange={e => setSearch(e.target.value)} />
         {ruolo !== "agente" && (
           <div style={{ position: "relative" }}>
