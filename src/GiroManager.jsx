@@ -899,52 +899,31 @@ function ModuloFineGiro({ titoli, prenotato, canali, token, ruolo, spalmatura })
         </div>
       )}
 
-      {/* Macrogruppi — stesso layout Dashboard */}
-      <div style={{ padding: "12px 20px", borderBottom: `1px solid ${T.border}`, overflowY: "auto", maxHeight: 320 }}>
-        <div style={{ color: T.textMid, fontSize: "11px", letterSpacing: "0.1em", textTransform: "uppercase", marginBottom: 10 }}>CANALI</div>
+      {/* Macrogruppi — box compatti */}
+      <div style={{ padding: "12px 20px", borderBottom: `1px solid ${T.border}`, display: "flex", gap: 12, flexWrap: "wrap" }}>
         {macrogruppiVis.map(mg => {
-          const totMgPren = mg.canali.reduce((s, cod) => s + (prenotatoPerCanale[cod] || 0), 0);
           const totMgAss = mg.canali.reduce((s, cod) => s + (obiPerCanaleFinGiro[cod]?.assegnato || 0), 0);
-          const pctMg = totMgAss > 0 ? Math.round(totMgPren / totMgAss * 100) : 0;
-          const maxMgPren = Math.max(...macrogruppiVis.map(m => m.canali.reduce((s, c) => s + (prenotatoPerCanale[c] || 0), 0)), 1);
+          const totMgRag = mg.canali.reduce((s, cod) => s + (obiPerCanaleFinGiro[cod]?.raggiunto || 0), 0);
+          const pctMg = totMgAss > 0 ? Math.round(totMgRag / totMgAss * 100) : 0;
           return (
-            <div key={mg.id} style={{ marginBottom: 14 }}>
-              {/* Header macrogruppo */}
-              <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 4, padding: "8px 14px", background: T.surface, border: `1px solid ${T.borderHi}`, borderRadius: 4 }}>
-                <div style={{ fontWeight: "700", color: T.accent, fontSize: "12px", minWidth: 160 }}>{mg.label}</div>
-                <div style={{ flex: 1, height: 6, background: T.borderHi, borderRadius: 2, overflow: "hidden" }}>
-                  <div style={{ width: `${(totMgPren / maxMgPren) * 100}%`, height: "100%", background: T.accent }} />
-                </div>
-                <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-                  <div style={{ textAlign: "right" }}>
-                    <span style={{ color: T.green, fontWeight: "700", fontSize: "13px" }}>{totMgPren.toLocaleString("it")}</span>
-                    {totMgAss > 0 && <span style={{ color: T.textDim, fontSize: "10px" }}> / {totMgAss.toLocaleString("it")}</span>}
-                  </div>
-                  {totMgAss > 0 && <span style={{ color: pctMg >= 80 ? T.green : pctMg >= 50 ? T.accent : T.red, fontWeight: "700", fontSize: "12px", minWidth: 36, textAlign: "right" }}>{pctMg}%</span>}
-                </div>
+            <div key={mg.id} style={{ background: T.surface, border: `1px solid ${T.border}`, borderRadius: 4, padding: "10px 14px", minWidth: 180 }}>
+              <div style={{ color: T.accent, fontWeight: "700", fontSize: "11px", letterSpacing: "0.08em", textTransform: "uppercase", marginBottom: 4 }}>{mg.label}</div>
+              <div style={{ display: "flex", gap: 10, alignItems: "center", marginBottom: 8, paddingBottom: 6, borderBottom: `1px solid ${T.border}44` }}>
+                <div style={{ fontSize: "10px", color: T.textMid }}>Ass: <span style={{ color: T.text, fontWeight: "600" }}>{totMgAss.toLocaleString("it")}</span></div>
+                <div style={{ fontSize: "10px", color: T.textMid }}>Rag: <span style={{ color: T.green, fontWeight: "600" }}>{totMgRag.toLocaleString("it")}</span></div>
+                {totMgAss > 0 && <span style={{ color: pctMg >= 80 ? T.green : pctMg >= 50 ? T.accent : T.red, fontSize: "11px", fontWeight: "700" }}>{pctMg}%</span>}
               </div>
-              {/* Righe canale */}
               {mg.canali.map(cod => {
                 const c = canali.find(c => c.codice === cod); if (!c) return null;
+                const { assegnato, raggiunto } = obiPerCanaleFinGiro[cod] || { assegnato: 0, raggiunto: 0 };
                 const qta = prenotatoPerCanale[cod] || 0;
-                const obj = obiPerCanaleFinGiro[cod]?.assegnato || 0;
-                const pctC = obj > 0 ? Math.round(qta / obj * 100) : 0;
+                const pctC = assegnato > 0 ? Math.round(raggiunto / assegnato * 100) : 0;
                 return (
-                  <div key={cod} style={{ display: "flex", alignItems: "center", gap: 12, padding: "4px 14px 4px 28px", borderBottom: `1px solid ${T.border}11` }}>
-                    <div style={{ width: 160, fontSize: "11px", color: T.textMid }}>{getCanaleDisplayName(c)}</div>
-                    <div style={{ flex: 1, height: 4, background: T.borderHi, borderRadius: 2, overflow: "hidden" }}>
-                      <div style={{ width: qta > 0 && totMgPren > 0 ? `${(qta / totMgPren) * 100}%` : "0%", height: "100%", background: T.blue }} />
-                    </div>
-                    <div style={{ width: 110, textAlign: "right", fontSize: "11px" }}>
-                      <span style={{ color: qta > 0 ? T.text : T.textDim, fontWeight: "600" }}>{qta > 0 ? qta.toLocaleString("it") : "—"}</span>
-                      {obj > 0 && <span style={{ color: T.textDim, fontSize: "10px" }}> / {obj.toLocaleString("it")}</span>}
-                    </div>
-                    <div style={{ width: 40, textAlign: "right" }}>
-                      {obj > 0
-                        ? <span style={{ color: pctC >= 80 ? T.green : pctC >= 50 ? T.accent : T.red, fontSize: "11px", fontWeight: "700" }}>{pctC}%</span>
-                        : <span style={{ color: T.textMid, fontSize: "11px" }}>{totMgPren > 0 && qta > 0 ? `${Math.round(qta / totMgPren * 100)}%` : ""}</span>
-                      }
-                    </div>
+                  <div key={cod} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", fontSize: "11px", padding: "3px 0", borderTop: `1px solid ${T.border}22` }}>
+                    <span style={{ color: T.textMid, flex: 1 }}>{getCanaleDisplayName(c)}</span>
+                    <span style={{ color: T.textDim, fontSize: "10px", width: 50, textAlign: "right" }}>{assegnato > 0 ? assegnato.toLocaleString("it") : "—"}</span>
+                    <span style={{ color: qta > 0 ? T.green : T.textDim, fontWeight: qta > 0 ? "600" : "400", width: 50, textAlign: "right" }}>{qta > 0 ? qta.toLocaleString("it") : "—"}</span>
+                    <span style={{ color: pctC >= 80 ? T.green : pctC >= 50 ? T.accent : T.red, fontWeight: "700", width: 36, textAlign: "right", fontSize: "10px" }}>{assegnato > 0 ? `${pctC}%` : ""}</span>
                   </div>
                 );
               })}
