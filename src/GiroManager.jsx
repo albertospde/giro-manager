@@ -632,6 +632,15 @@ function ModuloFineGiro({ titoli, prenotato, canali, token, ruolo, spalmatura })
       .sort((a, b) => (a.ranking_editore ?? 99) - (b.ranking_editore ?? 99) || (a.ranking_titolo ?? 99) - (b.ranking_titolo ?? 99));
   }, [titoli, giroLabelSel, extraSel, cedolaSel, filterEditore, filterAccount, search]);
 
+  const macrogruppiVis = ruolo === "agente" ? MACROGRUPPI.filter(mg => mg.id === "RETE") : MACROGRUPPI;
+
+  const byCanaleCliente = useMemo(() => {
+    if (!clienteSel || prenotatoCliente.length === 0) return null;
+    const map = {};
+    prenotatoCliente.forEach(p => { const c = canali.find(c => c.id === p.canale_id); if (c) map[c.codice] = (map[c.codice] || 0) + p.quantita; });
+    return map;
+  }, [clienteSel, prenotatoCliente, canali]);
+
   const canaliTabella = useMemo(() => {
     let base = ruolo === "agente" ? canali.filter(c => CANALI_RETE.includes(c.codice)) : canali.filter(c => c.codice !== "AURORA");
     // Se c'è un cliente selezionato, mostra solo la colonna del suo canale
@@ -643,15 +652,6 @@ function ModuloFineGiro({ titoli, prenotato, canali, token, ruolo, spalmatura })
     }
     return base;
   }, [canali, ruolo, filterCanale, clienteSel, byCanaleCliente]);
-
-  const macrogruppiVis = ruolo === "agente" ? MACROGRUPPI.filter(mg => mg.id === "RETE") : MACROGRUPPI;
-
-  const byCanaleCliente = useMemo(() => {
-    if (!clienteSel || prenotatoCliente.length === 0) return null;
-    const map = {};
-    prenotatoCliente.forEach(p => { const c = canali.find(c => c.id === p.canale_id); if (c) map[c.codice] = (map[c.codice] || 0) + p.quantita; });
-    return map;
-  }, [clienteSel, prenotatoCliente, canali]);
 
   const prenotatoClienteByTitolo = useMemo(() => {
     if (!clienteSel || prenotatoCliente.length === 0) return null;
