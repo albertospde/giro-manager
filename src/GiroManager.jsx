@@ -406,6 +406,85 @@ function ModuloDashboard({ titoli, prenotato, canali, spalmatura, ruolo }) {
 }
 
 // FIX 5: ModuloCedola ora riceve token per passarlo alla EditModal
+
+// Dropdown con ricerca testuale — selezione singola
+function SearchableSelect({ value, onChange, options, placeholder = "Tutti", labelKey = null, valueKey = null, width = 180 }) {
+  const [open, setOpen] = useState(false);
+  const [search, setSearch] = useState("");
+  const filtered = options.filter(o => {
+    const label = labelKey ? o[labelKey] : o;
+    return String(label).toLowerCase().includes(search.toLowerCase());
+  });
+  const currentLabel = value === "tutti" || value === null
+    ? placeholder
+    : (labelKey ? (options.find(o => o[valueKey] === value)?.[labelKey] || value) : value);
+  return (
+    <div style={{ position: "relative" }}>
+      <button style={{ ...css.btn(value !== "tutti" && value !== null ? "accent" : "default"), minWidth: width, display: "flex", justifyContent: "space-between", alignItems: "center", gap: 8 }} onClick={() => setOpen(o => !o)}>
+        <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", maxWidth: width - 30 }}>{currentLabel}</span>
+        <span>▾</span>
+      </button>
+      {open && (
+        <div style={{ position: "absolute", top: "100%", left: 0, zIndex: 50, background: T.surface, border: `1px solid ${T.borderHi}`, borderRadius: 4, minWidth: width, maxHeight: 300, display: "flex", flexDirection: "column", marginTop: 4, boxShadow: "0 4px 20px #0008" }}>
+          <div style={{ padding: "8px 10px", borderBottom: `1px solid ${T.border}`, flexShrink: 0 }}>
+            <input style={{ ...css.input, width: "100%", boxSizing: "border-box" }} placeholder="Cerca..." value={search} onChange={e => setSearch(e.target.value)} autoFocus />
+          </div>
+          <div style={{ overflowY: "auto", flex: 1 }}>
+            <div style={{ padding: "7px 12px", cursor: "pointer", fontSize: "12px", color: value === "tutti" || value === null ? T.accent : T.textMid, borderBottom: `1px solid ${T.border}22` }}
+              onClick={() => { onChange("tutti"); setOpen(false); setSearch(""); }}>{placeholder}</div>
+            {filtered.map((o, i) => {
+              const val = valueKey ? o[valueKey] : o;
+              const label = labelKey ? o[labelKey] : o;
+              const selected = value === val;
+              return (
+                <div key={i} style={{ padding: "7px 12px", cursor: "pointer", fontSize: "12px", color: selected ? T.accent : T.text, background: selected ? T.accent + "18" : "transparent", borderBottom: `1px solid ${T.border}22` }}
+                  onClick={() => { onChange(val); setOpen(false); setSearch(""); }}>{label}</div>
+              );
+            })}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// Dropdown con ricerca testuale — selezione multipla
+function SearchableMultiSelect({ values, onChange, options, placeholder = "Tutti", width = 180 }) {
+  const [open, setOpen] = useState(false);
+  const [search, setSearch] = useState("");
+  const filtered = options.filter(o => o.toLowerCase().includes(search.toLowerCase()));
+  return (
+    <div style={{ position: "relative" }}>
+      <button style={{ ...css.btn(values.length > 0 ? "accent" : "default"), minWidth: width, display: "flex", justifyContent: "space-between", alignItems: "center", gap: 8 }} onClick={() => setOpen(o => !o)}>
+        <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", maxWidth: width - 30 }}>{values.length === 0 ? placeholder : `${values.length} selezionati`}</span>
+        <span>▾</span>
+      </button>
+      {open && (
+        <div style={{ position: "absolute", top: "100%", left: 0, zIndex: 50, background: T.surface, border: `1px solid ${T.borderHi}`, borderRadius: 4, minWidth: width, maxHeight: 320, display: "flex", flexDirection: "column", marginTop: 4, boxShadow: "0 4px 20px #0008" }}>
+          <div style={{ padding: "8px 10px", borderBottom: `1px solid ${T.border}`, flexShrink: 0 }}>
+            <input style={{ ...css.input, width: "100%", boxSizing: "border-box", marginBottom: 6 }} placeholder="Cerca..." value={search} onChange={e => setSearch(e.target.value)} autoFocus />
+            <div style={{ display: "flex", justifyContent: "space-between" }}>
+              <span style={{ color: T.textMid, fontSize: "11px" }}>{filtered.length} voci</span>
+              <span style={{ color: T.accent, fontSize: "11px", cursor: "pointer" }} onClick={() => onChange([])}>Deseleziona tutti</span>
+            </div>
+          </div>
+          <div style={{ overflowY: "auto", flex: 1 }}>
+            {filtered.map((o, i) => (
+              <label key={i} style={{ display: "flex", alignItems: "center", gap: 8, padding: "7px 12px", cursor: "pointer", borderBottom: `1px solid ${T.border}22`, background: values.includes(o) ? T.accent + "18" : "transparent" }}>
+                <input type="checkbox" checked={values.includes(o)} onChange={() => onChange(values.includes(o) ? values.filter(x => x !== o) : [...values, o])} style={{ accentColor: T.accent }} />
+                <span style={{ fontSize: "12px", color: values.includes(o) ? T.accent : T.text }}>{o}</span>
+              </label>
+            ))}
+          </div>
+          <div style={{ padding: 8, borderTop: `1px solid ${T.border}`, flexShrink: 0 }}>
+            <button style={{ ...css.btn("accent"), width: "100%" }} onClick={() => { setOpen(false); setSearch(""); }}>Applica</button>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
 function ModuloCedola({ titoli, giriList, onUpdateTitolo, spalmatura, prenotato, ruolo, token }) {
   const [giroLabelSel, setGiroLabelSel] = useState("tutti");
   const [giroSel, setGiroSel] = useState("tutti");
@@ -413,7 +492,6 @@ function ModuloCedola({ titoli, giriList, onUpdateTitolo, spalmatura, prenotato,
   const [filterFlag, setFilterFlag] = useState("tutti");
   const [filterEditori, setFilterEditori] = useState([]);
   const [filterAccount, setFilterAccount] = useState("tutti");
-  const [editoreDropdownOpen, setEditoreDropdownOpen] = useState(false);
   const [editingId, setEditingId] = useState(null);
   const [sortKey, setSortKey] = useState("n_cedola");
 
@@ -472,36 +550,9 @@ function ModuloCedola({ titoli, giriList, onUpdateTitolo, spalmatura, prenotato,
           <option value="tutti">Tutti i giri</option>
           {giriLabel.map(g => <option key={g} value={g}>Giro {g}</option>)}
         </select>
-        <select style={css.input} value={giroSel} onChange={e => { setGiroSel(e.target.value); setFilterEditori([]); }}>
-          <option value="tutti">Tutte le cedole</option>
-          {cedole.map(c => <option key={c} value={c}>{c}</option>)}
-        </select>
-        <div style={{ position: "relative" }}>
-          <button style={{ ...css.btn(), minWidth: 180, display: "flex", justifyContent: "space-between", alignItems: "center", gap: 8 }} onClick={() => setEditoreDropdownOpen(o => !o)}>
-            <span>{filterEditori.length === 0 ? "Tutti gli editori" : `${filterEditori.length} selezionati`}</span><span>▾</span>
-          </button>
-          {editoreDropdownOpen && (
-            <div style={{ position: "absolute", top: "100%", left: 0, zIndex: 50, background: T.surface, border: `1px solid ${T.borderHi}`, borderRadius: 4, minWidth: 220, maxHeight: 300, overflowY: "auto", marginTop: 4, boxShadow: "0 4px 20px #0008" }}>
-              <div style={{ padding: "8px 12px", borderBottom: `1px solid ${T.border}`, display: "flex", justifyContent: "space-between" }}>
-                <span style={{ color: T.textMid, fontSize: "11px" }}>{editori.length} editori</span>
-                <span style={{ color: T.accent, fontSize: "11px", cursor: "pointer" }} onClick={() => setFilterEditori([])}>Deseleziona tutti</span>
-              </div>
-              {editori.map(e => (
-                <label key={e} style={{ display: "flex", alignItems: "center", gap: 8, padding: "7px 12px", cursor: "pointer", borderBottom: `1px solid ${T.border}22`, background: filterEditori.includes(e) ? T.accent + "18" : "transparent" }}>
-                  <input type="checkbox" checked={filterEditori.includes(e)} onChange={() => setFilterEditori(prev => prev.includes(e) ? prev.filter(x => x !== e) : [...prev, e])} style={{ accentColor: T.accent }} />
-                  <span style={{ fontSize: "12px", color: filterEditori.includes(e) ? T.accent : T.text }}>{e}</span>
-                </label>
-              ))}
-              <div style={{ padding: 8, borderTop: `1px solid ${T.border}` }}>
-                <button style={{ ...css.btn("accent"), width: "100%" }} onClick={() => setEditoreDropdownOpen(false)}>Applica</button>
-              </div>
-            </div>
-          )}
-        </div>
-        <select style={css.input} value={filterAccount} onChange={e => setFilterAccount(e.target.value)}>
-          <option value="tutti">Tutti gli account</option>
-          {accounts.map(a => <option key={a} value={a}>{a}</option>)}
-        </select>
+        <SearchableSelect value={giroSel} onChange={v => { setGiroSel(v); setFilterEditori([]); }} options={cedole} placeholder="Tutte le cedole" width={160} />
+        <SearchableMultiSelect values={filterEditori} onChange={setFilterEditori} options={editori} placeholder="Tutti gli editori" width={190} />
+        <SearchableSelect value={filterAccount} onChange={setFilterAccount} options={accounts} placeholder="Tutti gli account" width={160} />
         <input style={{ ...css.input, width: 180 }} placeholder="Cerca..." value={search} onChange={e => setSearch(e.target.value)} />
         {["tutti","triangolo","top100","gemelli"].map(f => (
           <button key={f} style={{ ...css.btn(filterFlag === f ? "accent" : "default"), padding: "5px 10px" }} onClick={() => setFilterFlag(f)}>
@@ -561,8 +612,6 @@ function ModuloFineGiro({ titoli, prenotato, canali, token, ruolo, spalmatura })
   const [extraSel, setExtraSel] = useState(null);
   const [cedolaSel, setCedolaSel] = useState("tutti");
   const [filterEditori, setFilterEditori] = useState([]);
-  const [editoreDropdownOpenFG, setEditoreDropdownOpenFG] = useState(false);
-  const [searchEditore, setSearchEditore] = useState("");
   const [filterAccount, setFilterAccount] = useState("tutti");
   const [filterCanale, setFilterCanale] = useState("tutti");
   const [search, setSearch] = useState("");
@@ -574,7 +623,7 @@ function ModuloFineGiro({ titoli, prenotato, canali, token, ruolo, spalmatura })
   const [auroraEdit, setAuroraEdit] = useState({});
   const [auroraEditing, setAuroraEditing] = useState(null);
 
-  const resetFiltri = () => { setGiroLabelSel(null); setExtraSel(null); setCedolaSel("tutti"); setFilterEditori([]); setSearchEditore(""); setFilterAccount("tutti"); setFilterCanale("tutti"); setSearch(""); setClienteSel(null); };
+  const resetFiltri = () => { setGiroLabelSel(null); setExtraSel(null); setCedolaSel("tutti"); setFilterEditori([]); setFilterAccount("tutti"); setFilterCanale("tutti"); setSearch(""); setClienteSel(null); };
 
   useEffect(() => {
     if (!token) return;
@@ -806,46 +855,11 @@ function ModuloFineGiro({ titoli, prenotato, canali, token, ruolo, spalmatura })
           </select>
         )}
         {giroLabelSel && (
-          <select style={css.input} value={cedolaSel} onChange={e => setCedolaSel(e.target.value)}>
-            <option value="tutti">Tutte le cedole</option>
-            {cedole.map(c => <option key={c} value={c}>{c}</option>)}
-          </select>
+          <SearchableSelect value={cedolaSel} onChange={setCedolaSel} options={cedole} placeholder="Tutte le cedole" width={160} />
         )}
-        <div style={{ position: "relative" }}>
-          <button style={{ ...css.btn(), minWidth: 180, display: "flex", justifyContent: "space-between", alignItems: "center", gap: 8 }} onClick={() => setEditoreDropdownOpenFG(o => !o)}>
-            <span>{filterEditori.length === 0 ? "Tutti gli editori" : `${filterEditori.length} selezionati`}</span><span>▾</span>
-          </button>
-          {editoreDropdownOpenFG && (
-            <div style={{ position: "absolute", top: "100%", left: 0, zIndex: 50, background: T.surface, border: `1px solid ${T.borderHi}`, borderRadius: 4, minWidth: 240, maxHeight: 340, display: "flex", flexDirection: "column", marginTop: 4, boxShadow: "0 4px 20px #0008" }}>
-              <div style={{ padding: "8px 12px", borderBottom: `1px solid ${T.border}`, flexShrink: 0 }}>
-                <input style={{ ...css.input, width: "100%", boxSizing: "border-box", marginBottom: 6 }} placeholder="Cerca editore..." value={searchEditore} onChange={e => setSearchEditore(e.target.value)} autoFocus />
-                <div style={{ display: "flex", justifyContent: "space-between" }}>
-                  <span style={{ color: T.textMid, fontSize: "11px" }}>{editori.length} editori</span>
-                  <span style={{ color: T.accent, fontSize: "11px", cursor: "pointer" }} onClick={() => setFilterEditori([])}>Deseleziona tutti</span>
-                </div>
-              </div>
-              <div style={{ overflowY: "auto", flex: 1 }}>
-                {editori.filter(e => e.toLowerCase().includes(searchEditore.toLowerCase())).map(e => (
-                  <label key={e} style={{ display: "flex", alignItems: "center", gap: 8, padding: "7px 12px", cursor: "pointer", borderBottom: `1px solid ${T.border}22`, background: filterEditori.includes(e) ? T.accent + "18" : "transparent" }}>
-                    <input type="checkbox" checked={filterEditori.includes(e)} onChange={() => setFilterEditori(prev => prev.includes(e) ? prev.filter(x => x !== e) : [...prev, e])} style={{ accentColor: T.accent }} />
-                    <span style={{ fontSize: "12px", color: filterEditori.includes(e) ? T.accent : T.text }}>{e}</span>
-                  </label>
-                ))}
-              </div>
-              <div style={{ padding: 8, borderTop: `1px solid ${T.border}`, flexShrink: 0 }}>
-                <button style={{ ...css.btn("accent"), width: "100%" }} onClick={() => { setEditoreDropdownOpenFG(false); setSearchEditore(""); }}>Applica</button>
-              </div>
-            </div>
-          )}
-        </div>
-        <select style={css.input} value={filterAccount} onChange={e => setFilterAccount(e.target.value)}>
-          <option value="tutti">Tutti gli account</option>
-          {accounts.map(a => <option key={a} value={a}>{a}</option>)}
-        </select>
-        <select style={{ ...css.input, borderColor: filterCanale !== "tutti" ? T.accent : T.border }} value={filterCanale} onChange={e => setFilterCanale(e.target.value)}>
-          <option value="tutti">Tutti i canali</option>
-          {canali.filter(c => c.codice !== "AURORA").map(c => <option key={c.id} value={c.codice}>{getCanaleDisplayName(c)}</option>)}
-        </select>
+        <SearchableMultiSelect values={filterEditori} onChange={setFilterEditori} options={editori} placeholder="Tutti gli editori" width={190} />
+        <SearchableSelect value={filterAccount} onChange={setFilterAccount} options={accounts} placeholder="Tutti gli account" width={160} />
+        <SearchableSelect value={filterCanale} onChange={setFilterCanale} options={canali.filter(c => c.codice !== "AURORA")} placeholder="Tutti i canali" labelKey="nome" valueKey="codice" width={170} />
         <input style={{ ...css.input, width: 160 }} placeholder="Cerca EAN / titolo..." value={search} onChange={e => setSearch(e.target.value)} />
         {ruolo !== "agente" && (
           <div style={{ position: "relative" }}>
