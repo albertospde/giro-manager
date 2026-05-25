@@ -16,28 +16,31 @@ const css = {
   td: { padding: "7px 12px", borderBottom: `1px solid ${T.border}22`, verticalAlign: "middle", fontSize: "12px" },
 };
 
+// Mapping definitivo gruppo cliente Messaggerie → codice canale Supabase
 const GRUPPI_CANALE = {
-  0: "INDIPENDENTI_ALTRE_CATENE", 2: "FELTRINELLI", 4: "INDIPENDENTI_ALTRE_CATENE",
-  6: "LIB_RELIGIOSE", 8: "MONDADORI", 11: "LIBRACCIO", 12: "INDIPENDENTI_ALTRE_CATENE",
-  15: "INDIPENDENTI_ALTRE_CATENE", 18: "LIB_RELIGIOSE", 19: "LIB_RELIGIOSE",
-  21: "LIB_RELIGIOSE", 22: "INDIPENDENTI_ALTRE_CATENE", 23: "FELTRINELLI",
-  24: "INDIPENDENTI_ALTRE_CATENE", 25: "GROSSISTI", 28: "FASTBOOK", 30: "GROSSISTI",
-  32: "GIUNTI", 33: "ALTRI_ONLINE", 34: "MONDADORI", 36: "LIB_COOP",
-  38: "INDIPENDENTI_ALTRE_CATENE", 44: "GDO", 47: "INDIPENDENTI_ALTRE_CATENE",
-  48: "INDIPENDENTI_ALTRE_CATENE", 49: "INDIPENDENTI_ALTRE_CATENE", 50: "INDIPENDENTI_ALTRE_CATENE",
-  55: "INDIPENDENTI_ALTRE_CATENE", 56: "LIBRACCIO", 57: "LIB_RELIGIOSE", 58: "IBS",
-  59: "FELTRINELLI", 60: "INDIPENDENTI_ALTRE_CATENE", 61: "INDIPENDENTI_ALTRE_CATENE",
-  63: "CENTROLIBRI", 65: "INDIPENDENTI_ALTRE_CATENE", 72: "INDIPENDENTI_ALTRE_CATENE",
-  77: "FELTRINELLI", 80: "MONDADORI", 82: "AMAZON", 83: "UBIK", 88: "LIBRACCIO",
-  90: "LIBRACCIO", 91: "LIBRACCIO", 92: "LIBRACCIO", 94: "GROSSISTI",
+  2: "FELTRINELLI", 23: "FELTRINELLI", 59: "FELTRINELLI", 77: "FELTRINELLI",
+  8: "MONDADORI", 34: "MONDADORI", 80: "MONDADORI",
+  83: "UBIK",
+  32: "GIUNTI",
+  11: "LIBRACCIO", 56: "LIBRACCIO", 88: "LIBRACCIO", 90: "LIBRACCIO", 91: "LIBRACCIO", 92: "LIBRACCIO",
+  6: "LIB_RELIGIOSE", 18: "LIB_RELIGIOSE", 19: "LIB_RELIGIOSE", 21: "LIB_RELIGIOSE", 57: "LIB_RELIGIOSE",
+  36: "LIB_COOP",
+  4: "INDIPENDENTI_ALTRE_CATENE", 22: "INDIPENDENTI_ALTRE_CATENE", 24: "INDIPENDENTI_ALTRE_CATENE", 60: "INDIPENDENTI_ALTRE_CATENE",
+  28: "FASTBOOK",
+  63: "CENTROLIBRI",
+  25: "GROSSISTI", 30: "GROSSISTI", 94: "GROSSISTI",
+  82: "AMAZON",
+  58: "IBS",
+  33: "ALTRI_ONLINE",
+  // 0 e NaN → INDIPENDENTI_ALTRE_CATENE (gestito nel codice)
 };
 
 const CANALI_LABELS = {
-  FELTRINELLI: "Feltrinelli", GIUNTI: "Giunti", MONDADORI: "Mondadori",
-  UBIK: "Ubik", LIBRACCIO: "Libraccio", INDIPENDENTI_ALTRE_CATENE: "Indip. & Altre Catene",
-  LIB_RELIGIOSE: "Lib. Religiose", LIB_COOP: "Lib. Coop", ALTRI_ONLINE: "Altri Online",
-  AMAZON: "Amazon", IBS: "IBS", FASTBOOK: "Fastbook", GROSSISTI: "Grossisti",
-  CENTROLIBRI: "Centrolibri", GDO: "GDO", AURORA: "Aurora",
+  FELTRINELLI: "Feltrinelli", GIUNTI: "Giunti al Punto", MONDADORI: "Mondadori",
+  UBIK: "Ubik", LIBRACCIO: "Libraccio", INDIPENDENTI_ALTRE_CATENE: "Indipendenti",
+  LIB_RELIGIOSE: "Librerie Religiose", LIB_COOP: "Librerie Coop", ALTRI_ONLINE: "Librerie On-line",
+  AMAZON: "Amazon", IBS: "Stereo Online", FASTBOOK: "Fastbook + GD", GROSSISTI: "Grossisti",
+  CENTROLIBRI: "Centro Libri",
 };
 
 export default function ModuloPrenotato({ token, titoli, onImportDone }) {
@@ -61,9 +64,7 @@ export default function ModuloPrenotato({ token, titoli, onImportDone }) {
         const data = XLSX.utils.sheet_to_json(ws, { defval: "" });
         setRighe(data);
 
-        // Aggrega per EAN × canale (tabella prenotato)
         const aggMap = {};
-        // Aggrega per EAN × cliente × canale (tabella prenotato_clienti con titolo_id)
         const aggCliMap = {};
 
         data.forEach(row => {
@@ -74,18 +75,19 @@ export default function ModuloPrenotato({ token, titoli, onImportDone }) {
           const nomeCliente = String(row["Nome Cliente"] || "").trim();
           if (!ean || qta === 0) return;
 
+          // Gruppo vuoto, 0 o NaN → INDIPENDENTI
           let canale = "INDIPENDENTI_ALTRE_CATENE";
           if (gruppoRaw !== "" && gruppoRaw !== null && gruppoRaw !== undefined) {
             const gruppoInt = parseInt(parseFloat(gruppoRaw));
-            canale = GRUPPI_CANALE[gruppoInt] || "INDIPENDENTI_ALTRE_CATENE";
+            if (!isNaN(gruppoInt) && gruppoInt !== 0) {
+              canale = GRUPPI_CANALE[gruppoInt] || "INDIPENDENTI_ALTRE_CATENE";
+            }
           }
 
-          // Per EAN × canale
           const key = `${ean}__${canale}`;
           if (!aggMap[key]) aggMap[key] = { ean, canale, qta: 0 };
           aggMap[key].qta += qta;
 
-          // Per cliente × EAN × canale
           if (codiceCliente) {
             const keyC = `${codiceCliente}__${ean}__${canale}`;
             if (!aggCliMap[keyC]) aggCliMap[keyC] = { codice_cliente: codiceCliente, nome_cliente: nomeCliente, ean, canale, qta: 0 };
@@ -132,7 +134,6 @@ export default function ModuloPrenotato({ token, titoli, onImportDone }) {
     const canaleMap = {};
     canaliDB.forEach(c => { canaleMap[c.codice] = c.id; });
 
-    // Import prenotato aggregato per EAN × canale
     const validi = aggregato.filter(r => r.found && r.titolo_id);
     const payload = validi.map(r => ({
       titolo_id: r.titolo_id,
@@ -146,7 +147,6 @@ export default function ModuloPrenotato({ token, titoli, onImportDone }) {
       body: JSON.stringify({ payload }),
     });
 
-    // Import prenotato_clienti con titolo_id
     const validiClienti = aggregatoClienti.filter(r => r.found && r.titolo_id);
     const payloadClienti = validiClienti.map(r => ({
       codice_cliente: r.codice_cliente,
@@ -156,7 +156,6 @@ export default function ModuloPrenotato({ token, titoli, onImportDone }) {
       quantita: r.qta,
     })).filter(r => r.canale_id !== null);
 
-    // Batch da 500
     for (let i = 0; i < payloadClienti.length; i += 500) {
       const batch = payloadClienti.slice(i, i + 500);
       await fetch(`${SUPABASE_URL}/rest/v1/rpc/upsert_prenotato_clienti`, {
@@ -198,7 +197,7 @@ export default function ModuloPrenotato({ token, titoli, onImportDone }) {
           <div style={{ border: `2px dashed ${T.borderHi}`, borderRadius: 6, padding: 40, textAlign: "center", marginBottom: 20 }}>
             <div style={{ fontSize: "32px", marginBottom: 12 }}>📂</div>
             <div style={{ color: T.text, marginBottom: 8 }}>Carica il file "Pianifica Visite"</div>
-            <div style={{ color: T.textMid, fontSize: "11px", marginBottom: 20 }}>File .xlsx esportato dal sistema</div>
+            <div style={{ color: T.textMid, fontSize: "11px", marginBottom: 20 }}>File .xlsx esportato dal sistema Messaggerie</div>
             <input type="file" accept=".xlsx" onChange={handleFile} style={{ display: "none" }} id="pv-file-input" />
             <label htmlFor="pv-file-input" style={{ ...css.btn("accent"), cursor: "pointer", padding: "8px 20px" }}>Scegli file .xlsx</label>
           </div>
