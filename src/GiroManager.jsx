@@ -1178,7 +1178,19 @@ function ModuloAvanzamentoNovita({ titoli, prenotato, canali, token, ruolo }) {
     if (!file) return;
     setUploading(true);
     try {
-      const text = await file.text();
+      // Leggi file come ArrayBuffer per gestire sia UTF-8 che UTF-16
+      const buf = await file.arrayBuffer();
+      const bytes = new Uint8Array(buf);
+      // Detect UTF-16 LE BOM (FF FE) o UTF-16 BE BOM (FE FF)
+      let text;
+      if ((bytes[0] === 0xFF && bytes[1] === 0xFE) || (bytes[0] === 0xFE && bytes[1] === 0xFF)) {
+        const decoder = new TextDecoder(bytes[0] === 0xFF ? "utf-16le" : "utf-16be");
+        text = decoder.decode(buf);
+      } else {
+        text = new TextDecoder("utf-8").decode(buf);
+      }
+      // Rimuovi BOM e null bytes residui
+      text = text.replace(/^\ufeff/, "").replace(/\0/g, "");
       // Prova parsing UTF-16 (tab-separated) poi UTF-8 (separatore ; o ,)
       let rows = [];
       let headers = [];
@@ -1224,9 +1236,21 @@ function ModuloAvanzamentoNovita({ titoli, prenotato, canali, token, ruolo }) {
         };
       }).filter(r => r.ean.length >= 10);
 
+      // Deduplica per EAN: se ci sono righe duplicate, tiene quella con più dati (copie_lanciate > 0 o valore_lancio > 0)
+      const byEan = {};
+      payload.forEach(r => {
+        const existing = byEan[r.ean];
+        if (!existing) { byEan[r.ean] = r; return; }
+        // Tieni la riga con più info (copie o valore non zero)
+        if ((r.copie_lanciate || 0) > (existing.copie_lanciate || 0) || (r.valore_lancio || 0) > (existing.valore_lancio || 0)) {
+          byEan[r.ean] = { ...existing, ...r };
+        }
+      });
+      const deduplicated = Object.values(byEan);
+
       // Upsert su Supabase in batch da 500
-      for (let i = 0; i < payload.length; i += 500) {
-        const batch = payload.slice(i, i + 500);
+      for (let i = 0; i < deduplicated.length; i += 500) {
+        const batch = deduplicated.slice(i, i + 500);
         const r = await fetch(`${SUPABASE_URL}/rest/v1/titoli_novita`, {
           method: "POST",
           headers: {
@@ -1242,7 +1266,7 @@ function ModuloAvanzamentoNovita({ titoli, prenotato, canali, token, ruolo }) {
           throw new Error(`Errore upload batch: ${err}`);
         }
       }
-      showToast(`Importati ${payload.length} titoli novità`);
+      showToast(`Importati ${deduplicated.length} titoli novità`);
       await loadNovita();
     } catch (err) {
       showToast(err.message, "err");
