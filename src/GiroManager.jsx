@@ -1018,10 +1018,420 @@ function ModuloFineGiro({ titoli, prenotato, canali, token, ruolo, spalmatura })
   );
 }
 
+// ────────────────────────────────────────────────────────────────
+// MODULO AVANZAMENTO TITOLI NOVITÀ
+// ────────────────────────────────────────────────────────────────
+
+// Mesi italiani per parsing date dal CSV Tableau ("10 ottobre 2025")
+const MESI_IT = { gennaio:0, febbraio:1, marzo:2, aprile:3, maggio:4, giugno:5, luglio:6, agosto:7, settembre:8, ottobre:9, novembre:10, dicembre:11 };
+
+function parseDataIt(str) {
+  if (!str) return null;
+  const parts = String(str).trim().split(/\s+/);
+  if (parts.length !== 3) return null;
+  const [giorno, mese, anno] = parts;
+  const m = MESI_IT[mese?.toLowerCase()];
+  if (m === undefined) return null;
+  return new Date(Number(anno), m, Number(giorno));
+}
+
+function fmtDate(d) {
+  if (!d) return "—";
+  if (typeof d === "string") d = new Date(d);
+  if (isNaN(d)) return "—";
+  return d.toLocaleDateString("it-IT", { day: "2-digit", month: "short", year: "numeric" });
+}
+
+function parseValoreLancio(str) {
+  if (typeof str === "number") return str;
+  if (!str) return 0;
+  return parseFloat(String(str).replace(/[^\d,.-]/g, "").replace(".", "").replace(",", ".")) || 0;
+}
+
+function parsePrezzo(str) {
+  if (typeof str === "number") return str;
+  if (!str) return 0;
+  return parseFloat(String(str).replace(",", ".")) || 0;
+}
+
+function ModuloAvanzamentoNovita({ titoli, prenotato, canali, token, ruolo }) {
+  const [novitaDB, setNovitaDB] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [uploading, setUploading] = useState(false);
+  const [manualOpen, setManualOpen] = useState(false);
+  const [manualForm, setManualForm] = useState({ ean: "", titolo: "", autore: "", editore: "", prezzo: "", num_lancio: "", copie_lanciate: "", valore_lancio: "", data_messa_in_vendita: "" });
+  const [filterAnno, setFilterAnno] = useState(new Date().getFullYear());
+  const [filterEditore, setFilterEditore] = useState("tutti");
+  const [filterNumLancio, setFilterNumLancio] = useState("tutti");
+  const [search, setSearch] = useState("");
+  const [toast, setToast] = useState(null);
+
+  const showToast = (msg, type = "ok") => { setToast({ msg, type }); setTimeout(() => setToast(null), 3000); };
+
+  // Carica dati da Supabase
+  const loadNovita = useCallback(async () => {
+    if (!token) return;
+    setLoading(true);
+    const data = await sbFetch("titoli_novita?select=*&order=data_messa_in_vendita.desc.nullslast,editore.asc,titolo.asc", token);
+    if (Array.isArray(data)) setNovitaDB(data);
+    setLoading(false);
+  }, [token]);
+
+  useEffect(() => { loadNovita(); }, [loadNovita]);
+
+  // Dati arricchiti: merge novitaDB con prenotato/titoli dai giri
+  const novitaArricchite = useMemo(() => {
+    // Mappa prenotato per EAN (somma tutte le quantità per canale)
+    const prenByEan = {};
+    prenotato.forEach(p => {
+      const t = titoli.find(t => t.id === p.titolo_id);
+      if (!t || !t.ean) return;
+      prenByEan[t.ean] = (prenByEan[t.ean] || 0) + p.quantita;
+    });
+    // Mappa obiettivo per EAN
+    const objByEan = {};
+    titoli.forEach(t => {
+      if (!t.ean) return;
+      objByEan[t.ean] = (objByEan[t.ean] || 0) + (t.obiettivo_assegnato || 0);
+    });
+    // Mappa cedola per EAN
+    const cedolaByEan = {};
+    titoli.forEach(t => { if (t.ean && t.n_cedola) cedolaByEan[t.ean] = t.n_cedola; });
+
+    return novitaDB.map(n => ({
+      ...n,
+      prenotato_giri: prenByEan[n.ean] || 0,
+      obiettivo_giri: objByEan[n.ean] || 0,
+      nome_cedola: cedolaByEan[n.ean] || "—",
+    }));
+  }, [novitaDB, prenotato, titoli]);
+
+  // Estrai anno dalla data_messa_in_vendita
+  const anniDisponibili = useMemo(() => {
+    const s = new Set();
+    novitaArricchite.forEach(n => {
+      if (n.data_messa_in_vendita) {
+        const d = new Date(n.data_messa_in_vendita);
+        if (!isNaN(d)) s.add(d.getFullYear());
+      }
+    });
+    return [...s].sort((a, b) => b - a);
+  }, [novitaArricchite]);
+
+  // Filtri
+  const novitaFiltrate = useMemo(() => {
+    return novitaArricchite
+      .filter(n => {
+        if (!filterAnno) return true;
+        if (!n.data_messa_in_vendita) return false;
+        const d = new Date(n.data_messa_in_vendita);
+        return !isNaN(d) && d.getFullYear() === filterAnno;
+      })
+      .filter(n => filterEditore === "tutti" || n.editore === filterEditore)
+      .filter(n => filterNumLancio === "tutti" || String(n.num_lancio) === String(filterNumLancio))
+      .filter(n => {
+        if (!search) return true;
+        const q = search.toLowerCase();
+        return n.ean?.toLowerCase().includes(q) || n.titolo?.toLowerCase().includes(q) || n.autore?.toLowerCase().includes(q) || n.editore?.toLowerCase().includes(q);
+      });
+  }, [novitaArricchite, filterAnno, filterEditore, filterNumLancio, search]);
+
+  const editoriList = useMemo(() => [...new Set(novitaArricchite.filter(n => !filterAnno || (n.data_messa_in_vendita && new Date(n.data_messa_in_vendita).getFullYear() === filterAnno)).map(n => n.editore).filter(Boolean))].sort(), [novitaArricchite, filterAnno]);
+  const numLanciList = useMemo(() => [...new Set(novitaArricchite.filter(n => !filterAnno || (n.data_messa_in_vendita && new Date(n.data_messa_in_vendita).getFullYear() === filterAnno)).map(n => n.num_lancio).filter(Boolean))].sort((a, b) => Number(a) - Number(b)), [novitaArricchite, filterAnno]);
+
+  // KPI Dashboard
+  const kpi = useMemo(() => {
+    const totValoreLancio = novitaFiltrate.reduce((s, n) => s + (n.valore_lancio || 0), 0);
+    const totPrenotato = novitaFiltrate.reduce((s, n) => s + n.prenotato_giri, 0);
+    const totObiettivo = novitaFiltrate.reduce((s, n) => s + n.obiettivo_giri, 0);
+    const totCopieLanciate = novitaFiltrate.reduce((s, n) => s + (n.copie_lanciate || 0), 0);
+    // Valore prenotato (prezzo × prenotato_giri)
+    const valPrenotato = novitaFiltrate.reduce((s, n) => s + (n.prezzo || 0) * n.prenotato_giri, 0);
+    // Valore mancante = valore lancio - valore prenotato
+    const valMancante = totValoreLancio - valPrenotato;
+    // Avanzamento trasmesso: quanti titoli hanno prenotato_giri > 0
+    const titConTrasmesso = novitaFiltrate.filter(n => n.prenotato_giri > 0).length;
+    const totTitoli = novitaFiltrate.length;
+    const pctTrasmesso = totTitoli > 0 ? Math.round(titConTrasmesso / totTitoli * 100) : 0;
+    // Proiezione: media mensile del valore lancio × mesi restanti
+    const oggi = new Date();
+    const mesiRestanti = Math.max(0, 12 - oggi.getMonth());
+    const mesiPassati = Math.max(1, oggi.getMonth() + 1);
+    // Raggruppo per mese per proiezione
+    const perMese = {};
+    novitaFiltrate.forEach(n => {
+      if (!n.data_messa_in_vendita) return;
+      const d = new Date(n.data_messa_in_vendita);
+      if (isNaN(d)) return;
+      const m = d.getMonth();
+      perMese[m] = (perMese[m] || 0) + (n.valore_lancio || 0);
+    });
+    const mesiConDati = Object.keys(perMese).filter(m => Number(m) < oggi.getMonth() + 1);
+    const mediaMensile = mesiConDati.length > 0 ? mesiConDati.reduce((s, m) => s + perMese[m], 0) / mesiConDati.length : 0;
+    const proiezione = totValoreLancio + mediaMensile * Math.max(0, mesiRestanti - (12 - Object.keys(perMese).length));
+    return { totValoreLancio, valPrenotato, valMancante, totPrenotato, totObiettivo, totCopieLanciate, titConTrasmesso, totTitoli, pctTrasmesso, proiezione };
+  }, [novitaFiltrate]);
+
+  // Upload CSV
+  const handleCSVUpload = async (e) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setUploading(true);
+    try {
+      const text = await file.text();
+      // Prova parsing UTF-16 (tab-separated) poi UTF-8 (separatore ; o ,)
+      let rows = [];
+      let headers = [];
+      // Detect separator e parse
+      const lines = text.split(/\r?\n/).filter(l => l.trim());
+      if (lines.length === 0) throw new Error("File vuoto");
+      // Tab-separated
+      const sep = lines[0].includes("\t") ? "\t" : lines[0].includes(";") ? ";" : ",";
+      headers = lines[0].split(sep).map(h => h.trim().replace(/^[\ufeff\ufffe"]+|["]+$/g, ""));
+      for (let i = 1; i < lines.length; i++) {
+        const vals = lines[i].split(sep).map(v => v.trim().replace(/^"|"$/g, ""));
+        if (vals.length >= headers.length - 1) rows.push(vals);
+      }
+      // Mappa colonne con nomi flessibili
+      const colMap = {};
+      headers.forEach((h, i) => {
+        const hl = h.toLowerCase();
+        if (hl.includes("ean")) colMap.ean = i;
+        else if (hl === "titolo" || hl.includes("titolo")) colMap.titolo = i;
+        else if (hl === "autore" || hl.includes("autore")) colMap.autore = i;
+        else if (hl === "editore" || hl.includes("editore")) colMap.editore = i;
+        else if (hl.includes("prezzo")) colMap.prezzo = i;
+        else if (hl.includes("data") && hl.includes("pubbl")) colMap.data = i;
+        else if (hl === "num. lancio" || hl.includes("num") && hl.includes("lancio")) colMap.num_lancio = i;
+        else if (hl === "lancio" || (hl.includes("lancio") && !hl.includes("valore") && !hl.includes("num"))) colMap.copie = i;
+        else if (hl.includes("valore") && hl.includes("lancio")) colMap.valore = i;
+      });
+      if (colMap.ean === undefined) throw new Error("Colonna EAN non trovata");
+      const payload = rows.map(r => {
+        const dataStr = colMap.data !== undefined ? r[colMap.data] : null;
+        const dataObj = parseDataIt(dataStr);
+        return {
+          ean: String(r[colMap.ean] || "").trim(),
+          titolo: r[colMap.titolo] || "",
+          autore: r[colMap.autore] || "",
+          editore: r[colMap.editore] || "",
+          prezzo: parsePrezzo(r[colMap.prezzo]),
+          num_lancio: colMap.num_lancio !== undefined ? parseInt(r[colMap.num_lancio]) || null : null,
+          copie_lanciate: colMap.copie !== undefined ? parseInt(String(r[colMap.copie]).replace(/\./g, "")) || 0 : 0,
+          valore_lancio: colMap.valore !== undefined ? parseValoreLancio(r[colMap.valore]) : 0,
+          data_messa_in_vendita: dataObj ? dataObj.toISOString().split("T")[0] : null,
+          manuale: false,
+        };
+      }).filter(r => r.ean.length >= 10);
+
+      // Upsert su Supabase in batch da 500
+      for (let i = 0; i < payload.length; i += 500) {
+        const batch = payload.slice(i, i + 500);
+        const r = await fetch(`${SUPABASE_URL}/rest/v1/titoli_novita`, {
+          method: "POST",
+          headers: {
+            "apikey": SUPABASE_KEY,
+            "Authorization": `Bearer ${token}`,
+            "Content-Type": "application/json",
+            "Prefer": "resolution=merge-duplicates",
+          },
+          body: JSON.stringify(batch),
+        });
+        if (!r.ok) {
+          const err = await r.text();
+          throw new Error(`Errore upload batch: ${err}`);
+        }
+      }
+      showToast(`Importati ${payload.length} titoli novità`);
+      await loadNovita();
+    } catch (err) {
+      showToast(err.message, "err");
+    }
+    setUploading(false);
+    e.target.value = "";
+  };
+
+  // Salva manuale
+  const saveManual = async () => {
+    if (!manualForm.ean || manualForm.ean.length < 10) { showToast("EAN non valido", "err"); return; }
+    const payload = {
+      ean: manualForm.ean.trim(),
+      titolo: manualForm.titolo,
+      autore: manualForm.autore,
+      editore: manualForm.editore,
+      prezzo: parseFloat(manualForm.prezzo) || 0,
+      num_lancio: parseInt(manualForm.num_lancio) || null,
+      copie_lanciate: parseInt(manualForm.copie_lanciate) || 0,
+      valore_lancio: parseFloat(manualForm.valore_lancio) || 0,
+      data_messa_in_vendita: manualForm.data_messa_in_vendita || null,
+      manuale: true,
+    };
+    const r = await fetch(`${SUPABASE_URL}/rest/v1/titoli_novita`, {
+      method: "POST",
+      headers: {
+        "apikey": SUPABASE_KEY, "Authorization": `Bearer ${token}`,
+        "Content-Type": "application/json", "Prefer": "resolution=merge-duplicates",
+      },
+      body: JSON.stringify([payload]),
+    });
+    if (r.ok) {
+      showToast("Titolo aggiunto manualmente");
+      setManualForm({ ean: "", titolo: "", autore: "", editore: "", prezzo: "", num_lancio: "", copie_lanciate: "", valore_lancio: "", data_messa_in_vendita: "" });
+      setManualOpen(false);
+      await loadNovita();
+    } else { showToast("Errore salvataggio", "err"); }
+  };
+
+  // Export Excel
+  const exportExcel = () => {
+    const XLSX = window.XLSX;
+    const headers = ["CEDOLA","EAN","TITOLO","AUTORE","EDITORE","PREZZO","OBJ TOTALE","PRENOTATO TOTALE","N. LANCIO","COPIE LANCIATE","VALORE LANCIO","DATA MESSA IN VENDITA","MANUALE"];
+    const rows = novitaFiltrate.map(n => [
+      n.nome_cedola, n.ean, n.titolo, n.autore, n.editore, n.prezzo,
+      n.obiettivo_giri, n.prenotato_giri, n.num_lancio, n.copie_lanciate,
+      n.valore_lancio, fmtDate(n.data_messa_in_vendita), n.manuale ? "Sì" : ""
+    ]);
+    const ws = XLSX.utils.aoa_to_sheet([headers, ...rows]);
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, `Novità ${filterAnno || "Tutti"}`);
+    XLSX.writeFile(wb, `Avanzamento_Novita_${filterAnno || "Tutti"}.xlsx`);
+  };
+
+  if (loading) return <div style={{ flex: 1, display: "flex", alignItems: "center", justifyContent: "center", color: T.textMid }}>Caricamento titoli novità...</div>;
+
+  return (
+    <div style={{ display: "flex", flexDirection: "column", height: "100%", overflow: "hidden" }}>
+      {/* DASHBOARD KPI */}
+      <div style={{ padding: "16px 20px", borderBottom: `1px solid ${T.border}` }}>
+        <div style={{ display: "flex", gap: 10, alignItems: "center", marginBottom: 14, flexWrap: "wrap" }}>
+          <select style={{ ...css.input, fontSize: "14px", fontWeight: "600", color: T.accent }} value={filterAnno || ""} onChange={e => { setFilterAnno(e.target.value ? Number(e.target.value) : null); setFilterEditore("tutti"); setFilterNumLancio("tutti"); }}>
+            <option value="">Tutti gli anni</option>
+            {anniDisponibili.map(a => <option key={a} value={a}>{a}</option>)}
+          </select>
+          <SearchableMultiSelect values={filterEditore === "tutti" ? [] : [filterEditore]} onChange={v => setFilterEditore(v.length > 0 ? v[0] : "tutti")} options={editoriList} placeholder="Tutti gli editori" width={190} />
+          <SearchableSelect value={filterNumLancio} onChange={setFilterNumLancio} options={numLanciList.map(String)} placeholder="Tutti i lanci" width={140} />
+          <input style={{ ...css.input, width: 180 }} placeholder="Cerca EAN / titolo..." value={search} onChange={e => setSearch(e.target.value)} />
+          <div style={{ marginLeft: "auto", display: "flex", gap: 8 }}>
+            {ruolo !== "agente" && (
+              <>
+                <label style={{ ...css.btn("accent"), cursor: "pointer", display: "inline-flex", alignItems: "center", gap: 4 }}>
+                  {uploading ? "Caricamento..." : "↑ Upload CSV"}
+                  <input type="file" accept=".csv,.txt,.tsv" style={{ display: "none" }} onChange={handleCSVUpload} disabled={uploading} />
+                </label>
+                <button style={css.btn()} onClick={() => setManualOpen(o => !o)}>+ Manuale</button>
+              </>
+            )}
+            <button style={css.btn()} onClick={exportExcel}>↓ Excel</button>
+          </div>
+        </div>
+        <div style={{ display: "flex", gap: 12, flexWrap: "wrap" }}>
+          <KpiCard label="Titoli novità" value={kpi.totTitoli.toLocaleString("it")} color={T.text} sub={`${kpi.titConTrasmesso} con trasmesso`} />
+          <KpiCard label="Valore lancio" value={`€ ${kpi.totValoreLancio.toLocaleString("it", { maximumFractionDigits: 0 })}`} color={T.accent} />
+          <KpiCard label="Valore prenotato" value={`€ ${kpi.valPrenotato.toLocaleString("it", { maximumFractionDigits: 0 })}`} color={T.green} />
+          <KpiCard label="Mancante" value={`€ ${kpi.valMancante.toLocaleString("it", { maximumFractionDigits: 0 })}`} color={kpi.valMancante > 0 ? T.red : T.green} />
+          <div style={{ background: T.surface, border: `1px solid ${T.border}`, borderRadius: 4, padding: "16px 20px", minWidth: 180 }}>
+            <div style={{ color: T.textMid, fontSize: "10px", letterSpacing: "0.1em", textTransform: "uppercase", marginBottom: 8 }}>Avanzamento trasmesso</div>
+            <div style={{ color: T.accent, fontSize: "24px", fontWeight: "700", lineHeight: 1, marginBottom: 8 }}>{kpi.pctTrasmesso}%</div>
+            <div style={{ height: 6, background: T.borderHi, borderRadius: 3, overflow: "hidden" }}>
+              <div style={{ width: `${kpi.pctTrasmesso}%`, height: "100%", background: kpi.pctTrasmesso >= 80 ? T.green : kpi.pctTrasmesso >= 50 ? T.accent : T.red }} />
+            </div>
+            <div style={{ color: T.textMid, fontSize: "11px", marginTop: 6 }}>{kpi.titConTrasmesso} / {kpi.totTitoli} titoli</div>
+          </div>
+          <KpiCard label="Proiezione anno" value={`€ ${kpi.proiezione.toLocaleString("it", { maximumFractionDigits: 0 })}`} color={T.purple} sub="stima a fine anno" />
+        </div>
+      </div>
+
+      {/* FORM MANUALE */}
+      {manualOpen && (
+        <div style={{ padding: "12px 20px", borderBottom: `1px solid ${T.border}`, background: T.accent + "08" }}>
+          <div style={{ color: T.accent, fontWeight: "700", fontSize: "11px", letterSpacing: "0.08em", marginBottom: 10 }}>INSERIMENTO MANUALE (RIFORNIMENTO)</div>
+          <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "flex-end" }}>
+            {[["ean","EAN",140],["titolo","Titolo",200],["autore","Autore",140],["editore","Editore",140],["prezzo","Prezzo €",80],["num_lancio","N. Lancio",80],["copie_lanciate","Copie",80],["valore_lancio","Valore €",100]].map(([k,l,w]) => (
+              <div key={k}>
+                <label style={{ color: T.textMid, fontSize: "9px", letterSpacing: "0.06em", textTransform: "uppercase", display: "block", marginBottom: 3 }}>{l}</label>
+                <input style={{ ...css.input, width: w }} value={manualForm[k]} onChange={e => setManualForm(f => ({ ...f, [k]: e.target.value }))} />
+              </div>
+            ))}
+            <div>
+              <label style={{ color: T.textMid, fontSize: "9px", letterSpacing: "0.06em", textTransform: "uppercase", display: "block", marginBottom: 3 }}>Data vendita</label>
+              <input type="date" style={{ ...css.input, width: 130 }} value={manualForm.data_messa_in_vendita} onChange={e => setManualForm(f => ({ ...f, data_messa_in_vendita: e.target.value }))} />
+            </div>
+            <button style={css.btn("accent")} onClick={saveManual}>Salva</button>
+            <button style={css.btn()} onClick={() => setManualOpen(false)}>Annulla</button>
+          </div>
+        </div>
+      )}
+
+      {/* TABELLA */}
+      <div style={{ flex: 1, overflowY: "auto", overflowX: "auto" }}>
+        <table style={css.table}>
+          <thead>
+            <tr>
+              <th style={css.th}>Cedola</th>
+              <th style={css.th}>EAN</th>
+              <th style={css.th}>Titolo</th>
+              <th style={css.th}>Autore</th>
+              <th style={css.th}>Editore</th>
+              <th style={css.th}>€</th>
+              <th style={css.th}>Obj Tot.</th>
+              <th style={css.th}>Pren. Tot.</th>
+              <th style={css.th}>N. Lancio</th>
+              <th style={css.th}>Copie Lanc.</th>
+              <th style={css.th}>Val. Lancio</th>
+              <th style={css.th}>Data Vendita</th>
+              <th style={css.th}></th>
+            </tr>
+          </thead>
+          <tbody>
+            {novitaFiltrate.map((n, i) => {
+              const pct = n.obiettivo_giri > 0 ? Math.round(n.prenotato_giri / n.obiettivo_giri * 100) : 0;
+              return (
+                <tr key={n.ean || i} style={{ background: i % 2 === 0 ? "transparent" : T.surface + "66" }}>
+                  <td style={{ ...css.td, color: T.textMid, fontSize: "10px", whiteSpace: "nowrap" }}>{n.nome_cedola}</td>
+                  <td style={{ ...css.td, fontFamily: "monospace", fontSize: "11px", color: T.textMid }}>{n.ean}</td>
+                  <td style={{ ...css.td, maxWidth: 220 }}><div style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", fontWeight: "600" }}>{n.titolo}</div></td>
+                  <td style={{ ...css.td, color: T.textMid }}>{n.autore}</td>
+                  <td style={{ ...css.td, color: T.accent, fontWeight: "600", whiteSpace: "nowrap" }}>{n.editore}</td>
+                  <td style={{ ...css.td, whiteSpace: "nowrap" }}>€ {(n.prezzo || 0).toFixed(2)}</td>
+                  <td style={css.td}>{n.obiettivo_giri > 0 ? n.obiettivo_giri.toLocaleString("it") : "—"}</td>
+                  <td style={css.td}>
+                    <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                      <span style={{ color: n.prenotato_giri > 0 ? T.green : T.textDim, fontWeight: "600" }}>{n.prenotato_giri > 0 ? n.prenotato_giri.toLocaleString("it") : "—"}</span>
+                      {n.obiettivo_giri > 0 && <span style={{ color: pct >= 80 ? T.green : pct >= 50 ? T.accent : T.red, fontSize: "10px", fontWeight: "700" }}>{pct}%</span>}
+                    </div>
+                  </td>
+                  <td style={{ ...css.td, textAlign: "center" }}>{n.num_lancio || "—"}</td>
+                  <td style={{ ...css.td, textAlign: "right" }}>{n.copie_lanciate > 0 ? n.copie_lanciate.toLocaleString("it") : "—"}</td>
+                  <td style={{ ...css.td, textAlign: "right", whiteSpace: "nowrap" }}>{n.valore_lancio > 0 ? `€ ${n.valore_lancio.toLocaleString("it", { maximumFractionDigits: 0 })}` : "—"}</td>
+                  <td style={{ ...css.td, whiteSpace: "nowrap" }}>{fmtDate(n.data_messa_in_vendita)}</td>
+                  <td style={css.td}>{n.manuale && <span style={css.tag(T.purple)}>MAN</span>}</td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+        {novitaFiltrate.length === 0 && (
+          <div style={{ padding: 40, textAlign: "center", color: T.textDim }}>
+            {novitaDB.length === 0 ? "Nessun titolo novità caricato. Usa \"Upload CSV\" per importare il catalogo." : "Nessun titolo corrisponde ai filtri selezionati."}
+          </div>
+        )}
+      </div>
+
+      {/* TOAST */}
+      {toast && (
+        <div style={{ position: "fixed", bottom: 24, left: "50%", transform: "translateX(-50%)", background: toast.type === "err" ? "#4a1a2a" : "#1a3a2a", border: `1px solid ${toast.type === "err" ? T.red : T.green}`, color: toast.type === "err" ? T.red : T.green, borderRadius: 6, padding: "8px 20px", fontSize: "12px", zIndex: 999, boxShadow: "0 4px 20px #0008" }}>
+          {toast.msg}
+        </div>
+      )}
+    </div>
+  );
+}
+
 const MODULES = [
   { id: "dashboard", label: "Dashboard", icon: "◈" },
   { id: "cedola", label: "Giri e Cedole", icon: "≡" },
   { id: "finegiro", label: "Fine Giro", icon: "⊞" },
+  { id: "avanzamento", label: "Avanzamento Novità", icon: "▣" },
 ];
 
 const MODULES_IMPORT = [
@@ -1126,7 +1536,7 @@ export default function App() {
       </div>
       <div style={css.main}>
         <div style={css.header}>
-          <span style={{ color: T.accent, fontSize: "11px", letterSpacing: "0.12em", textTransform: "uppercase" }}>{MODULES.find(m => m.id === activeModule)?.label}</span>
+          <span style={{ color: T.accent, fontSize: "11px", letterSpacing: "0.12em", textTransform: "uppercase" }}>{[...MODULES, ...MODULES_IMPORT].find(m => m.id === activeModule)?.label}</span>
           <span style={{ color: T.borderHi }}>·</span>
           <span style={{ color: T.textMid, fontSize: "11px" }}>{titoli.length} titoli · {[...new Set(titoli.map(t => t.n_cedola).filter(Boolean))].length} cedole</span>
           {ruolo !== "agente" && <button style={{ ...css.btn(), marginLeft: "auto", fontSize: "11px", padding: "4px 10px" }} onClick={refreshDati}>↺ Aggiorna</button>}
@@ -1139,6 +1549,7 @@ export default function App() {
           {activeModule === "prenotato" && <ModuloPrenotato token={session.token} titoli={titoli} onImportDone={() => sbFetch("prenotato?select=*&limit=100000", session.token).then(setPrenotato)} />}
           {/* MOD 4: Passato spalmatura a ModuloFineGiro */}
           {activeModule === "finegiro" && <ModuloFineGiro titoli={titoli} prenotato={prenotato} canali={canali} token={session.token} ruolo={ruolo} spalmatura={spalmatura} />}
+          {activeModule === "avanzamento" && <ModuloAvanzamentoNovita titoli={titoli} prenotato={prenotato} canali={canali} token={session.token} ruolo={ruolo} />}
           {activeModule === "import" && <ModuloImport giriList={giriDB} token={session.token} />}
         </div>
       </div>
