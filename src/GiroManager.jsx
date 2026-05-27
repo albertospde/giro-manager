@@ -619,6 +619,7 @@ function ModuloFineGiro({ titoli, prenotato, canali, token, ruolo, spalmatura })
   const [filterAccount, setFilterAccount] = useState("tutti");
   const [filterCanale, setFilterCanale] = useState("tutti");
   const [search, setSearch] = useState("");
+  const [sortPren, setSortPren] = useState(null); // null | "asc" | "desc"
   const [clienteSearch, setClienteSearch] = useState("");
   const [clienteSel, setClienteSel] = useState(null);
   const [clientiList, setClientiList] = useState([]);
@@ -760,9 +761,12 @@ function ModuloFineGiro({ titoli, prenotato, canali, token, ruolo, spalmatura })
   }), [titoliSel, prenotato, canali, auroraEdit, ruolo, clienteSel, prenotatoClienteByTitolo, getObjCanalePerTitolo]);
 
   const righeFiltrate = useMemo(() => {
-    if (filterCanale === "tutti") return righe;
-    return righe.filter(({ byCanale }) => (byCanale[filterCanale] || 0) > 0);
-  }, [righe, filterCanale]);
+    let result = filterCanale === "tutti" ? [...righe] : righe.filter(({ byCanale }) => (byCanale[filterCanale] || 0) > 0);
+    if (sortPren) {
+      result = [...result].sort((a, b) => sortPren === "asc" ? a.totPren - b.totPren : b.totPren - a.totPren);
+    }
+    return result;
+  }, [righe, filterCanale, sortPren]);
 
   const totObj = righeFiltrate.reduce((s, r) => s + (r.titolo.obiettivo_assegnato || 0), 0);
   const totPrenotato = righeFiltrate.reduce((s, r) => s + r.totPren, 0);
@@ -957,7 +961,7 @@ function ModuloFineGiro({ titoli, prenotato, canali, token, ruolo, spalmatura })
             <tr>
               <th style={css.th}>Cedola</th><th style={css.th}>EAN</th><th style={css.th}>Titolo</th>
               <th style={css.th}>Autore</th><th style={css.th}>Cod.Ed.</th><th style={css.th}>Editore</th>
-              <th style={css.th}>€</th><th style={css.th}>Obj</th><th style={css.th}>Pren.</th><th style={css.th}>%</th>
+              <th style={css.th}>€</th><th style={css.th}>Obj</th><th style={{ ...css.th, cursor: "pointer" }} onClick={() => setSortPren(s => s === "desc" ? "asc" : s === "asc" ? null : "desc")}>Pren.{sortPren === "desc" ? " ↓" : sortPren === "asc" ? " ↑" : ""}</th><th style={css.th}>%</th>
               {canaliTabella.map(c => <th key={c.id} style={{ ...css.th, whiteSpace: "normal", maxWidth: 70, lineHeight: 1.2 }}>{getCanaleDisplayName(c)}</th>)}
               {ruolo !== "agente" && <th style={{ ...css.th, color: T.accent }}>Dir. Stampatore ✎</th>}
             </tr>
@@ -1063,8 +1067,19 @@ function ModuloAvanzamentoNovita({ titoli, prenotato, canali, token, ruolo }) {
   const [filterAnno, setFilterAnno] = useState(new Date().getFullYear());
   const [filterEditore, setFilterEditore] = useState("tutti");
   const [filterNumLancio, setFilterNumLancio] = useState("tutti");
+  const [filterCedola, setFilterCedola] = useState("tutti");
   const [search, setSearch] = useState("");
+  const [sortKey, setSortKey] = useState("cedola");
+  const [sortDir, setSortDir] = useState("asc");
+  const [editingEan, setEditingEan] = useState(null);
+  const [editingVal, setEditingVal] = useState("");
   const [toast, setToast] = useState(null);
+
+  const toggleSort = (key) => {
+    if (sortKey === key) setSortDir(d => d === "asc" ? "desc" : "asc");
+    else { setSortKey(key); setSortDir(key === "prenotato" ? "desc" : "asc"); }
+  };
+  const sortIcon = (key) => sortKey === key ? (sortDir === "asc" ? " ↑" : " ↓") : "";
 
   const showToast = (msg, type = "ok") => { setToast({ msg, type }); setTimeout(() => setToast(null), 3000); };
 
@@ -1191,22 +1206,32 @@ function ModuloAvanzamentoNovita({ titoli, prenotato, canali, token, ruolo }) {
   };
 
   const novitaFiltrate = useMemo(() => {
-    return novitaArricchite
+    const filtered = novitaArricchite
       .filter(n => {
         if (!filterAnno) return true;
         return getAnnoRecord(n) === filterAnno;
       })
       .filter(n => filterEditore === "tutti" || n.editore === filterEditore)
       .filter(n => filterNumLancio === "tutti" || String(n.num_lancio) === String(filterNumLancio))
+      .filter(n => filterCedola === "tutti" || n.nome_cedola === filterCedola)
       .filter(n => {
         if (!search) return true;
         const q = search.toLowerCase();
         return n.ean?.toLowerCase().includes(q) || n.titolo?.toLowerCase().includes(q) || n.autore?.toLowerCase().includes(q) || n.editore?.toLowerCase().includes(q);
       });
-  }, [novitaArricchite, filterAnno, filterEditore, filterNumLancio, search]);
+    // Sort
+    return filtered.sort((a, b) => {
+      let cmp = 0;
+      if (sortKey === "cedola") cmp = (a.nome_cedola || "").localeCompare(b.nome_cedola || "");
+      else if (sortKey === "prenotato") cmp = (a.prenotato_giri || 0) - (b.prenotato_giri || 0);
+      else if (sortKey === "num_lancio") cmp = (a.num_lancio || 0) - (b.num_lancio || 0);
+      return sortDir === "asc" ? cmp : -cmp;
+    });
+  }, [novitaArricchite, filterAnno, filterEditore, filterNumLancio, filterCedola, search, sortKey, sortDir]);
 
   const editoriList = useMemo(() => [...new Set(novitaArricchite.filter(n => !filterAnno || getAnnoRecord(n) === filterAnno).map(n => n.editore).filter(Boolean))].sort(), [novitaArricchite, filterAnno]);
   const numLanciList = useMemo(() => [...new Set(novitaArricchite.filter(n => !filterAnno || getAnnoRecord(n) === filterAnno).map(n => n.num_lancio).filter(Boolean))].sort((a, b) => Number(a) - Number(b)), [novitaArricchite, filterAnno]);
+  const cedoleList = useMemo(() => [...new Set(novitaArricchite.filter(n => !filterAnno || getAnnoRecord(n) === filterAnno).map(n => n.nome_cedola).filter(c => c && c !== "—"))].sort(), [novitaArricchite, filterAnno]);
 
   // KPI Dashboard
   const kpi = useMemo(() => {
@@ -1321,25 +1346,72 @@ function ModuloAvanzamentoNovita({ titoli, prenotato, canali, token, ruolo }) {
       });
       const deduplicated = Object.values(byEan);
 
-      // Upsert su Supabase in batch da 500
-      for (let i = 0; i < deduplicated.length; i += 500) {
-        const batch = deduplicated.slice(i, i + 500);
+      // Filtra: non sovrascrivere record esistenti modificati manualmente o identici
+      const existingByEan = {};
+      novitaDB.forEach(n => { if (n.ean) existingByEan[n.ean] = n; });
+
+      const toInsert = []; // EAN nuovi → INSERT
+      const toUpdate = []; // EAN esistenti con dati diversi e NON modificati manualmente → UPDATE
+      let skipped = 0;
+
+      deduplicated.forEach(row => {
+        const existing = existingByEan[row.ean];
+        if (!existing) {
+          // Nuovo → inserisci
+          toInsert.push(row);
+        } else if (existing.manuale) {
+          // Modificato manualmente → non toccare
+          skipped++;
+        } else {
+          // Esiste, non manuale: aggiorna solo se qualcosa è cambiato
+          const changed = row.titolo !== existing.titolo ||
+            row.autore !== existing.autore ||
+            row.editore !== existing.editore ||
+            row.num_lancio !== existing.num_lancio ||
+            row.copie_lanciate !== existing.copie_lanciate ||
+            Math.abs((row.valore_lancio || 0) - (existing.valore_lancio || 0)) > 0.01 ||
+            Math.abs((row.prezzo || 0) - (existing.prezzo || 0)) > 0.01 ||
+            row.data_messa_in_vendita !== existing.data_messa_in_vendita;
+          if (changed) toUpdate.push(row);
+          else skipped++;
+        }
+      });
+
+      // INSERT nuovi in batch
+      for (let i = 0; i < toInsert.length; i += 500) {
+        const batch = toInsert.slice(i, i + 500);
         const r = await fetch(`${SUPABASE_URL}/rest/v1/titoli_novita`, {
           method: "POST",
           headers: {
             "apikey": SUPABASE_KEY,
             "Authorization": `Bearer ${token}`,
             "Content-Type": "application/json",
-            "Prefer": "resolution=merge-duplicates",
+            "Prefer": "return=minimal",
           },
           body: JSON.stringify(batch),
         });
         if (!r.ok) {
           const err = await r.text();
-          throw new Error(`Errore upload batch: ${err}`);
+          throw new Error(`Errore insert: ${err}`);
         }
       }
-      showToast(`Importati ${deduplicated.length} titoli novità`);
+
+      // UPDATE esistenti (singoli PATCH per EAN)
+      for (const row of toUpdate) {
+        const { ean, ...fields } = row;
+        await fetch(`${SUPABASE_URL}/rest/v1/titoli_novita?ean=eq.${encodeURIComponent(ean)}`, {
+          method: "PATCH",
+          headers: {
+            "apikey": SUPABASE_KEY,
+            "Authorization": `Bearer ${token}`,
+            "Content-Type": "application/json",
+            "Prefer": "return=minimal",
+          },
+          body: JSON.stringify(fields),
+        });
+      }
+
+      showToast(`${toInsert.length} nuovi · ${toUpdate.length} aggiornati · ${skipped} invariati`);
       await loadNovita();
     } catch (err) {
       showToast(err.message, "err");
@@ -1379,6 +1451,24 @@ function ModuloAvanzamentoNovita({ titoli, prenotato, canali, token, ruolo }) {
     } else { showToast("Errore salvataggio", "err"); }
   };
 
+  // Salva modifica inline prenotato su titoli_novita
+  const saveInlineEdit = async (ean, value) => {
+    const qta = parseInt(value) || 0;
+    const nov = novitaDB.find(n => n.ean === ean);
+    const prezzo = nov?.prezzo || 0;
+    const payload = { copie_lanciate: qta, valore_lancio: Math.round(prezzo * qta * 100) / 100, manuale: true };
+    const r = await fetch(`${SUPABASE_URL}/rest/v1/titoli_novita?ean=eq.${encodeURIComponent(ean)}`, {
+      method: "PATCH",
+      headers: { "apikey": SUPABASE_KEY, "Authorization": `Bearer ${token}`, "Content-Type": "application/json", "Prefer": "return=minimal" },
+      body: JSON.stringify(payload),
+    });
+    if (r.ok) {
+      showToast("Aggiornato");
+      await loadNovita();
+    } else { showToast("Errore salvataggio", "err"); }
+    setEditingEan(null);
+  };
+
   // Export Excel
   const exportExcel = () => {
     const XLSX = window.XLSX;
@@ -1407,6 +1497,7 @@ function ModuloAvanzamentoNovita({ titoli, prenotato, canali, token, ruolo }) {
           </select>
           <SearchableMultiSelect values={filterEditore === "tutti" ? [] : [filterEditore]} onChange={v => setFilterEditore(v.length > 0 ? v[0] : "tutti")} options={editoriList} placeholder="Tutti gli editori" width={190} />
           <SearchableSelect value={filterNumLancio} onChange={setFilterNumLancio} options={numLanciList.map(String)} placeholder="Tutti i lanci" width={140} />
+          <SearchableSelect value={filterCedola} onChange={setFilterCedola} options={cedoleList} placeholder="Tutte le cedole" width={160} />
           <input style={{ ...css.input, width: 180 }} placeholder="Cerca EAN / titolo..." value={search} onChange={e => setSearch(e.target.value)} />
           <div style={{ marginLeft: "auto", display: "flex", gap: 8 }}>
             {ruolo !== "agente" && (
@@ -1465,15 +1556,15 @@ function ModuloAvanzamentoNovita({ titoli, prenotato, canali, token, ruolo }) {
         <table style={css.table}>
           <thead>
             <tr>
-              <th style={css.th}>Cedola</th>
+              <th style={{ ...css.th, cursor: "pointer" }} onClick={() => toggleSort("cedola")}>Cedola{sortIcon("cedola")}</th>
               <th style={css.th}>EAN</th>
               <th style={css.th}>Titolo</th>
               <th style={css.th}>Autore</th>
               <th style={css.th}>Editore</th>
               <th style={css.th}>€</th>
               <th style={css.th}>Obj Tot.</th>
-              <th style={css.th}>Pren. Tot.</th>
-              <th style={css.th}>N. Lancio</th>
+              <th style={{ ...css.th, cursor: "pointer" }} onClick={() => toggleSort("prenotato")}>Pren. Tot.{sortIcon("prenotato")}</th>
+              <th style={{ ...css.th, cursor: "pointer" }} onClick={() => toggleSort("num_lancio")}>N. Lancio{sortIcon("num_lancio")}</th>
               <th style={css.th}>Copie Lanc.</th>
               <th style={css.th}>Val. Lancio</th>
               <th style={css.th}>Data Vendita</th>
@@ -1483,6 +1574,9 @@ function ModuloAvanzamentoNovita({ titoli, prenotato, canali, token, ruolo }) {
           <tbody>
             {novitaFiltrate.map((n, i) => {
               const pct = n.obiettivo_giri > 0 ? Math.round(n.prenotato_giri / n.obiettivo_giri * 100) : 0;
+              // Editabile se ha data di vendita ma copie e valore lancio a zero
+              const isEditable = n.ha_lancio && n.data_messa_in_vendita && (!n.copie_lanciate || n.copie_lanciate === 0) && (!n.valore_lancio || n.valore_lancio === 0);
+              const isEditingThis = editingEan === n.ean;
               return (
                 <tr key={n.ean || i} style={{ background: i % 2 === 0 ? "transparent" : T.surface + "66" }}>
                   <td style={{ ...css.td, color: T.textMid, fontSize: "10px", whiteSpace: "nowrap" }}>{n.nome_cedola}</td>
@@ -1493,10 +1587,21 @@ function ModuloAvanzamentoNovita({ titoli, prenotato, canali, token, ruolo }) {
                   <td style={{ ...css.td, whiteSpace: "nowrap" }}>€ {(n.prezzo || 0).toFixed(2)}</td>
                   <td style={css.td}>{n.obiettivo_giri > 0 ? n.obiettivo_giri.toLocaleString("it") : "—"}</td>
                   <td style={css.td}>
-                    <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
-                      <span style={{ color: n.prenotato_giri > 0 ? T.green : T.textDim, fontWeight: "600" }}>{n.prenotato_giri > 0 ? n.prenotato_giri.toLocaleString("it") : "—"}</span>
-                      {n.obiettivo_giri > 0 && <span style={{ color: pct >= 80 ? T.green : pct >= 50 ? T.accent : T.red, fontSize: "10px", fontWeight: "700" }}>{pct}%</span>}
-                    </div>
+                    {isEditingThis ? (
+                      <div style={{ display: "flex", gap: 4, alignItems: "center" }}>
+                        <input type="number" style={{ ...css.input, width: 70, padding: "2px 6px" }} value={editingVal} autoFocus
+                          onChange={e => setEditingVal(e.target.value)}
+                          onKeyDown={e => { if (e.key === "Enter") saveInlineEdit(n.ean, editingVal); if (e.key === "Escape") setEditingEan(null); }} />
+                        <button style={{ ...css.btn("accent"), padding: "2px 8px", fontSize: "11px" }} onClick={() => saveInlineEdit(n.ean, editingVal)}>✓</button>
+                      </div>
+                    ) : (
+                      <div style={{ display: "flex", alignItems: "center", gap: 6, cursor: isEditable ? "pointer" : "default" }}
+                        onClick={() => { if (isEditable) { setEditingEan(n.ean); setEditingVal(String(n.copie_lanciate || 0)); } }}>
+                        <span style={{ color: n.prenotato_giri > 0 ? T.green : T.textDim, fontWeight: "600" }}>{n.prenotato_giri > 0 ? n.prenotato_giri.toLocaleString("it") : "—"}</span>
+                        {n.obiettivo_giri > 0 && <span style={{ color: pct >= 80 ? T.green : pct >= 50 ? T.accent : T.red, fontSize: "10px", fontWeight: "700" }}>{pct}%</span>}
+                        {isEditable && <span style={{ color: T.accent, fontSize: "11px" }}>✎</span>}
+                      </div>
+                    )}
                   </td>
                   <td style={{ ...css.td, textAlign: "center" }}>{n.num_lancio || "—"}</td>
                   <td style={{ ...css.td, textAlign: "right" }}>{n.copie_lanciate > 0 ? n.copie_lanciate.toLocaleString("it") : "—"}</td>
