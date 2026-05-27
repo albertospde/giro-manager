@@ -1079,7 +1079,7 @@ function ModuloAvanzamentoNovita({ titoli, prenotato, canali, token, ruolo }) {
 
   useEffect(() => { loadNovita(); }, [loadNovita]);
 
-  // Dati arricchiti: merge novitaDB con prenotato/titoli dai giri
+  // Dati arricchiti: BASE = titoli dai giri + merge con titoli_novita (CSV lancio)
   const novitaArricchite = useMemo(() => {
     // Mappa prenotato per EAN (somma tutte le quantità per canale)
     const prenByEan = {};
@@ -1097,19 +1097,76 @@ function ModuloAvanzamentoNovita({ titoli, prenotato, canali, token, ruolo }) {
     // Mappa cedola per EAN
     const cedolaByEan = {};
     titoli.forEach(t => { if (t.ean && t.n_cedola) cedolaByEan[t.ean] = t.n_cedola; });
+    // Mappa giro_label per EAN
+    const giroByEan = {};
+    titoli.forEach(t => { if (t.ean && t.giro_label) giroByEan[t.ean] = t.giro_label; });
+    // Mappa titoli_novita per EAN (dati lancio dal CSV)
+    const novitaByEan = {};
+    novitaDB.forEach(n => { if (n.ean) novitaByEan[n.ean] = n; });
 
-    return novitaDB.map(n => ({
-      ...n,
-      prenotato_giri: prenByEan[n.ean] || 0,
-      obiettivo_giri: objByEan[n.ean] || 0,
-      nome_cedola: cedolaByEan[n.ean] || "—",
-    }));
+    // Parti da tutti i titoli dei giri (dedup per EAN, prendi il primo)
+    const titoliGiriByEan = {};
+    titoli.forEach(t => {
+      if (!t.ean || titoliGiriByEan[t.ean]) return;
+      titoliGiriByEan[t.ean] = t;
+    });
+
+    // Unisci: tutti i titoli dai giri + titoli solo in novitaDB (manuali/extra)
+    const risultato = [];
+    const eanVisti = new Set();
+
+    // 1) Tutti i titoli dai giri
+    Object.values(titoliGiriByEan).forEach(t => {
+      eanVisti.add(t.ean);
+      const nov = novitaByEan[t.ean];
+      risultato.push({
+        ean: t.ean,
+        titolo: t.titolo,
+        autore: t.autore,
+        editore: t.editore_nome,
+        prezzo: t.prezzo || (nov?.prezzo) || 0,
+        nome_cedola: t.n_cedola || "—",
+        giro_label: t.giro_label || "",
+        prenotato_giri: prenByEan[t.ean] || 0,
+        obiettivo_giri: objByEan[t.ean] || 0,
+        // Dati lancio dal CSV (se presente)
+        num_lancio: nov?.num_lancio || null,
+        copie_lanciate: nov?.copie_lanciate || 0,
+        valore_lancio: nov?.valore_lancio || 0,
+        data_messa_in_vendita: nov?.data_messa_in_vendita || null,
+        manuale: nov?.manuale || false,
+        // Flag: ha dati lancio?
+        ha_lancio: !!nov,
+      });
+    });
+
+    // 2) Titoli solo in novitaDB (manuali o CSV non ancora nei giri)
+    novitaDB.forEach(n => {
+      if (eanVisti.has(n.ean)) return;
+      risultato.push({
+        ...n,
+        nome_cedola: "—",
+        giro_label: "",
+        prenotato_giri: prenByEan[n.ean] || 0,
+        obiettivo_giri: objByEan[n.ean] || 0,
+        ha_lancio: true,
+      });
+    });
+
+    return risultato;
   }, [novitaDB, prenotato, titoli]);
 
-  // Estrai anno dalla data_messa_in_vendita
+  // Estrai anni disponibili da giro_label e da data_messa_in_vendita
   const anniDisponibili = useMemo(() => {
     const s = new Set();
     novitaArricchite.forEach(n => {
+      // Anno dal giro_label (es. "1 2026" → 2026)
+      if (n.giro_label) {
+        const parts = n.giro_label.split(" ");
+        const yr = Number(parts[parts.length - 1]);
+        if (yr >= 2020) s.add(yr);
+      }
+      // Anno dalla data di pubblicazione
       if (n.data_messa_in_vendita) {
         const d = new Date(n.data_messa_in_vendita);
         if (!isNaN(d)) s.add(d.getFullYear());
@@ -1119,13 +1176,25 @@ function ModuloAvanzamentoNovita({ titoli, prenotato, canali, token, ruolo }) {
   }, [novitaArricchite]);
 
   // Filtri
+  // Helper: estrae anno da un record (giro_label o data_messa_in_vendita)
+  const getAnnoRecord = (n) => {
+    if (n.giro_label) {
+      const parts = n.giro_label.split(" ");
+      const yr = Number(parts[parts.length - 1]);
+      if (yr >= 2020) return yr;
+    }
+    if (n.data_messa_in_vendita) {
+      const d = new Date(n.data_messa_in_vendita);
+      if (!isNaN(d)) return d.getFullYear();
+    }
+    return null;
+  };
+
   const novitaFiltrate = useMemo(() => {
     return novitaArricchite
       .filter(n => {
         if (!filterAnno) return true;
-        if (!n.data_messa_in_vendita) return false;
-        const d = new Date(n.data_messa_in_vendita);
-        return !isNaN(d) && d.getFullYear() === filterAnno;
+        return getAnnoRecord(n) === filterAnno;
       })
       .filter(n => filterEditore === "tutti" || n.editore === filterEditore)
       .filter(n => filterNumLancio === "tutti" || String(n.num_lancio) === String(filterNumLancio))
@@ -1136,8 +1205,8 @@ function ModuloAvanzamentoNovita({ titoli, prenotato, canali, token, ruolo }) {
       });
   }, [novitaArricchite, filterAnno, filterEditore, filterNumLancio, search]);
 
-  const editoriList = useMemo(() => [...new Set(novitaArricchite.filter(n => !filterAnno || (n.data_messa_in_vendita && new Date(n.data_messa_in_vendita).getFullYear() === filterAnno)).map(n => n.editore).filter(Boolean))].sort(), [novitaArricchite, filterAnno]);
-  const numLanciList = useMemo(() => [...new Set(novitaArricchite.filter(n => !filterAnno || (n.data_messa_in_vendita && new Date(n.data_messa_in_vendita).getFullYear() === filterAnno)).map(n => n.num_lancio).filter(Boolean))].sort((a, b) => Number(a) - Number(b)), [novitaArricchite, filterAnno]);
+  const editoriList = useMemo(() => [...new Set(novitaArricchite.filter(n => !filterAnno || getAnnoRecord(n) === filterAnno).map(n => n.editore).filter(Boolean))].sort(), [novitaArricchite, filterAnno]);
+  const numLanciList = useMemo(() => [...new Set(novitaArricchite.filter(n => !filterAnno || getAnnoRecord(n) === filterAnno).map(n => n.num_lancio).filter(Boolean))].sort((a, b) => Number(a) - Number(b)), [novitaArricchite, filterAnno]);
 
   // KPI Dashboard
   const kpi = useMemo(() => {
@@ -1149,6 +1218,10 @@ function ModuloAvanzamentoNovita({ titoli, prenotato, canali, token, ruolo }) {
     const valPrenotato = novitaFiltrate.reduce((s, n) => s + (n.prezzo || 0) * n.prenotato_giri, 0);
     // Valore mancante = valore lancio - valore prenotato
     const valMancante = totValoreLancio - valPrenotato;
+    // Prenotato non ancora lanciato: titoli con prenotato dai giri > 0 ma copie_lanciate = 0 o assente
+    const nonLanciati = novitaFiltrate.filter(n => n.prenotato_giri > 0 && (!n.copie_lanciate || n.copie_lanciate === 0));
+    const copieNonLanciate = nonLanciati.reduce((s, n) => s + n.prenotato_giri, 0);
+    const valNonLanciato = nonLanciati.reduce((s, n) => s + (n.prezzo || 0) * n.prenotato_giri, 0);
     // Avanzamento trasmesso: quanti titoli hanno prenotato_giri > 0
     const titConTrasmesso = novitaFiltrate.filter(n => n.prenotato_giri > 0).length;
     const totTitoli = novitaFiltrate.length;
@@ -1169,7 +1242,7 @@ function ModuloAvanzamentoNovita({ titoli, prenotato, canali, token, ruolo }) {
     const mesiConDati = Object.keys(perMese).filter(m => Number(m) < oggi.getMonth() + 1);
     const mediaMensile = mesiConDati.length > 0 ? mesiConDati.reduce((s, m) => s + perMese[m], 0) / mesiConDati.length : 0;
     const proiezione = totValoreLancio + mediaMensile * Math.max(0, mesiRestanti - (12 - Object.keys(perMese).length));
-    return { totValoreLancio, valPrenotato, valMancante, totPrenotato, totObiettivo, totCopieLanciate, titConTrasmesso, totTitoli, pctTrasmesso, proiezione };
+    return { totValoreLancio, valPrenotato, valMancante, totPrenotato, totObiettivo, totCopieLanciate, titConTrasmesso, totTitoli, pctTrasmesso, proiezione, copieNonLanciate, valNonLanciato, numNonLanciati: nonLanciati.length };
   }, [novitaFiltrate]);
 
   // Upload CSV
@@ -1361,6 +1434,7 @@ function ModuloAvanzamentoNovita({ titoli, prenotato, canali, token, ruolo }) {
             </div>
             <div style={{ color: T.textMid, fontSize: "11px", marginTop: 6 }}>{kpi.titConTrasmesso} / {kpi.totTitoli} titoli</div>
           </div>
+          <KpiCard label="Pren. non lanciato" value={`€ ${kpi.valNonLanciato.toLocaleString("it", { maximumFractionDigits: 0 })}`} color="#e8a838" sub={`${kpi.copieNonLanciate.toLocaleString("it")} copie · ${kpi.numNonLanciati} titoli`} />
           <KpiCard label="Proiezione anno" value={`€ ${kpi.proiezione.toLocaleString("it", { maximumFractionDigits: 0 })}`} color={T.purple} sub="stima a fine anno" />
         </div>
       </div>
