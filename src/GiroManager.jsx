@@ -1094,9 +1094,9 @@ function ModuloAvanzamentoNovita({ titoli, prenotato, canali, token, ruolo }) {
 
   useEffect(() => { loadNovita(); }, [loadNovita]);
 
-  // Dati arricchiti: BASE = titoli dai giri + merge con titoli_novita (CSV lancio)
+  // Dati: SOLO titoli dai giri, arricchiti con dati lancio da titoli_novita (CSV)
   const novitaArricchite = useMemo(() => {
-    // Mappa prenotato per EAN (somma tutte le quantità per canale)
+    // Mappa prenotato per EAN
     const prenByEan = {};
     prenotato.forEach(p => {
       const t = titoli.find(t => t.id === p.titolo_id);
@@ -1109,32 +1109,21 @@ function ModuloAvanzamentoNovita({ titoli, prenotato, canali, token, ruolo }) {
       if (!t.ean) return;
       objByEan[t.ean] = (objByEan[t.ean] || 0) + (t.obiettivo_assegnato || 0);
     });
-    // Mappa cedola per EAN
-    const cedolaByEan = {};
-    titoli.forEach(t => { if (t.ean && t.n_cedola) cedolaByEan[t.ean] = t.n_cedola; });
-    // Mappa giro_label per EAN
-    const giroByEan = {};
-    titoli.forEach(t => { if (t.ean && t.giro_label) giroByEan[t.ean] = t.giro_label; });
     // Mappa titoli_novita per EAN (dati lancio dal CSV)
     const novitaByEan = {};
     novitaDB.forEach(n => { if (n.ean) novitaByEan[n.ean] = n; });
 
-    // Parti da tutti i titoli dei giri (dedup per EAN, prendi il primo)
+    // Dedup titoli giri per EAN
     const titoliGiriByEan = {};
     titoli.forEach(t => {
       if (!t.ean || titoliGiriByEan[t.ean]) return;
       titoliGiriByEan[t.ean] = t;
     });
 
-    // Unisci: tutti i titoli dai giri + titoli solo in novitaDB (manuali/extra)
-    const risultato = [];
-    const eanVisti = new Set();
-
-    // 1) Tutti i titoli dai giri
-    Object.values(titoliGiriByEan).forEach(t => {
-      eanVisti.add(t.ean);
+    // Solo titoli dai giri
+    return Object.values(titoliGiriByEan).map(t => {
       const nov = novitaByEan[t.ean];
-      risultato.push({
+      return {
         ean: t.ean,
         titolo: t.titolo,
         autore: t.autore,
@@ -1144,31 +1133,15 @@ function ModuloAvanzamentoNovita({ titoli, prenotato, canali, token, ruolo }) {
         giro_label: t.giro_label || "",
         prenotato_giri: prenByEan[t.ean] || 0,
         obiettivo_giri: objByEan[t.ean] || 0,
-        // Dati lancio dal CSV (se presente)
+        // Dati lancio dal CSV (se match EAN)
         num_lancio: nov?.num_lancio || null,
         copie_lanciate: nov?.copie_lanciate || 0,
         valore_lancio: nov?.valore_lancio || 0,
         data_messa_in_vendita: nov?.data_messa_in_vendita || null,
         manuale: nov?.manuale || false,
-        // Flag: ha dati lancio?
         ha_lancio: !!nov,
-      });
+      };
     });
-
-    // 2) Titoli solo in novitaDB (manuali o CSV non ancora nei giri)
-    novitaDB.forEach(n => {
-      if (eanVisti.has(n.ean)) return;
-      risultato.push({
-        ...n,
-        nome_cedola: "—",
-        giro_label: "",
-        prenotato_giri: prenByEan[n.ean] || 0,
-        obiettivo_giri: objByEan[n.ean] || 0,
-        ha_lancio: true,
-      });
-    });
-
-    return risultato;
   }, [novitaDB, prenotato, titoli]);
 
   // Estrai anni disponibili da giro_label e da data_messa_in_vendita
@@ -1346,31 +1319,29 @@ function ModuloAvanzamentoNovita({ titoli, prenotato, canali, token, ruolo }) {
       });
       const deduplicated = Object.values(byEan);
 
-      // Filtra: non sovrascrivere record esistenti modificati manualmente o identici
+      // Filtra: solo EAN che esistono nei giri
+      const eanGiri = new Set(titoli.map(t => t.ean).filter(Boolean));
+      const soloGiri = deduplicated.filter(r => eanGiri.has(r.ean));
+      const ignorati = deduplicated.length - soloGiri.length;
+
+      // Confronta con dati già in titoli_novita
       const existingByEan = {};
       novitaDB.forEach(n => { if (n.ean) existingByEan[n.ean] = n; });
 
-      const toInsert = []; // EAN nuovi → INSERT
-      const toUpdate = []; // EAN esistenti con dati diversi e NON modificati manualmente → UPDATE
+      const toInsert = []; // EAN dei giri non ancora in titoli_novita → INSERT
+      const toUpdate = []; // EAN dei giri già in titoli_novita con dati diversi e non manuali → UPDATE
       let skipped = 0;
 
-      deduplicated.forEach(row => {
+      soloGiri.forEach(row => {
         const existing = existingByEan[row.ean];
         if (!existing) {
-          // Nuovo → inserisci
           toInsert.push(row);
         } else if (existing.manuale) {
-          // Modificato manualmente → non toccare
           skipped++;
         } else {
-          // Esiste, non manuale: aggiorna solo se qualcosa è cambiato
-          const changed = row.titolo !== existing.titolo ||
-            row.autore !== existing.autore ||
-            row.editore !== existing.editore ||
-            row.num_lancio !== existing.num_lancio ||
+          const changed = row.num_lancio !== existing.num_lancio ||
             row.copie_lanciate !== existing.copie_lanciate ||
             Math.abs((row.valore_lancio || 0) - (existing.valore_lancio || 0)) > 0.01 ||
-            Math.abs((row.prezzo || 0) - (existing.prezzo || 0)) > 0.01 ||
             row.data_messa_in_vendita !== existing.data_messa_in_vendita;
           if (changed) toUpdate.push(row);
           else skipped++;
@@ -1396,10 +1367,9 @@ function ModuloAvanzamentoNovita({ titoli, prenotato, canali, token, ruolo }) {
         }
       }
 
-      // UPDATE esistenti (singoli PATCH per EAN)
+      // UPDATE esistenti (PATCH per EAN, solo campi lancio)
       for (const row of toUpdate) {
-        const { ean, ...fields } = row;
-        await fetch(`${SUPABASE_URL}/rest/v1/titoli_novita?ean=eq.${encodeURIComponent(ean)}`, {
+        await fetch(`${SUPABASE_URL}/rest/v1/titoli_novita?ean=eq.${encodeURIComponent(row.ean)}`, {
           method: "PATCH",
           headers: {
             "apikey": SUPABASE_KEY,
@@ -1407,11 +1377,16 @@ function ModuloAvanzamentoNovita({ titoli, prenotato, canali, token, ruolo }) {
             "Content-Type": "application/json",
             "Prefer": "return=minimal",
           },
-          body: JSON.stringify(fields),
+          body: JSON.stringify({
+            num_lancio: row.num_lancio,
+            copie_lanciate: row.copie_lanciate,
+            valore_lancio: row.valore_lancio,
+            data_messa_in_vendita: row.data_messa_in_vendita,
+          }),
         });
       }
 
-      showToast(`${toInsert.length} nuovi · ${toUpdate.length} aggiornati · ${skipped} invariati`);
+      showToast(`${toInsert.length} nuovi · ${toUpdate.length} aggiornati · ${skipped} invariati${ignorati > 0 ? ` · ${ignorati} non nei giri` : ""}`);
       await loadNovita();
     } catch (err) {
       showToast(err.message, "err");
