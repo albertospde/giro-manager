@@ -1616,11 +1616,454 @@ function ModuloAvanzamentoNovita({ titoli, prenotato, canali, token, ruolo }) {
   );
 }
 
+// ────────────────────────────────────────────────────────────────
+// MODULO LANCI SETTIMANALI
+// ────────────────────────────────────────────────────────────────
+
+function ModuloLanciSettimanali({ token, titoli, prenotato, canali }) {
+  const [data, setData] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [uploading, setUploading] = useState(false);
+  const [uploadMode, setUploadMode] = useState(null);
+  const [toast, setToast] = useState(null);
+  const [filterAnno, setFilterAnno] = useState(null);
+  const [filterLancio, setFilterLancio] = useState(null);
+  const [search, setSearch] = useState("");
+  const [sortKey, setSortKey] = useState(null);
+  const [sortDir, setSortDir] = useState("desc");
+
+  const showToast = (msg, type = "ok") => { setToast({ msg, type }); setTimeout(() => setToast(null), 4000); };
+
+  const loadData = useCallback(async () => {
+    if (!token) return;
+    setLoading(true);
+    const d = await sbFetch("lanci_settimanali?select=*&order=anno_lancio.desc,num_lancio.desc,editore.asc,titolo.asc", token);
+    if (Array.isArray(d)) setData(d);
+    setLoading(false);
+  }, [token]);
+
+  useEffect(() => { loadData(); }, [loadData]);
+
+  // Anni e lanci
+  const anniDisponibili = useMemo(() => [...new Set(data.map(r => r.anno_lancio))].sort((a, b) => b - a), [data]);
+  const lanciPerAnno = useMemo(() => {
+    const anno = filterAnno || anniDisponibili[0];
+    if (!anno) return [];
+    return [...new Set(data.filter(r => r.anno_lancio === anno).map(r => r.num_lancio))].sort((a, b) => b - a);
+  }, [data, filterAnno, anniDisponibili]);
+
+  useEffect(() => { if (!filterAnno && anniDisponibili.length > 0) setFilterAnno(anniDisponibili[0]); }, [anniDisponibili]);
+  useEffect(() => { if (lanciPerAnno.length > 0 && (!filterLancio || !lanciPerAnno.includes(filterLancio))) setFilterLancio(lanciPerAnno[0]); }, [lanciPerAnno]);
+
+  // Mappa prenotato per EAN (da fine giro) — per canale
+  const prenByEanCanale = useMemo(() => {
+    const map = {};
+    prenotato.forEach(p => {
+      const t = titoli.find(t => t.id === p.titolo_id);
+      if (!t || !t.ean) return;
+      if (!map[t.ean]) map[t.ean] = {};
+      const c = canali.find(c => c.id === p.canale_id);
+      if (c) map[t.ean][c.codice] = (map[t.ean][c.codice] || 0) + p.quantita;
+    });
+    return map;
+  }, [prenotato, titoli, canali]);
+
+  // Mappa cedole per EAN (un titolo può avere più cedole)
+  const cedoleByEan = useMemo(() => {
+    const map = {};
+    titoli.forEach(t => {
+      if (!t.ean || !t.n_cedola) return;
+      if (!map[t.ean]) map[t.ean] = new Set();
+      map[t.ean].add(t.n_cedola);
+    });
+    const result = {};
+    Object.entries(map).forEach(([ean, s]) => { result[ean] = [...s].sort(); });
+    return result;
+  }, [titoli]);
+
+  // Canale Amazon ID
+  const amazonCodice = "AMAZON";
+
+  // Arricchisci dati lancio con dati fine giro
+  const dataArricchita = useMemo(() => {
+    const anno = filterAnno || anniDisponibili[0];
+    return data
+      .filter(r => r.anno_lancio === anno && r.num_lancio === filterLancio)
+      .map(r => {
+        const prenCanali = prenByEanCanale[r.ean] || {};
+        const prenFineGiroTotale = Object.entries(prenCanali).reduce((s, [cod, q]) => s + q, 0);
+        const prenAmazon = prenCanali[amazonCodice] || 0;
+        const prenSenzaAmazon = prenFineGiroTotale - prenAmazon;
+        const cedole = cedoleByEan[r.ean] || [];
+        // Teorico = prenotato trasmesso + amazon fine giro
+        const teorico = (r.prenotato_trasmesso ?? r.prenotato_iscrizione ?? 0) + prenAmazon;
+        // Giorno uscita: override > calcolato (teorico >= 2000 → martedì, altrimenti venerdì)
+        const giornoCalcolato = teorico >= 2000 ? "martedì" : "venerdì";
+        const giornoUscita = r.giorno_uscita_override || giornoCalcolato;
+        const isOverride = !!r.giorno_uscita_override;
+        return {
+          ...r,
+          cedole,
+          pren_fine_giro: prenFineGiroTotale,
+          pren_amazon: prenAmazon,
+          pren_senza_amazon: prenSenzaAmazon,
+          teorico,
+          giorno_calcolato: giornoCalcolato,
+          giorno_uscita: giornoUscita,
+          is_override: isOverride,
+        };
+      });
+  }, [data, filterAnno, filterLancio, anniDisponibili, prenByEanCanale, cedoleByEan]);
+
+  // Filtro e sort
+  const dataFiltrata = useMemo(() => {
+    let result = [...dataArricchita];
+    if (search) {
+      const q = search.toLowerCase();
+      result = result.filter(r => r.ean?.toLowerCase().includes(q) || r.titolo?.toLowerCase().includes(q) || r.autore?.toLowerCase().includes(q) || r.editore?.toLowerCase().includes(q));
+    }
+    if (sortKey) {
+      result = [...result].sort((a, b) => {
+        const va = a[sortKey] ?? 0, vb = b[sortKey] ?? 0;
+        return sortDir === "asc" ? (typeof va === "string" ? String(va).localeCompare(String(vb)) : va - vb) : (typeof va === "string" ? String(vb).localeCompare(String(va)) : vb - va);
+      });
+    }
+    return result;
+  }, [dataArricchita, search, sortKey, sortDir]);
+
+  // KPI
+  const kpi = useMemo(() => {
+    const d = dataFiltrata;
+    const tot = d.length;
+    const copieIscritte = d.reduce((s, r) => s + (r.prenotato_iscrizione || 0), 0);
+    const copieTrasmesse = d.reduce((s, r) => s + (r.prenotato_trasmesso ?? 0), 0);
+    const valoreIscritto = d.reduce((s, r) => s + (r.prezzo || 0) * (r.prenotato_iscrizione || 0), 0);
+    const valoreTrasmesso = d.reduce((s, r) => s + (r.prezzo || 0) * (r.prenotato_trasmesso ?? 0), 0);
+    const haTrasmesso = d.some(r => r.prenotato_trasmesso !== null);
+    const totFineGiro = d.reduce((s, r) => s + (r.pren_fine_giro || 0), 0);
+    const totAmazon = d.reduce((s, r) => s + (r.pren_amazon || 0), 0);
+    const totTeorico = d.reduce((s, r) => s + (r.teorico || 0), 0);
+    const martedi = d.filter(r => r.giorno_uscita === "martedì").length;
+    const venerdi = d.filter(r => r.giorno_uscita === "venerdì").length;
+    const pctTrasmesso = copieIscritte > 0 ? Math.round(copieTrasmesse / copieIscritte * 100) : 0;
+    // Per editore
+    const byEditore = {};
+    d.forEach(r => {
+      if (!byEditore[r.editore]) byEditore[r.editore] = { titoli: 0, iscritte: 0, trasmesse: 0, fineGiro: 0, amazon: 0, valore: 0 };
+      byEditore[r.editore].titoli++;
+      byEditore[r.editore].iscritte += r.prenotato_iscrizione || 0;
+      byEditore[r.editore].trasmesse += r.prenotato_trasmesso ?? 0;
+      byEditore[r.editore].fineGiro += r.pren_fine_giro || 0;
+      byEditore[r.editore].amazon += r.pren_amazon || 0;
+      byEditore[r.editore].valore += (r.prezzo || 0) * (r.prenotato_iscrizione || 0);
+    });
+    return { tot, copieIscritte, copieTrasmesse, valoreIscritto, valoreTrasmesso, haTrasmesso, totFineGiro, totAmazon, totTeorico, martedi, venerdi, pctTrasmesso, byEditore };
+  }, [dataFiltrata]);
+
+  const toggleSort = (key) => {
+    if (sortKey === key) setSortDir(d => d === "asc" ? "desc" : "asc");
+    else { setSortKey(key); setSortDir("desc"); }
+  };
+  const sortIcon = (key) => sortKey === key ? (sortDir === "asc" ? " ↑" : " ↓") : "";
+
+  // Salva giorno uscita override
+  const saveGiornoUscita = async (id, value) => {
+    const payload = { giorno_uscita_override: value || null };
+    await fetch(`${SUPABASE_URL}/rest/v1/lanci_settimanali?id=eq.${id}`, {
+      method: "PATCH",
+      headers: { "apikey": SUPABASE_KEY, "Authorization": `Bearer ${token}`, "Content-Type": "application/json", "Prefer": "return=minimal" },
+      body: JSON.stringify(payload),
+    });
+    setData(prev => prev.map(r => r.id === id ? { ...r, giorno_uscita_override: value || null } : r));
+  };
+
+  // Upload handler
+  const handleUpload = async (e) => {
+    const file = e.target.files?.[0];
+    if (!file || !uploadMode) return;
+    setUploading(true);
+    try {
+      const XLSX = window.XLSX;
+      const buf = await file.arrayBuffer();
+      const wb = XLSX.read(buf, { type: "array" });
+      const ws = wb.Sheets[wb.SheetNames[0]];
+      const rows = XLSX.utils.sheet_to_json(ws, { header: 1 });
+      let headerIdx = 0;
+      for (let i = 0; i < Math.min(rows.length, 10); i++) {
+        if (rows[i] && rows[i].some(c => String(c).toLowerCase().includes("ean"))) { headerIdx = i; break; }
+      }
+      const headers = rows[headerIdx].map(h => String(h || "").trim().toLowerCase());
+      const dataRows = rows.slice(headerIdx + 1).filter(r => r && r.length > 2);
+
+      const col = {};
+      headers.forEach((h, i) => {
+        if (h.includes("anno")) col.anno = i;
+        else if (h === "n. lancio" || (h.includes("n.") && h.includes("lancio"))) col.num = i;
+        else if (h.includes("ean")) col.ean = i;
+        else if (h === "cod. editore" || (h.includes("cod") && h.includes("edit"))) col.cod_ed = i;
+        else if (h.includes("descr") && h.includes("edit") || h === "editore") col.editore = i;
+        else if (h === "titolo") col.titolo = i;
+        else if (h === "autore") col.autore = i;
+        else if (h === "prezzo") col.prezzo = i;
+        else if (h.includes("prenotato")) col.prenotato = i;
+      });
+      if (col.ean === undefined) throw new Error("Colonna EAN non trovata");
+
+      if (uploadMode === "iscrizione") {
+        const payload = dataRows.map(r => {
+          const ean = String(r[col.ean] || "").replace(/\.0$/, "").trim();
+          if (ean.length < 10) return null;
+          return {
+            anno_lancio: parseInt(r[col.anno]) || new Date().getFullYear(),
+            num_lancio: parseInt(r[col.num]) || 0,
+            ean,
+            codice_editore: String(r[col.cod_ed] || "").trim(),
+            editore: String(r[col.editore] || "").trim(),
+            titolo: String(r[col.titolo] || "").trim(),
+            autore: String(r[col.autore] || "").trim(),
+            prezzo: parseFloat(String(r[col.prezzo] || "0").replace(",", ".")) || 0,
+            prenotato_iscrizione: parseInt(String(r[col.prenotato] || "0").replace(/\./g, "")) || 0,
+          };
+        }).filter(Boolean);
+        if (payload.length === 0) throw new Error("Nessun EAN valido");
+        for (let i = 0; i < payload.length; i += 500) {
+          const batch = payload.slice(i, i + 500);
+          const r = await fetch(`${SUPABASE_URL}/rest/v1/lanci_settimanali`, {
+            method: "POST",
+            headers: { "apikey": SUPABASE_KEY, "Authorization": `Bearer ${token}`, "Content-Type": "application/json", "Prefer": "resolution=merge-duplicates" },
+            body: JSON.stringify(batch),
+          });
+          if (!r.ok) throw new Error(await r.text());
+        }
+        showToast(`Iscrizione: ${payload.length} titoli (lancio ${payload[0]?.num_lancio})`);
+      } else {
+        let updated = 0;
+        for (const r of dataRows) {
+          const ean = String(r[col.ean] || "").replace(/\.0$/, "").trim();
+          const qta = parseInt(String(r[col.prenotato] || "0").replace(/\./g, "")) || 0;
+          const anno = parseInt(r[col.anno]) || filterAnno;
+          const num = parseInt(r[col.num]) || filterLancio;
+          if (ean.length < 10) continue;
+          const resp = await fetch(`${SUPABASE_URL}/rest/v1/lanci_settimanali?anno_lancio=eq.${anno}&num_lancio=eq.${num}&ean=eq.${encodeURIComponent(ean)}`, {
+            method: "PATCH",
+            headers: { "apikey": SUPABASE_KEY, "Authorization": `Bearer ${token}`, "Content-Type": "application/json", "Prefer": "return=minimal" },
+            body: JSON.stringify({ prenotato_trasmesso: qta }),
+          });
+          if (resp.ok) updated++;
+        }
+        showToast(`Trasmesso: ${updated} titoli aggiornati`);
+      }
+      await loadData();
+    } catch (err) {
+      showToast(err.message, "err");
+    }
+    setUploading(false);
+    setUploadMode(null);
+    e.target.value = "";
+  };
+
+  // Export Excel
+  const exportExcel = () => {
+    const XLSX = window.XLSX;
+    const headers = ["EAN","COD.ED.","EDITORE","TITOLO","AUTORE","PREZZO","CEDOLE","ISCRIZIONE","TRASMESSO","FINE GIRO","AMAZON","TEORICO","GIORNO USCITA"];
+    const rows = dataFiltrata.map(r => [
+      r.ean, r.codice_editore, r.editore, r.titolo, r.autore, r.prezzo,
+      r.cedole.join(", "), r.prenotato_iscrizione, r.prenotato_trasmesso ?? "",
+      r.pren_fine_giro, r.pren_amazon, r.teorico, r.giorno_uscita
+    ]);
+    // Riepilogo editori
+    const rH = ["EDITORE","TITOLI","ISCRITTE","TRASMESSE","FINE GIRO","AMAZON","VALORE"];
+    const rR = Object.entries(kpi.byEditore).sort((a, b) => b[1].iscritte - a[1].iscritte).map(([ed, v]) => [
+      ed, v.titoli, v.iscritte, v.trasmesse, v.fineGiro, v.amazon, Math.round(v.valore)
+    ]);
+    const ws = XLSX.utils.aoa_to_sheet([headers, ...rows]);
+    const wsR = XLSX.utils.aoa_to_sheet([rH, ...rR]);
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, `Lancio ${filterLancio}`);
+    XLSX.utils.book_append_sheet(wb, wsR, "Riepilogo Editori");
+    XLSX.writeFile(wb, `Lancio_${filterLancio}_${filterAnno}.xlsx`);
+  };
+
+  if (loading) return <div style={{ flex: 1, display: "flex", alignItems: "center", justifyContent: "center", color: T.textMid }}>Caricamento lanci...</div>;
+
+  if (data.length === 0) return (
+    <div style={{ flex: 1, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 20, padding: 40 }}>
+      <div style={{ fontSize: "48px", opacity: 0.3 }}>🚀</div>
+      <div style={{ color: T.textMid, fontSize: "14px", textAlign: "center", maxWidth: 400 }}>Nessun lancio caricato. Carica il file di iscrizione al lancio.</div>
+      <label style={{ ...css.btn("accent"), cursor: "pointer", padding: "10px 24px", fontSize: "13px" }}>
+        ↑ Carica primo lancio
+        <input type="file" accept=".xlsx,.xls,.csv" style={{ display: "none" }} onChange={(e) => { setUploadMode("iscrizione"); handleUpload(e); }} />
+      </label>
+    </div>
+  );
+
+  const editoriTop = Object.entries(kpi.byEditore).sort((a, b) => b[1].iscritte - a[1].iscritte).slice(0, 8);
+  const maxIscritte = editoriTop.length > 0 ? editoriTop[0][1].iscritte : 1;
+
+  return (
+    <div style={{ display: "flex", flexDirection: "column", height: "100%", overflow: "hidden" }}>
+      {/* TOOLBAR */}
+      <div style={{ padding: "14px 20px", borderBottom: `1px solid ${T.border}`, display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap" }}>
+        <select style={{ ...css.input, fontSize: "13px", fontWeight: "600", color: T.accent }} value={filterAnno || ""} onChange={e => { setFilterAnno(Number(e.target.value)); setFilterLancio(null); }}>
+          {anniDisponibili.map(a => <option key={a} value={a}>{a}</option>)}
+        </select>
+        <select style={{ ...css.input, fontSize: "14px", fontWeight: "700", color: T.text, minWidth: 140 }} value={filterLancio || ""} onChange={e => setFilterLancio(Number(e.target.value))}>
+          {lanciPerAnno.map(l => <option key={l} value={l}>Lancio {l}</option>)}
+        </select>
+        <input style={{ ...css.input, width: 180 }} placeholder="Cerca EAN / titolo..." value={search} onChange={e => setSearch(e.target.value)} />
+        {/* Riepilogo giorni */}
+        <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+          <span style={css.tag(T.accent)}>MAR {kpi.martedi}</span>
+          <span style={css.tag(T.green)}>VEN {kpi.venerdi}</span>
+        </div>
+        <div style={{ marginLeft: "auto", display: "flex", gap: 8 }}>
+          <label style={{ ...css.btn("accent"), cursor: "pointer", display: "inline-flex", alignItems: "center", gap: 4 }}>
+            {uploading && uploadMode === "iscrizione" ? "..." : "↑ Iscrizione"}
+            <input type="file" accept=".xlsx,.xls,.csv" style={{ display: "none" }} onChange={(e) => { setUploadMode("iscrizione"); handleUpload(e); }} disabled={uploading} />
+          </label>
+          <label style={{ ...css.btn(), cursor: "pointer", display: "inline-flex", alignItems: "center", gap: 4, borderColor: T.green, color: T.green }}>
+            {uploading && uploadMode === "trasmesso" ? "..." : "↑ Trasmesso"}
+            <input type="file" accept=".xlsx,.xls,.csv" style={{ display: "none" }} onChange={(e) => { setUploadMode("trasmesso"); handleUpload(e); }} disabled={uploading} />
+          </label>
+          <button style={css.btn()} onClick={exportExcel}>↓ Excel</button>
+        </div>
+      </div>
+
+      {/* KPI */}
+      <div style={{ padding: "16px 20px", borderBottom: `1px solid ${T.border}` }}>
+        <div style={{ display: "flex", gap: 12, flexWrap: "wrap", marginBottom: 16 }}>
+          <KpiCard label="Titoli al lancio" value={kpi.tot} color={T.text} />
+          <KpiCard label="Copie iscritte" value={kpi.copieIscritte.toLocaleString("it")} color={T.accent} sub={`€ ${kpi.valoreIscritto.toLocaleString("it", { maximumFractionDigits: 0 })}`} />
+          {kpi.haTrasmesso && (
+            <>
+              <KpiCard label="Copie trasmesse" value={kpi.copieTrasmesse.toLocaleString("it")} color={T.green} sub={`€ ${kpi.valoreTrasmesso.toLocaleString("it", { maximumFractionDigits: 0 })}`} />
+              <div style={{ background: T.surface, border: `1px solid ${T.border}`, borderRadius: 4, padding: "16px 20px", minWidth: 180 }}>
+                <div style={{ color: T.textMid, fontSize: "10px", letterSpacing: "0.1em", textTransform: "uppercase", marginBottom: 8 }}>Copertura trasmesso</div>
+                <div style={{ color: kpi.pctTrasmesso >= 90 ? T.green : kpi.pctTrasmesso >= 70 ? T.accent : T.red, fontSize: "28px", fontWeight: "700", lineHeight: 1, marginBottom: 8 }}>{kpi.pctTrasmesso}%</div>
+                <div style={{ height: 6, background: T.borderHi, borderRadius: 3, overflow: "hidden" }}>
+                  <div style={{ width: `${Math.min(kpi.pctTrasmesso, 100)}%`, height: "100%", background: kpi.pctTrasmesso >= 90 ? T.green : kpi.pctTrasmesso >= 70 ? T.accent : T.red }} />
+                </div>
+              </div>
+            </>
+          )}
+          <KpiCard label="Fine Giro" value={kpi.totFineGiro.toLocaleString("it")} color={T.purple} sub="prenotato cedole" />
+          <KpiCard label="Amazon" value={kpi.totAmazon.toLocaleString("it")} color="#e8a838" sub="proposta Amazon" />
+          <KpiCard label="Teorico totale" value={kpi.totTeorico.toLocaleString("it")} color={T.text} sub="trasmesso + Amazon" />
+        </div>
+
+        {/* Mini chart editori */}
+        <div style={{ color: T.textMid, fontSize: "10px", letterSpacing: "0.1em", textTransform: "uppercase", marginBottom: 10 }}>Top editori</div>
+        <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+          {editoriTop.map(([ed, v]) => (
+            <div key={ed} style={{ background: T.bg, border: `1px solid ${T.border}`, borderRadius: 4, padding: "8px 12px", minWidth: 150, flex: "1 1 150px", maxWidth: 220 }}>
+              <div style={{ fontSize: "11px", fontWeight: "600", color: T.text, marginBottom: 4, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{ed}</div>
+              <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 3 }}>
+                <div style={{ flex: 1, height: 4, background: T.borderHi, borderRadius: 2, overflow: "hidden" }}>
+                  <div style={{ width: `${Math.round(v.iscritte / maxIscritte * 100)}%`, height: "100%", background: T.accent }} />
+                </div>
+                <span style={{ fontSize: "11px", fontWeight: "700", color: T.accent, minWidth: 40, textAlign: "right" }}>{v.iscritte.toLocaleString("it")}</span>
+              </div>
+              {v.amazon > 0 && (
+                <div style={{ fontSize: "9px", color: "#e8a838" }}>🅰 {v.amazon.toLocaleString("it")}</div>
+              )}
+              <div style={{ fontSize: "9px", color: T.textDim, marginTop: 2 }}>{v.titoli} titoli · € {Math.round(v.valore).toLocaleString("it")}</div>
+            </div>
+          ))}
+        </div>
+      </div>
+
+      {/* TABELLA */}
+      <div style={{ flex: 1, overflowY: "auto", overflowX: "auto" }}>
+        <table style={css.table}>
+          <thead>
+            <tr>
+              <th style={css.th}>EAN</th>
+              <th style={css.th}>Cod.Ed.</th>
+              <th style={{ ...css.th, cursor: "pointer" }} onClick={() => toggleSort("editore")}>Editore{sortIcon("editore")}</th>
+              <th style={css.th}>Titolo</th>
+              <th style={css.th}>Autore</th>
+              <th style={css.th}>€</th>
+              <th style={css.th}>Cedole</th>
+              <th style={{ ...css.th, cursor: "pointer" }} onClick={() => toggleSort("prenotato_iscrizione")}>Iscriz.{sortIcon("prenotato_iscrizione")}</th>
+              {kpi.haTrasmesso && <th style={{ ...css.th, cursor: "pointer" }} onClick={() => toggleSort("prenotato_trasmesso")}>Trasm.{sortIcon("prenotato_trasmesso")}</th>}
+              <th style={{ ...css.th, cursor: "pointer" }} onClick={() => toggleSort("pren_fine_giro")}>Fine Giro{sortIcon("pren_fine_giro")}</th>
+              <th style={{ ...css.th, cursor: "pointer", color: "#e8a838" }} onClick={() => toggleSort("pren_amazon")}>Amazon{sortIcon("pren_amazon")}</th>
+              <th style={{ ...css.th, cursor: "pointer" }} onClick={() => toggleSort("teorico")}>Teorico{sortIcon("teorico")}</th>
+              <th style={css.th}>Uscita</th>
+            </tr>
+          </thead>
+          <tbody>
+            {dataFiltrata.map((r, i) => (
+              <tr key={r.id || i} style={{ background: i % 2 === 0 ? "transparent" : T.surface + "66" }}>
+                <td style={{ ...css.td, fontFamily: "monospace", fontSize: "11px", color: T.textMid }}>{r.ean}</td>
+                <td style={{ ...css.td, color: T.textMid, fontSize: "11px" }}>{r.codice_editore}</td>
+                <td style={{ ...css.td, color: T.accent, fontWeight: "600", whiteSpace: "nowrap", maxWidth: 140, overflow: "hidden", textOverflow: "ellipsis" }}>{r.editore}</td>
+                <td style={{ ...css.td, maxWidth: 200 }}><div style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", fontWeight: "600" }}>{r.titolo}</div></td>
+                <td style={{ ...css.td, color: T.textMid, maxWidth: 130, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{r.autore}</td>
+                <td style={{ ...css.td, whiteSpace: "nowrap" }}>€ {(r.prezzo || 0).toFixed(2)}</td>
+                <td style={{ ...css.td, fontSize: "10px", color: T.textMid, maxWidth: 120 }}>
+                  {r.cedole.length > 0 ? r.cedole.map((c, ci) => (
+                    <span key={ci}>{ci > 0 && <br />}{c}</span>
+                  )) : "—"}
+                </td>
+                <td style={{ ...css.td, fontWeight: "600" }}>{(r.prenotato_iscrizione || 0).toLocaleString("it")}</td>
+                {kpi.haTrasmesso && (
+                  <td style={{ ...css.td, color: r.prenotato_trasmesso > 0 ? T.green : T.textDim, fontWeight: "600" }}>
+                    {r.prenotato_trasmesso != null ? r.prenotato_trasmesso.toLocaleString("it") : "—"}
+                  </td>
+                )}
+                <td style={{ ...css.td, color: r.pren_fine_giro > 0 ? T.purple : T.textDim, fontWeight: "600" }}>
+                  {r.pren_fine_giro > 0 ? r.pren_fine_giro.toLocaleString("it") : "—"}
+                </td>
+                <td style={{ ...css.td, color: r.pren_amazon > 0 ? "#e8a838" : T.textDim, fontWeight: "600" }}>
+                  {r.pren_amazon > 0 ? r.pren_amazon.toLocaleString("it") : "—"}
+                </td>
+                <td style={{ ...css.td, fontWeight: "700", color: r.teorico >= 2000 ? T.green : T.text }}>
+                  {r.teorico > 0 ? r.teorico.toLocaleString("it") : "—"}
+                </td>
+                <td style={css.td}>
+                  <select
+                    value={r.giorno_uscita}
+                    onChange={e => saveGiornoUscita(r.id, e.target.value === r.giorno_calcolato ? null : e.target.value)}
+                    style={{
+                      ...css.input,
+                      width: 90,
+                      padding: "3px 6px",
+                      fontSize: "11px",
+                      fontWeight: "700",
+                      color: r.giorno_uscita === "martedì" ? T.accent : T.green,
+                      borderColor: r.is_override ? "#e8a838" : T.border,
+                    }}
+                  >
+                    <option value="martedì">Martedì</option>
+                    <option value="venerdì">Venerdì</option>
+                  </select>
+                  {r.is_override && <span style={{ color: "#e8a838", fontSize: "9px", marginLeft: 4 }}>✎</span>}
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+        {dataFiltrata.length === 0 && (
+          <div style={{ padding: 40, textAlign: "center", color: T.textDim }}>Nessun titolo per questo lancio.</div>
+        )}
+      </div>
+
+      {toast && (
+        <div style={{ position: "fixed", bottom: 24, left: "50%", transform: "translateX(-50%)", background: toast.type === "err" ? "#4a1a2a" : "#1a3a2a", border: `1px solid ${toast.type === "err" ? T.red : T.green}`, color: toast.type === "err" ? T.red : T.green, borderRadius: 6, padding: "8px 20px", fontSize: "12px", zIndex: 999, boxShadow: "0 4px 20px #0008" }}>
+          {toast.msg}
+        </div>
+      )}
+    </div>
+  );
+}
+
 const MODULES = [
   { id: "dashboard", label: "Dashboard", icon: "◈" },
   { id: "cedola", label: "Giri e Cedole", icon: "≡" },
   { id: "finegiro", label: "Fine Giro", icon: "⊞" },
   { id: "avanzamento", label: "Avanzamento Novità", icon: "▣" },
+  { id: "lanci", label: "Lanci Settimanali", icon: "🚀" },
 ];
 
 const MODULES_IMPORT = [
@@ -1739,6 +2182,7 @@ export default function App() {
           {/* MOD 4: Passato spalmatura a ModuloFineGiro */}
           {activeModule === "finegiro" && <ModuloFineGiro titoli={titoli} prenotato={prenotato} canali={canali} token={session.token} ruolo={ruolo} spalmatura={spalmatura} />}
           {activeModule === "avanzamento" && <ModuloAvanzamentoNovita titoli={titoli} prenotato={prenotato} canali={canali} token={session.token} ruolo={ruolo} />}
+          {activeModule === "lanci" && <ModuloLanciSettimanali token={session.token} titoli={titoli} prenotato={prenotato} canali={canali} />}
           {activeModule === "import" && <ModuloImport giriList={giriDB} token={session.token} />}
         </div>
       </div>
