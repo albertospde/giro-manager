@@ -1485,7 +1485,7 @@ function ModuloAvanzamentoNovita({ titoli, prenotato, canali, token, ruolo }) {
     const headers = ["CEDOLA","EAN","TITOLO","AUTORE","EDITORE","PREZZO","PRENOTATO TOTALE","N. LANCIO","COPIE LANCIATE","VALORE LANCIO","DATA MESSA IN VENDITA"];
     const rows = novitaFiltrate.map(n => [
       n.nome_cedola, n.ean, n.titolo, n.autore, n.editore, n.prezzo,
-      n.prenotato_giri, n.manuale ? "SBL/RIFO" : (n.num_lancio || ""), n.copie_lanciate,
+      n.prenotato_giri, (n.manuale && n.copie_lanciate > 0) ? "SBL/RIFO" : (n.num_lancio || ""), n.copie_lanciate,
       n.valore_lancio, fmtDate(n.data_messa_in_vendita)
     ]);
     const ws = XLSX.utils.aoa_to_sheet([headers, ...rows]);
@@ -1575,7 +1575,7 @@ function ModuloAvanzamentoNovita({ titoli, prenotato, canali, token, ruolo }) {
                       {n.obiettivo_giri > 0 && <span style={{ color: pct >= 80 ? T.green : pct >= 50 ? T.accent : T.red, fontSize: "10px", fontWeight: "700" }}>{pct}%</span>}
                     </div>
                   </td>
-                  <td style={{ ...css.td, textAlign: "center" }}>{n.manuale ? <span style={css.tag("#e8a838")}>SBL/RIFO</span> : (n.num_lancio || "—")}</td>
+                  <td style={{ ...css.td, textAlign: "center" }}>{n.manuale && n.copie_lanciate > 0 ? <span style={css.tag("#e8a838")}>SBL/RIFO</span> : (n.num_lancio || "—")}</td>
                   <td style={css.td}>
                     {isEditingThis ? (
                       <div style={{ display: "flex", gap: 4, alignItems: "center" }}>
