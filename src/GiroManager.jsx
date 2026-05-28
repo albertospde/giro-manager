@@ -620,6 +620,7 @@ function ModuloFineGiro({ titoli, prenotato, canali, token, ruolo, spalmatura })
   const [filterCanale, setFilterCanale] = useState("tutti");
   const [search, setSearch] = useState("");
   const [sortPren, setSortPren] = useState(null); // null | "asc" | "desc"
+  const [soloPrenotati, setSoloPrenotati] = useState(false);
   const [clienteSearch, setClienteSearch] = useState("");
   const [clienteSel, setClienteSel] = useState(null);
   const [clientiList, setClientiList] = useState([]);
@@ -628,7 +629,7 @@ function ModuloFineGiro({ titoli, prenotato, canali, token, ruolo, spalmatura })
   const [auroraEdit, setAuroraEdit] = useState({});
   const [auroraEditing, setAuroraEditing] = useState(null);
 
-  const resetFiltri = () => { setGiroLabelSel(null); setExtraSel(null); setCedolaSel("tutti"); setFilterEditori([]); setFilterAccount("tutti"); setFilterCanale("tutti"); setSearch(""); setClienteSel(null); };
+  const resetFiltri = () => { setGiroLabelSel(null); setExtraSel(null); setCedolaSel("tutti"); setFilterEditori([]); setFilterAccount("tutti"); setFilterCanale("tutti"); setSearch(""); setClienteSel(null); setSoloPrenotati(false); };
 
   useEffect(() => {
     if (!token) return;
@@ -760,13 +761,30 @@ function ModuloFineGiro({ titoli, prenotato, canali, token, ruolo, spalmatura })
     return { titolo: t, totPren: totPrenBase, byCanale, byCanaleObj, dirStampatore };
   }), [titoliSel, prenotato, canali, auroraEdit, ruolo, clienteSel, prenotatoClienteByTitolo, getObjCanalePerTitolo]);
 
+  const [sortCanale, setSortCanale] = useState(null); // { codice, dir: "asc"|"desc" } o null
+
   const righeFiltrate = useMemo(() => {
-    let result = filterCanale === "tutti" ? [...righe] : righe.filter(({ byCanale }) => (byCanale[filterCanale] || 0) > 0);
+    let result = [...righe];
+    // Se soloPrenotati è ON e c'è un filtro canale o cliente attivo, mostra solo titoli con prenotato > 0
+    if (soloPrenotati && filterCanale !== "tutti") {
+      result = result.filter(({ byCanale }) => (byCanale[filterCanale] || 0) > 0);
+    }
+    if (soloPrenotati && clienteSel) {
+      result = result.filter(({ totPren }) => totPren > 0);
+    }
     if (sortPren) {
       result = [...result].sort((a, b) => sortPren === "asc" ? a.totPren - b.totPren : b.totPren - a.totPren);
     }
+    // Sort per colonna canale specifica
+    if (sortCanale) {
+      result = [...result].sort((a, b) => {
+        const va = a.byCanale[sortCanale.codice] || 0;
+        const vb = b.byCanale[sortCanale.codice] || 0;
+        return sortCanale.dir === "asc" ? va - vb : vb - va;
+      });
+    }
     return result;
-  }, [righe, filterCanale, sortPren]);
+  }, [righe, filterCanale, sortPren, soloPrenotati, clienteSel, sortCanale]);
 
   const totObj = righeFiltrate.reduce((s, r) => s + (r.titolo.obiettivo_assegnato || 0), 0);
   const totPrenotato = righeFiltrate.reduce((s, r) => s + r.totPren, 0);
@@ -869,6 +887,12 @@ function ModuloFineGiro({ titoli, prenotato, canali, token, ruolo, spalmatura })
         <SearchableSelect value={filterAccount} onChange={setFilterAccount} options={accounts} placeholder="Tutti gli account" width={160} />
         <SearchableSelect value={filterCanale} onChange={setFilterCanale} options={canali.filter(c => c.codice !== "AURORA" && c.codice !== "GDO")} placeholder="Tutti i canali" labelKey="nome" valueKey="codice" width={170} />
         <input style={{ ...css.input, width: 160 }} placeholder="Cerca EAN / titolo..." value={search} onChange={e => setSearch(e.target.value)} />
+        {(filterCanale !== "tutti" || clienteSel) && (
+          <label style={{ display: "flex", alignItems: "center", gap: 5, cursor: "pointer", fontSize: "11px", color: soloPrenotati ? T.accent : T.textMid, userSelect: "none" }}>
+            <input type="checkbox" checked={soloPrenotati} onChange={e => setSoloPrenotati(e.target.checked)} style={{ accentColor: T.accent }} />
+            Solo prenotati
+          </label>
+        )}
         {ruolo !== "agente" && (
           <div style={{ position: "relative" }}>
             <button style={{ ...css.btn(clienteSel ? "accent" : "default"), minWidth: 160, display: "flex", justifyContent: "space-between", alignItems: "center", gap: 8 }} onClick={() => setClienteDropdownOpen(o => !o)}>
@@ -961,8 +985,8 @@ function ModuloFineGiro({ titoli, prenotato, canali, token, ruolo, spalmatura })
             <tr>
               <th style={css.th}>Cedola</th><th style={css.th}>EAN</th><th style={css.th}>Titolo</th>
               <th style={css.th}>Autore</th><th style={css.th}>Cod.Ed.</th><th style={css.th}>Editore</th>
-              <th style={css.th}>€</th><th style={css.th}>Obj</th><th style={{ ...css.th, cursor: "pointer" }} onClick={() => setSortPren(s => s === "desc" ? "asc" : s === "asc" ? null : "desc")}>Pren.{sortPren === "desc" ? " ↓" : sortPren === "asc" ? " ↑" : ""}</th><th style={css.th}>%</th>
-              {canaliTabella.map(c => <th key={c.id} style={{ ...css.th, whiteSpace: "normal", maxWidth: 70, lineHeight: 1.2 }}>{getCanaleDisplayName(c)}</th>)}
+              <th style={css.th}>€</th><th style={css.th}>Obj</th><th style={{ ...css.th, cursor: "pointer" }} onClick={() => { setSortPren(s => s === "desc" ? "asc" : s === "asc" ? null : "desc"); setSortCanale(null); }}>Pren.{sortPren === "desc" ? " ↓" : sortPren === "asc" ? " ↑" : ""}</th><th style={css.th}>%</th>
+              {canaliTabella.map(c => <th key={c.id} style={{ ...css.th, whiteSpace: "normal", maxWidth: 70, lineHeight: 1.2, cursor: "pointer" }} onClick={() => { setSortCanale(prev => prev?.codice === c.codice ? (prev.dir === "desc" ? { codice: c.codice, dir: "asc" } : null) : { codice: c.codice, dir: "desc" }); setSortPren(null); }}>{getCanaleDisplayName(c)}{sortCanale?.codice === c.codice ? (sortCanale.dir === "desc" ? " ↓" : " ↑") : ""}</th>)}
               {ruolo !== "agente" && <th style={{ ...css.th, color: T.accent }}>Dir. Stampatore ✎</th>}
             </tr>
           </thead>
@@ -1426,16 +1450,27 @@ function ModuloAvanzamentoNovita({ titoli, prenotato, canali, token, ruolo }) {
     } else { showToast("Errore salvataggio", "err"); }
   };
 
-  // Salva modifica inline prenotato su titoli_novita
+  // Salva modifica inline copie_lanciate su titoli_novita
   const saveInlineEdit = async (ean, value) => {
     const qta = parseInt(value) || 0;
     const nov = novitaDB.find(n => n.ean === ean);
-    const prezzo = nov?.prezzo || 0;
-    const payload = { copie_lanciate: qta, valore_lancio: Math.round(prezzo * qta * 100) / 100, manuale: true };
-    const r = await fetch(`${SUPABASE_URL}/rest/v1/titoli_novita?ean=eq.${encodeURIComponent(ean)}`, {
-      method: "PATCH",
-      headers: { "apikey": SUPABASE_KEY, "Authorization": `Bearer ${token}`, "Content-Type": "application/json", "Prefer": "return=minimal" },
-      body: JSON.stringify(payload),
+    const prezzo = nov?.prezzo || novitaArricchite.find(n => n.ean === ean)?.prezzo || 0;
+    // Se il record non esiste in titoli_novita, fai INSERT (upsert)
+    const titGiro = titoli.find(t => t.ean === ean);
+    const payload = {
+      ean,
+      titolo: nov?.titolo || titGiro?.titolo || "",
+      autore: nov?.autore || titGiro?.autore || "",
+      editore: nov?.editore || titGiro?.editore_nome || "",
+      prezzo: prezzo,
+      copie_lanciate: qta,
+      valore_lancio: Math.round(prezzo * qta * 100) / 100,
+      manuale: true,
+    };
+    const r = await fetch(`${SUPABASE_URL}/rest/v1/titoli_novita`, {
+      method: "POST",
+      headers: { "apikey": SUPABASE_KEY, "Authorization": `Bearer ${token}`, "Content-Type": "application/json", "Prefer": "resolution=merge-duplicates" },
+      body: JSON.stringify([payload]),
     });
     if (r.ok) {
       showToast("Aggiornato");
@@ -1447,11 +1482,11 @@ function ModuloAvanzamentoNovita({ titoli, prenotato, canali, token, ruolo }) {
   // Export Excel
   const exportExcel = () => {
     const XLSX = window.XLSX;
-    const headers = ["CEDOLA","EAN","TITOLO","AUTORE","EDITORE","PREZZO","OBJ TOTALE","PRENOTATO TOTALE","N. LANCIO","COPIE LANCIATE","VALORE LANCIO","DATA MESSA IN VENDITA","MANUALE"];
+    const headers = ["CEDOLA","EAN","TITOLO","AUTORE","EDITORE","PREZZO","PRENOTATO TOTALE","N. LANCIO","COPIE LANCIATE","VALORE LANCIO","DATA MESSA IN VENDITA"];
     const rows = novitaFiltrate.map(n => [
       n.nome_cedola, n.ean, n.titolo, n.autore, n.editore, n.prezzo,
-      n.obiettivo_giri, n.prenotato_giri, n.num_lancio, n.copie_lanciate,
-      n.valore_lancio, fmtDate(n.data_messa_in_vendita), n.manuale ? "Sì" : ""
+      n.prenotato_giri, n.manuale ? "SBL/RIFO" : (n.num_lancio || ""), n.copie_lanciate,
+      n.valore_lancio, fmtDate(n.data_messa_in_vendita)
     ]);
     const ws = XLSX.utils.aoa_to_sheet([headers, ...rows]);
     const wb = XLSX.utils.book_new();
@@ -1481,7 +1516,6 @@ function ModuloAvanzamentoNovita({ titoli, prenotato, canali, token, ruolo }) {
                   {uploading ? "Caricamento..." : "↑ Upload CSV"}
                   <input type="file" accept=".csv,.txt,.tsv" style={{ display: "none" }} onChange={handleCSVUpload} disabled={uploading} />
                 </label>
-                <button style={css.btn()} onClick={() => setManualOpen(o => !o)}>+ Manuale</button>
               </>
             )}
             <button style={css.btn()} onClick={exportExcel}>↓ Excel</button>
@@ -1505,27 +1539,6 @@ function ModuloAvanzamentoNovita({ titoli, prenotato, canali, token, ruolo }) {
         </div>
       </div>
 
-      {/* FORM MANUALE */}
-      {manualOpen && (
-        <div style={{ padding: "12px 20px", borderBottom: `1px solid ${T.border}`, background: T.accent + "08" }}>
-          <div style={{ color: T.accent, fontWeight: "700", fontSize: "11px", letterSpacing: "0.08em", marginBottom: 10 }}>INSERIMENTO MANUALE (RIFORNIMENTO)</div>
-          <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "flex-end" }}>
-            {[["ean","EAN",140],["titolo","Titolo",200],["autore","Autore",140],["editore","Editore",140],["prezzo","Prezzo €",80],["num_lancio","N. Lancio",80],["copie_lanciate","Copie",80],["valore_lancio","Valore €",100]].map(([k,l,w]) => (
-              <div key={k}>
-                <label style={{ color: T.textMid, fontSize: "9px", letterSpacing: "0.06em", textTransform: "uppercase", display: "block", marginBottom: 3 }}>{l}</label>
-                <input style={{ ...css.input, width: w }} value={manualForm[k]} onChange={e => setManualForm(f => ({ ...f, [k]: e.target.value }))} />
-              </div>
-            ))}
-            <div>
-              <label style={{ color: T.textMid, fontSize: "9px", letterSpacing: "0.06em", textTransform: "uppercase", display: "block", marginBottom: 3 }}>Data vendita</label>
-              <input type="date" style={{ ...css.input, width: 130 }} value={manualForm.data_messa_in_vendita} onChange={e => setManualForm(f => ({ ...f, data_messa_in_vendita: e.target.value }))} />
-            </div>
-            <button style={css.btn("accent")} onClick={saveManual}>Salva</button>
-            <button style={css.btn()} onClick={() => setManualOpen(false)}>Annulla</button>
-          </div>
-        </div>
-      )}
-
       {/* TABELLA */}
       <div style={{ flex: 1, overflowY: "auto", overflowX: "auto" }}>
         <table style={css.table}>
@@ -1537,20 +1550,16 @@ function ModuloAvanzamentoNovita({ titoli, prenotato, canali, token, ruolo }) {
               <th style={css.th}>Autore</th>
               <th style={css.th}>Editore</th>
               <th style={css.th}>€</th>
-              <th style={css.th}>Obj Tot.</th>
               <th style={{ ...css.th, cursor: "pointer" }} onClick={() => toggleSort("prenotato")}>Pren. Tot.{sortIcon("prenotato")}</th>
               <th style={{ ...css.th, cursor: "pointer" }} onClick={() => toggleSort("num_lancio")}>N. Lancio{sortIcon("num_lancio")}</th>
               <th style={css.th}>Copie Lanc.</th>
               <th style={css.th}>Val. Lancio</th>
               <th style={css.th}>Data Vendita</th>
-              <th style={css.th}></th>
             </tr>
           </thead>
           <tbody>
             {novitaFiltrate.map((n, i) => {
               const pct = n.obiettivo_giri > 0 ? Math.round(n.prenotato_giri / n.obiettivo_giri * 100) : 0;
-              // Editabile se ha data di vendita ma copie e valore lancio a zero
-              const isEditable = n.ha_lancio && n.data_messa_in_vendita && (!n.copie_lanciate || n.copie_lanciate === 0) && (!n.valore_lancio || n.valore_lancio === 0);
               const isEditingThis = editingEan === n.ean;
               return (
                 <tr key={n.ean || i} style={{ background: i % 2 === 0 ? "transparent" : T.surface + "66" }}>
@@ -1560,7 +1569,13 @@ function ModuloAvanzamentoNovita({ titoli, prenotato, canali, token, ruolo }) {
                   <td style={{ ...css.td, color: T.textMid }}>{n.autore}</td>
                   <td style={{ ...css.td, color: T.accent, fontWeight: "600", whiteSpace: "nowrap" }}>{n.editore}</td>
                   <td style={{ ...css.td, whiteSpace: "nowrap" }}>€ {(n.prezzo || 0).toFixed(2)}</td>
-                  <td style={css.td}>{n.obiettivo_giri > 0 ? n.obiettivo_giri.toLocaleString("it") : "—"}</td>
+                  <td style={css.td}>
+                    <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                      <span style={{ color: n.prenotato_giri > 0 ? T.green : T.textDim, fontWeight: "600" }}>{n.prenotato_giri > 0 ? n.prenotato_giri.toLocaleString("it") : "—"}</span>
+                      {n.obiettivo_giri > 0 && <span style={{ color: pct >= 80 ? T.green : pct >= 50 ? T.accent : T.red, fontSize: "10px", fontWeight: "700" }}>{pct}%</span>}
+                    </div>
+                  </td>
+                  <td style={{ ...css.td, textAlign: "center" }}>{n.manuale ? <span style={css.tag("#e8a838")}>SBL/RIFO</span> : (n.num_lancio || "—")}</td>
                   <td style={css.td}>
                     {isEditingThis ? (
                       <div style={{ display: "flex", gap: 4, alignItems: "center" }}>
@@ -1570,19 +1585,15 @@ function ModuloAvanzamentoNovita({ titoli, prenotato, canali, token, ruolo }) {
                         <button style={{ ...css.btn("accent"), padding: "2px 8px", fontSize: "11px" }} onClick={() => saveInlineEdit(n.ean, editingVal)}>✓</button>
                       </div>
                     ) : (
-                      <div style={{ display: "flex", alignItems: "center", gap: 6, cursor: isEditable ? "pointer" : "default" }}
-                        onClick={() => { if (isEditable) { setEditingEan(n.ean); setEditingVal(String(n.copie_lanciate || 0)); } }}>
-                        <span style={{ color: n.prenotato_giri > 0 ? T.green : T.textDim, fontWeight: "600" }}>{n.prenotato_giri > 0 ? n.prenotato_giri.toLocaleString("it") : "—"}</span>
-                        {n.obiettivo_giri > 0 && <span style={{ color: pct >= 80 ? T.green : pct >= 50 ? T.accent : T.red, fontSize: "10px", fontWeight: "700" }}>{pct}%</span>}
-                        {isEditable && <span style={{ color: T.accent, fontSize: "11px" }}>✎</span>}
+                      <div style={{ display: "flex", alignItems: "center", gap: 6, cursor: "pointer" }}
+                        onClick={() => { setEditingEan(n.ean); setEditingVal(String(n.copie_lanciate || 0)); }}>
+                        <span style={{ color: n.copie_lanciate > 0 ? T.text : T.textDim }}>{n.copie_lanciate > 0 ? n.copie_lanciate.toLocaleString("it") : "—"}</span>
+                        <span style={{ color: T.accent, fontSize: "11px" }}>✎</span>
                       </div>
                     )}
                   </td>
-                  <td style={{ ...css.td, textAlign: "center" }}>{n.num_lancio || "—"}</td>
-                  <td style={{ ...css.td, textAlign: "right" }}>{n.copie_lanciate > 0 ? n.copie_lanciate.toLocaleString("it") : "—"}</td>
                   <td style={{ ...css.td, textAlign: "right", whiteSpace: "nowrap" }}>{n.valore_lancio > 0 ? `€ ${n.valore_lancio.toLocaleString("it", { maximumFractionDigits: 0 })}` : "—"}</td>
                   <td style={{ ...css.td, whiteSpace: "nowrap" }}>{fmtDate(n.data_messa_in_vendita)}</td>
-                  <td style={css.td}>{n.manuale && <span style={css.tag(T.purple)}>MAN</span>}</td>
                 </tr>
               );
             })}
