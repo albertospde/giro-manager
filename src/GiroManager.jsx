@@ -1166,8 +1166,20 @@ function ModuloAvanzamentoNovita({ titoli, prenotato, canali, token, ruolo }) {
 
       // Strategia 1: Cerca colonna "mese" e "fatturato/valore/importo"
       const firstRow = rows[0]?.map(c => String(c || "").toLowerCase().trim()) || [];
-      let colMese = firstRow.findIndex(h => h === "mese" || h === "month");
+      let colMese = firstRow.findIndex(h => h === "mese" || h.startsWith("mese") || h === "month");
       let colVal = firstRow.findIndex(h => h.includes("fatturato") || h.includes("valore") || h.includes("importo") || h.includes("totale") || h.includes("revenue"));
+      // Fallback: se trovo la colonna mese ma non quella valore, prendo la colonna subito dopo
+      if (colMese >= 0 && colVal < 0) colVal = colMese + 1;
+
+      // Helper: converte valore numerico — se già number lo usa diretto, se stringa converte formato italiano
+      const parseVal = (v) => {
+        if (v == null) return 0;
+        if (typeof v === "number") return v;
+        const s = String(v).trim();
+        // Se contiene virgola come decimale (formato IT: 1.234,56)
+        if (s.includes(",")) return parseFloat(s.replace(/\./g, "").replace(",", ".")) || 0;
+        return parseFloat(s) || 0;
+      };
 
       if (colMese >= 0 && colVal >= 0) {
         for (let i = 1; i < rows.length; i++) {
@@ -1175,7 +1187,7 @@ function ModuloAvanzamentoNovita({ titoli, prenotato, canali, token, ruolo }) {
           if (!r || !r[colMese]) continue;
           const meseStr = String(r[colMese]).toLowerCase().trim();
           const mese = mesiIt[meseStr] || parseInt(meseStr) || null;
-          const val = parseFloat(String(r[colVal] || "0").replace(/\./g, "").replace(",", ".")) || 0;
+          const val = parseVal(r[colVal]);
           if (mese && mese >= 1 && mese <= 12 && val > 0) payload.push({ anno: annoPrev, mese, fatturato: val });
         }
       }
@@ -1184,11 +1196,9 @@ function ModuloAvanzamentoNovita({ titoli, prenotato, canali, token, ruolo }) {
       if (payload.length === 0) {
         for (const row of rows) {
           if (!row || row.length < 12) continue;
-          // Cerca 12 celle numeriche consecutive
-          const nums = row.map(c => parseFloat(String(c || "0").replace(/\./g, "").replace(",", ".")) || 0);
+          const nums = row.map(c => parseVal(c));
           const nonZero = nums.filter(n => n > 0);
           if (nonZero.length >= 6) {
-            // Probabilmente i 12 mesi
             for (let m = 0; m < 12 && m < nums.length; m++) {
               if (nums[m] > 0) payload.push({ anno: annoPrev, mese: m + 1, fatturato: nums[m] });
             }
@@ -1204,7 +1214,7 @@ function ModuloAvanzamentoNovita({ titoli, prenotato, canali, token, ruolo }) {
           const meseStr = String(row[0] || "").toLowerCase().trim();
           const mese = mesiIt[meseStr] || null;
           if (mese) {
-            const val = parseFloat(String(row[1] || "0").replace(/\./g, "").replace(",", ".")) || 0;
+            const val = parseVal(row[1]);
             if (val > 0) payload.push({ anno: annoPrev, mese, fatturato: val });
           }
         }
