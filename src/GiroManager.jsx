@@ -1632,6 +1632,8 @@ function ModuloLanciSettimanali({ token, titoli, prenotato, canali }) {
   const [sortKey, setSortKey] = useState(null);
   const [sortDir, setSortDir] = useState("desc");
 
+  const [editCell, setEditCell] = useState(null); // { id, field, value }
+
   const showToast = (msg, type = "ok") => { setToast({ msg, type }); setTimeout(() => setToast(null), 4000); };
 
   const loadData = useCallback(async () => {
@@ -1684,33 +1686,50 @@ function ModuloLanciSettimanali({ token, titoli, prenotato, canali }) {
   // Canale Amazon ID
   const amazonCodice = "AMAZON";
 
-  // Arricchisci dati lancio con dati fine giro
+  // Arricchisci dati lancio con dati fine giro (live DB → fallback manuale)
   const dataArricchita = useMemo(() => {
     const anno = filterAnno || anniDisponibili[0];
     return data
       .filter(r => r.anno_lancio === anno && r.num_lancio === filterLancio)
       .map(r => {
         const prenCanali = prenByEanCanale[r.ean] || {};
-        const prenFineGiroTotale = Object.entries(prenCanali).reduce((s, [cod, q]) => s + q, 0);
-        const prenAmazon = prenCanali[amazonCodice] || 0;
-        const prenSenzaAmazon = prenFineGiroTotale - prenAmazon;
-        const cedole = cedoleByEan[r.ean] || [];
-        // Teorico = prenotato trasmesso + amazon fine giro
+        const prenFineGiroLive = Object.entries(prenCanali).reduce((s, [cod, q]) => s + q, 0);
+        const prenAmazonLive = prenCanali[amazonCodice] || 0;
+        const cedoleLive = cedoleByEan[r.ean] || [];
+
+        // Usa dati live se disponibili, altrimenti fallback manuale
+        const haLiveCedole = cedoleLive.length > 0;
+        const haLiveFG = prenFineGiroLive > 0;
+        const haLiveAmazon = prenAmazonLive > 0;
+
+        const cedole = haLiveCedole ? cedoleLive : (r.cedole_manual ? r.cedole_manual.split(",").map(s => s.trim()).filter(Boolean) : []);
+        const prenFineGiro = haLiveFG ? prenFineGiroLive : (r.pren_fine_giro_manual || 0);
+        const prenAmazon = haLiveAmazon ? prenAmazonLive : (r.pren_amazon_manual || 0);
+
+        const prenSenzaAmazon = prenFineGiro - prenAmazon;
+        // Teorico = prenotato trasmesso (o iscritto) + amazon
         const teorico = (r.prenotato_trasmesso ?? r.prenotato_iscrizione ?? 0) + prenAmazon;
-        // Giorno uscita: override > calcolato (teorico >= 2000 → martedì, altrimenti venerdì)
         const giornoCalcolato = teorico >= 2000 ? "martedì" : "venerdì";
         const giornoUscita = r.giorno_uscita_override || giornoCalcolato;
         const isOverride = !!r.giorno_uscita_override;
+
         return {
           ...r,
           cedole,
-          pren_fine_giro: prenFineGiroTotale,
+          pren_fine_giro: prenFineGiro,
           pren_amazon: prenAmazon,
           pren_senza_amazon: prenSenzaAmazon,
           teorico,
           giorno_calcolato: giornoCalcolato,
           giorno_uscita: giornoUscita,
           is_override: isOverride,
+          // Flag per sapere se i dati vengono dal DB o sono manuali/vuoti
+          is_live_cedole: haLiveCedole,
+          is_live_fg: haLiveFG,
+          is_live_amazon: haLiveAmazon,
+          is_manual_cedole: !haLiveCedole && !!r.cedole_manual,
+          is_manual_fg: !haLiveFG && r.pren_fine_giro_manual > 0,
+          is_manual_amazon: !haLiveAmazon && r.pren_amazon_manual > 0,
         };
       });
   }, [data, filterAnno, filterLancio, anniDisponibili, prenByEanCanale, cedoleByEan]);
@@ -1735,29 +1754,32 @@ function ModuloLanciSettimanali({ token, titoli, prenotato, canali }) {
   const kpi = useMemo(() => {
     const d = dataFiltrata;
     const tot = d.length;
-    const copieIscritte = d.reduce((s, r) => s + (r.prenotato_iscrizione || 0), 0);
+    const copieLanciate = d.reduce((s, r) => s + (r.prenotato_iscrizione || 0), 0);
     const copieTrasmesse = d.reduce((s, r) => s + (r.prenotato_trasmesso ?? 0), 0);
-    const valoreIscritto = d.reduce((s, r) => s + (r.prezzo || 0) * (r.prenotato_iscrizione || 0), 0);
+    const valoreLanciate = d.reduce((s, r) => s + (r.prezzo || 0) * (r.prenotato_iscrizione || 0), 0);
     const valoreTrasmesso = d.reduce((s, r) => s + (r.prezzo || 0) * (r.prenotato_trasmesso ?? 0), 0);
     const haTrasmesso = d.some(r => r.prenotato_trasmesso !== null);
     const totFineGiro = d.reduce((s, r) => s + (r.pren_fine_giro || 0), 0);
     const totAmazon = d.reduce((s, r) => s + (r.pren_amazon || 0), 0);
     const totTeorico = d.reduce((s, r) => s + (r.teorico || 0), 0);
+    const valoreFineGiro = d.reduce((s, r) => s + (r.prezzo || 0) * (r.pren_fine_giro || 0), 0);
+    const valoreAmazon = d.reduce((s, r) => s + (r.prezzo || 0) * (r.pren_amazon || 0), 0);
+    const valoreTeorico = d.reduce((s, r) => s + (r.prezzo || 0) * (r.teorico || 0), 0);
     const martedi = d.filter(r => r.giorno_uscita === "martedì").length;
     const venerdi = d.filter(r => r.giorno_uscita === "venerdì").length;
-    const pctTrasmesso = copieIscritte > 0 ? Math.round(copieTrasmesse / copieIscritte * 100) : 0;
+    const pctTrasmesso = copieLanciate > 0 ? Math.round(copieTrasmesse / copieLanciate * 100) : 0;
     // Per editore
     const byEditore = {};
     d.forEach(r => {
-      if (!byEditore[r.editore]) byEditore[r.editore] = { titoli: 0, iscritte: 0, trasmesse: 0, fineGiro: 0, amazon: 0, valore: 0 };
+      if (!byEditore[r.editore]) byEditore[r.editore] = { titoli: 0, lanciate: 0, trasmesse: 0, fineGiro: 0, amazon: 0, valore: 0 };
       byEditore[r.editore].titoli++;
-      byEditore[r.editore].iscritte += r.prenotato_iscrizione || 0;
+      byEditore[r.editore].lanciate += r.prenotato_iscrizione || 0;
       byEditore[r.editore].trasmesse += r.prenotato_trasmesso ?? 0;
       byEditore[r.editore].fineGiro += r.pren_fine_giro || 0;
       byEditore[r.editore].amazon += r.pren_amazon || 0;
       byEditore[r.editore].valore += (r.prezzo || 0) * (r.prenotato_iscrizione || 0);
     });
-    return { tot, copieIscritte, copieTrasmesse, valoreIscritto, valoreTrasmesso, haTrasmesso, totFineGiro, totAmazon, totTeorico, martedi, venerdi, pctTrasmesso, byEditore };
+    return { tot, copieLanciate, copieTrasmesse, valoreLanciate, valoreTrasmesso, haTrasmesso, totFineGiro, totAmazon, totTeorico, valoreFineGiro, valoreAmazon, valoreTeorico, martedi, venerdi, pctTrasmesso, byEditore };
   }, [dataFiltrata]);
 
   const toggleSort = (key) => {
@@ -1775,6 +1797,19 @@ function ModuloLanciSettimanali({ token, titoli, prenotato, canali }) {
       body: JSON.stringify(payload),
     });
     setData(prev => prev.map(r => r.id === id ? { ...r, giorno_uscita_override: value || null } : r));
+  };
+
+  // Salva valore manuale (cedole, fine giro, amazon) su DB
+  const saveManualCell = async (id, field, value) => {
+    const dbField = field === "cedole" ? "cedole_manual" : field === "fg" ? "pren_fine_giro_manual" : "pren_amazon_manual";
+    const dbValue = field === "cedole" ? (value || null) : (parseInt(value) || null);
+    await fetch(`${SUPABASE_URL}/rest/v1/lanci_settimanali?id=eq.${id}`, {
+      method: "PATCH",
+      headers: { "apikey": SUPABASE_KEY, "Authorization": `Bearer ${token}`, "Content-Type": "application/json", "Prefer": "return=minimal" },
+      body: JSON.stringify({ [dbField]: dbValue }),
+    });
+    setData(prev => prev.map(r => r.id === id ? { ...r, [dbField]: dbValue } : r));
+    setEditCell(null);
   };
 
   // Upload handler
@@ -1835,7 +1870,7 @@ function ModuloLanciSettimanali({ token, titoli, prenotato, canali }) {
           });
           if (!r.ok) throw new Error(await r.text());
         }
-        showToast(`Iscrizione: ${payload.length} titoli (lancio ${payload[0]?.num_lancio})`);
+        showToast(`Lancio: ${payload.length} titoli caricati (lancio ${payload[0]?.num_lancio})`);
       } else {
         let updated = 0;
         for (const r of dataRows) {
@@ -1865,16 +1900,16 @@ function ModuloLanciSettimanali({ token, titoli, prenotato, canali }) {
   // Export Excel
   const exportExcel = () => {
     const XLSX = window.XLSX;
-    const headers = ["EAN","COD.ED.","EDITORE","TITOLO","AUTORE","PREZZO","CEDOLE","ISCRIZIONE","TRASMESSO","FINE GIRO","AMAZON","TEORICO","GIORNO USCITA"];
+    const headers = ["EAN","COD.ED.","EDITORE","TITOLO","AUTORE","PREZZO","CEDOLE","LANCIATE","TRASMESSO","FINE GIRO","AMAZON","TEORICO","GIORNO USCITA"];
     const rows = dataFiltrata.map(r => [
       r.ean, r.codice_editore, r.editore, r.titolo, r.autore, r.prezzo,
       r.cedole.join(", "), r.prenotato_iscrizione, r.prenotato_trasmesso ?? "",
       r.pren_fine_giro, r.pren_amazon, r.teorico, r.giorno_uscita
     ]);
     // Riepilogo editori
-    const rH = ["EDITORE","TITOLI","ISCRITTE","TRASMESSE","FINE GIRO","AMAZON","VALORE"];
-    const rR = Object.entries(kpi.byEditore).sort((a, b) => b[1].iscritte - a[1].iscritte).map(([ed, v]) => [
-      ed, v.titoli, v.iscritte, v.trasmesse, v.fineGiro, v.amazon, Math.round(v.valore)
+    const rH = ["EDITORE","TITOLI","LANCIATE","TRASMESSE","FINE GIRO","AMAZON","VALORE"];
+    const rR = Object.entries(kpi.byEditore).sort((a, b) => b[1].lanciate - a[1].lanciate).map(([ed, v]) => [
+      ed, v.titoli, v.lanciate, v.trasmesse, v.fineGiro, v.amazon, Math.round(v.valore)
     ]);
     const ws = XLSX.utils.aoa_to_sheet([headers, ...rows]);
     const wsR = XLSX.utils.aoa_to_sheet([rH, ...rR]);
@@ -1889,7 +1924,7 @@ function ModuloLanciSettimanali({ token, titoli, prenotato, canali }) {
   if (data.length === 0) return (
     <div style={{ flex: 1, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 20, padding: 40 }}>
       <div style={{ fontSize: "48px", opacity: 0.3 }}>🚀</div>
-      <div style={{ color: T.textMid, fontSize: "14px", textAlign: "center", maxWidth: 400 }}>Nessun lancio caricato. Carica il file di iscrizione al lancio.</div>
+      <div style={{ color: T.textMid, fontSize: "14px", textAlign: "center", maxWidth: 400 }}>Nessun lancio caricato. Carica il file del lancio.</div>
       <label style={{ ...css.btn("accent"), cursor: "pointer", padding: "10px 24px", fontSize: "13px" }}>
         ↑ Carica primo lancio
         <input type="file" accept=".xlsx,.xls,.csv" style={{ display: "none" }} onChange={(e) => { setUploadMode("iscrizione"); handleUpload(e); }} />
@@ -1897,8 +1932,8 @@ function ModuloLanciSettimanali({ token, titoli, prenotato, canali }) {
     </div>
   );
 
-  const editoriTop = Object.entries(kpi.byEditore).sort((a, b) => b[1].iscritte - a[1].iscritte).slice(0, 8);
-  const maxIscritte = editoriTop.length > 0 ? editoriTop[0][1].iscritte : 1;
+  const editoriTop = Object.entries(kpi.byEditore).sort((a, b) => b[1].lanciate - a[1].lanciate).slice(0, 8);
+  const maxLanciate = editoriTop.length > 0 ? editoriTop[0][1].lanciate : 1;
 
   return (
     <div style={{ display: "flex", flexDirection: "column", height: "100%", overflow: "hidden" }}>
@@ -1918,7 +1953,7 @@ function ModuloLanciSettimanali({ token, titoli, prenotato, canali }) {
         </div>
         <div style={{ marginLeft: "auto", display: "flex", gap: 8 }}>
           <label style={{ ...css.btn("accent"), cursor: "pointer", display: "inline-flex", alignItems: "center", gap: 4 }}>
-            {uploading && uploadMode === "iscrizione" ? "..." : "↑ Iscrizione"}
+            {uploading && uploadMode === "iscrizione" ? "..." : "↑ Lancio"}
             <input type="file" accept=".xlsx,.xls,.csv" style={{ display: "none" }} onChange={(e) => { setUploadMode("iscrizione"); handleUpload(e); }} disabled={uploading} />
           </label>
           <label style={{ ...css.btn(), cursor: "pointer", display: "inline-flex", alignItems: "center", gap: 4, borderColor: T.green, color: T.green }}>
@@ -1933,7 +1968,7 @@ function ModuloLanciSettimanali({ token, titoli, prenotato, canali }) {
       <div style={{ padding: "16px 20px", borderBottom: `1px solid ${T.border}` }}>
         <div style={{ display: "flex", gap: 12, flexWrap: "wrap", marginBottom: 16 }}>
           <KpiCard label="Titoli al lancio" value={kpi.tot} color={T.text} />
-          <KpiCard label="Copie iscritte" value={kpi.copieIscritte.toLocaleString("it")} color={T.accent} sub={`€ ${kpi.valoreIscritto.toLocaleString("it", { maximumFractionDigits: 0 })}`} />
+          <KpiCard label="Copie lanciate" value={kpi.copieLanciate.toLocaleString("it")} color={T.accent} sub={`€ ${kpi.valoreLanciate.toLocaleString("it", { maximumFractionDigits: 0 })}`} />
           {kpi.haTrasmesso && (
             <>
               <KpiCard label="Copie trasmesse" value={kpi.copieTrasmesse.toLocaleString("it")} color={T.green} sub={`€ ${kpi.valoreTrasmesso.toLocaleString("it", { maximumFractionDigits: 0 })}`} />
@@ -1946,9 +1981,9 @@ function ModuloLanciSettimanali({ token, titoli, prenotato, canali }) {
               </div>
             </>
           )}
-          <KpiCard label="Fine Giro" value={kpi.totFineGiro.toLocaleString("it")} color={T.purple} sub="prenotato cedole" />
-          <KpiCard label="Amazon" value={kpi.totAmazon.toLocaleString("it")} color="#e8a838" sub="proposta Amazon" />
-          <KpiCard label="Teorico totale" value={kpi.totTeorico.toLocaleString("it")} color={T.text} sub="trasmesso + Amazon" />
+          <KpiCard label="Fine Giro" value={kpi.totFineGiro.toLocaleString("it")} color={T.purple} sub={`€ ${kpi.valoreFineGiro.toLocaleString("it", { maximumFractionDigits: 0 })}`} />
+          <KpiCard label="Amazon" value={kpi.totAmazon.toLocaleString("it")} color="#e8a838" sub={`€ ${kpi.valoreAmazon.toLocaleString("it", { maximumFractionDigits: 0 })}`} />
+          <KpiCard label="Teorico totale" value={kpi.totTeorico.toLocaleString("it")} color={T.text} sub={`€ ${kpi.valoreTeorico.toLocaleString("it", { maximumFractionDigits: 0 })}`} />
         </div>
 
         {/* Mini chart editori */}
@@ -1959,9 +1994,9 @@ function ModuloLanciSettimanali({ token, titoli, prenotato, canali }) {
               <div style={{ fontSize: "11px", fontWeight: "600", color: T.text, marginBottom: 4, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{ed}</div>
               <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 3 }}>
                 <div style={{ flex: 1, height: 4, background: T.borderHi, borderRadius: 2, overflow: "hidden" }}>
-                  <div style={{ width: `${Math.round(v.iscritte / maxIscritte * 100)}%`, height: "100%", background: T.accent }} />
+                  <div style={{ width: `${Math.round(v.lanciate / maxLanciate * 100)}%`, height: "100%", background: T.accent }} />
                 </div>
-                <span style={{ fontSize: "11px", fontWeight: "700", color: T.accent, minWidth: 40, textAlign: "right" }}>{v.iscritte.toLocaleString("it")}</span>
+                <span style={{ fontSize: "11px", fontWeight: "700", color: T.accent, minWidth: 40, textAlign: "right" }}>{v.lanciate.toLocaleString("it")}</span>
               </div>
               {v.amazon > 0 && (
                 <div style={{ fontSize: "9px", color: "#e8a838" }}>🅰 {v.amazon.toLocaleString("it")}</div>
@@ -1984,7 +2019,7 @@ function ModuloLanciSettimanali({ token, titoli, prenotato, canali }) {
               <th style={css.th}>Autore</th>
               <th style={css.th}>€</th>
               <th style={css.th}>Cedole</th>
-              <th style={{ ...css.th, cursor: "pointer" }} onClick={() => toggleSort("prenotato_iscrizione")}>Iscriz.{sortIcon("prenotato_iscrizione")}</th>
+              <th style={{ ...css.th, cursor: "pointer" }} onClick={() => toggleSort("prenotato_iscrizione")}>Lanciate{sortIcon("prenotato_iscrizione")}</th>
               {kpi.haTrasmesso && <th style={{ ...css.th, cursor: "pointer" }} onClick={() => toggleSort("prenotato_trasmesso")}>Trasm.{sortIcon("prenotato_trasmesso")}</th>}
               <th style={{ ...css.th, cursor: "pointer" }} onClick={() => toggleSort("pren_fine_giro")}>Fine Giro{sortIcon("pren_fine_giro")}</th>
               <th style={{ ...css.th, cursor: "pointer", color: "#e8a838" }} onClick={() => toggleSort("pren_amazon")}>Amazon{sortIcon("pren_amazon")}</th>
@@ -2002,9 +2037,23 @@ function ModuloLanciSettimanali({ token, titoli, prenotato, canali }) {
                 <td style={{ ...css.td, color: T.textMid, maxWidth: 130, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{r.autore}</td>
                 <td style={{ ...css.td, whiteSpace: "nowrap" }}>€ {(r.prezzo || 0).toFixed(2)}</td>
                 <td style={{ ...css.td, fontSize: "10px", color: T.textMid, maxWidth: 120 }}>
-                  {r.cedole.length > 0 ? r.cedole.map((c, ci) => (
-                    <span key={ci}>{ci > 0 && <br />}{c}</span>
-                  )) : "—"}
+                  {r.is_live_cedole ? (
+                    r.cedole.map((c, ci) => <span key={ci}>{ci > 0 && <br />}{c}</span>)
+                  ) : editCell?.id === r.id && editCell?.field === "cedole" ? (
+                    <div style={{ display: "flex", gap: 3, alignItems: "center" }}>
+                      <input style={{ ...css.input, width: 90, padding: "2px 5px", fontSize: "10px" }} value={editCell.value} autoFocus
+                        onChange={e => setEditCell(p => ({ ...p, value: e.target.value }))}
+                        onKeyDown={e => { if (e.key === "Enter") saveManualCell(r.id, "cedole", editCell.value); if (e.key === "Escape") setEditCell(null); }}
+                        placeholder="es. 26_1_1A" />
+                      <button style={{ ...css.btn("accent"), padding: "1px 5px", fontSize: "10px" }} onClick={() => saveManualCell(r.id, "cedole", editCell.value)}>✓</button>
+                    </div>
+                  ) : (
+                    <div style={{ cursor: "pointer", display: "flex", alignItems: "center", gap: 4 }}
+                      onClick={() => setEditCell({ id: r.id, field: "cedole", value: r.cedole_manual || r.cedole.join(", ") || "" })}>
+                      {r.cedole.length > 0 ? r.cedole.map((c, ci) => <span key={ci} style={{ color: r.is_manual_cedole ? "#e8a838" : T.textMid }}>{ci > 0 && ", "}{c}</span>) : <span style={{ color: T.textDim }}>—</span>}
+                      <span style={{ color: T.accent, fontSize: "10px" }}>✎</span>
+                    </div>
+                  )}
                 </td>
                 <td style={{ ...css.td, fontWeight: "600" }}>{(r.prenotato_iscrizione || 0).toLocaleString("it")}</td>
                 {kpi.haTrasmesso && (
@@ -2012,11 +2061,41 @@ function ModuloLanciSettimanali({ token, titoli, prenotato, canali }) {
                     {r.prenotato_trasmesso != null ? r.prenotato_trasmesso.toLocaleString("it") : "—"}
                   </td>
                 )}
-                <td style={{ ...css.td, color: r.pren_fine_giro > 0 ? T.purple : T.textDim, fontWeight: "600" }}>
-                  {r.pren_fine_giro > 0 ? r.pren_fine_giro.toLocaleString("it") : "—"}
+                <td style={{ ...css.td, fontWeight: "600" }}>
+                  {r.is_live_fg ? (
+                    <span style={{ color: T.purple }}>{r.pren_fine_giro.toLocaleString("it")}</span>
+                  ) : editCell?.id === r.id && editCell?.field === "fg" ? (
+                    <div style={{ display: "flex", gap: 3, alignItems: "center" }}>
+                      <input type="number" style={{ ...css.input, width: 70, padding: "2px 5px", fontSize: "11px" }} value={editCell.value} autoFocus
+                        onChange={e => setEditCell(p => ({ ...p, value: e.target.value }))}
+                        onKeyDown={e => { if (e.key === "Enter") saveManualCell(r.id, "fg", editCell.value); if (e.key === "Escape") setEditCell(null); }} />
+                      <button style={{ ...css.btn("accent"), padding: "1px 5px", fontSize: "10px" }} onClick={() => saveManualCell(r.id, "fg", editCell.value)}>✓</button>
+                    </div>
+                  ) : (
+                    <div style={{ cursor: "pointer", display: "flex", alignItems: "center", gap: 4 }}
+                      onClick={() => setEditCell({ id: r.id, field: "fg", value: String(r.pren_fine_giro_manual || r.pren_fine_giro || "") })}>
+                      <span style={{ color: r.pren_fine_giro > 0 ? (r.is_manual_fg ? "#e8a838" : T.purple) : T.textDim }}>{r.pren_fine_giro > 0 ? r.pren_fine_giro.toLocaleString("it") : "—"}</span>
+                      <span style={{ color: T.accent, fontSize: "10px" }}>✎</span>
+                    </div>
+                  )}
                 </td>
-                <td style={{ ...css.td, color: r.pren_amazon > 0 ? "#e8a838" : T.textDim, fontWeight: "600" }}>
-                  {r.pren_amazon > 0 ? r.pren_amazon.toLocaleString("it") : "—"}
+                <td style={{ ...css.td, fontWeight: "600" }}>
+                  {r.is_live_amazon ? (
+                    <span style={{ color: "#e8a838" }}>{r.pren_amazon.toLocaleString("it")}</span>
+                  ) : editCell?.id === r.id && editCell?.field === "amazon" ? (
+                    <div style={{ display: "flex", gap: 3, alignItems: "center" }}>
+                      <input type="number" style={{ ...css.input, width: 70, padding: "2px 5px", fontSize: "11px" }} value={editCell.value} autoFocus
+                        onChange={e => setEditCell(p => ({ ...p, value: e.target.value }))}
+                        onKeyDown={e => { if (e.key === "Enter") saveManualCell(r.id, "amazon", editCell.value); if (e.key === "Escape") setEditCell(null); }} />
+                      <button style={{ ...css.btn("accent"), padding: "1px 5px", fontSize: "10px" }} onClick={() => saveManualCell(r.id, "amazon", editCell.value)}>✓</button>
+                    </div>
+                  ) : (
+                    <div style={{ cursor: "pointer", display: "flex", alignItems: "center", gap: 4 }}
+                      onClick={() => setEditCell({ id: r.id, field: "amazon", value: String(r.pren_amazon_manual || r.pren_amazon || "") })}>
+                      <span style={{ color: r.pren_amazon > 0 ? (r.is_manual_amazon ? "#e8a838" : "#e8a838") : T.textDim }}>{r.pren_amazon > 0 ? r.pren_amazon.toLocaleString("it") : "—"}</span>
+                      <span style={{ color: T.accent, fontSize: "10px" }}>✎</span>
+                    </div>
+                  )}
                 </td>
                 <td style={{ ...css.td, fontWeight: "700", color: r.teorico >= 2000 ? T.green : T.text }}>
                   {r.teorico > 0 ? r.teorico.toLocaleString("it") : "—"}
