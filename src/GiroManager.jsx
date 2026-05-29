@@ -1371,7 +1371,8 @@ function ModuloAvanzamentoNovita({ titoli, prenotato, canali, token, ruolo }) {
   // KPI Dashboard
   const MESI_NOMI = ["Gen","Feb","Mar","Apr","Mag","Giu","Lug","Ago","Set","Ott","Nov","Dic"];
 
-  // Fatturato anno corrente calcolato dai dati app (valore lancio per mese di data_messa_in_vendita)
+  // Fatturato anno corrente calcolato dai dati app (solo mesi fino al corrente)
+  const meseOggi = new Date().getMonth() + 1;
   const annoCorrentePerMese = useMemo(() => {
     const perMese = {};
     novitaFiltrate.forEach(n => {
@@ -1379,10 +1380,11 @@ function ModuloAvanzamentoNovita({ titoli, prenotato, canali, token, ruolo }) {
       const d = new Date(n.data_messa_in_vendita);
       if (isNaN(d)) return;
       const m = d.getMonth() + 1; // 1-12
+      if (m > meseOggi) return; // mesi futuri esclusi dal consuntivo
       perMese[m] = (perMese[m] || 0) + (n.valore_lancio || 0);
     });
     return perMese;
-  }, [novitaFiltrate]);
+  }, [novitaFiltrate, meseOggi]);
 
   // Fatturato anno precedente (da DB, caricato dall'utente)
   const annoPrecPerMese = useMemo(() => {
