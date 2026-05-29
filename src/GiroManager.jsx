@@ -1699,7 +1699,7 @@ function ModuloAvanzamentoNovita({ titoli, prenotato, canali, token, ruolo }) {
                   <input type="file" accept=".csv,.txt,.tsv" style={{ display: "none" }} onChange={handleCSVUpload} disabled={uploading} />
                 </label>
                 <label style={{ ...css.btn(), cursor: "pointer", display: "inline-flex", alignItems: "center", gap: 4, borderColor: T.purple, color: T.purple }}>
-                  ↑ Fatturato {annoPrev}
+                  ↑ Fatturato Anno Precedente
                   <input type="file" accept=".xlsx,.xls,.csv" style={{ display: "none" }} onChange={handleFatturatoUpload} disabled={uploading} />
                 </label>
               </>
