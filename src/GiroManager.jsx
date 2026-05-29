@@ -2100,9 +2100,9 @@ function ModuloLanciSettimanali({ token, titoli, prenotato, canali }) {
   };
 
   // Upload handler
-  const handleUpload = async (e) => {
+  const handleUpload = async (e, mode) => {
     const file = e.target.files?.[0];
-    if (!file || !uploadMode) return;
+    if (!file || !mode) return;
     setUploading(true);
     try {
       const XLSX = window.XLSX;
@@ -2123,7 +2123,7 @@ function ModuloLanciSettimanali({ token, titoli, prenotato, canali }) {
         else if (h === "n. lancio" || (h.includes("n.") && h.includes("lancio"))) col.num = i;
         else if (h.includes("ean")) col.ean = i;
         else if (h === "cod. editore" || (h.includes("cod") && h.includes("edit"))) col.cod_ed = i;
-        else if (h.includes("descr") && h.includes("edit") || h === "editore") col.editore = i;
+        else if ((h.includes("descr") && h.includes("edit")) || h === "editore") col.editore = i;
         else if (h === "titolo") col.titolo = i;
         else if (h === "autore") col.autore = i;
         else if (h === "prezzo") col.prezzo = i;
@@ -2131,7 +2131,7 @@ function ModuloLanciSettimanali({ token, titoli, prenotato, canali }) {
       });
       if (col.ean === undefined) throw new Error("Colonna EAN non trovata");
 
-      if (uploadMode === "iscrizione") {
+      if (mode === "iscrizione") {
         const payload = dataRows.map(r => {
           const ean = String(r[col.ean] || "").replace(/\.0$/, "").trim();
           if (ean.length < 10) return null;
@@ -2214,7 +2214,7 @@ function ModuloLanciSettimanali({ token, titoli, prenotato, canali }) {
       <div style={{ color: T.textMid, fontSize: "14px", textAlign: "center", maxWidth: 400 }}>Nessun lancio caricato. Carica il file del lancio.</div>
       <label style={{ ...css.btn("accent"), cursor: "pointer", padding: "10px 24px", fontSize: "13px" }}>
         ↑ Carica primo lancio
-        <input type="file" accept=".xlsx,.xls,.csv" style={{ display: "none" }} onChange={(e) => { setUploadMode("iscrizione"); handleUpload(e); }} />
+        <input type="file" accept=".xlsx,.xls,.csv" style={{ display: "none" }} onChange={(e) => handleUpload(e, "iscrizione")} />
       </label>
     </div>
   );
@@ -2241,11 +2241,11 @@ function ModuloLanciSettimanali({ token, titoli, prenotato, canali }) {
         <div style={{ marginLeft: "auto", display: "flex", gap: 8 }}>
           <label style={{ ...css.btn("accent"), cursor: "pointer", display: "inline-flex", alignItems: "center", gap: 4 }}>
             {uploading && uploadMode === "iscrizione" ? "..." : "↑ Lancio"}
-            <input type="file" accept=".xlsx,.xls,.csv" style={{ display: "none" }} onChange={(e) => { setUploadMode("iscrizione"); handleUpload(e); }} disabled={uploading} />
+            <input type="file" accept=".xlsx,.xls,.csv" style={{ display: "none" }} onChange={(e) => handleUpload(e, "iscrizione")} disabled={uploading} />
           </label>
           <label style={{ ...css.btn(), cursor: "pointer", display: "inline-flex", alignItems: "center", gap: 4, borderColor: T.green, color: T.green }}>
             {uploading && uploadMode === "trasmesso" ? "..." : "↑ Trasmesso"}
-            <input type="file" accept=".xlsx,.xls,.csv" style={{ display: "none" }} onChange={(e) => { setUploadMode("trasmesso"); handleUpload(e); }} disabled={uploading} />
+            <input type="file" accept=".xlsx,.xls,.csv" style={{ display: "none" }} onChange={(e) => handleUpload(e, "trasmesso")} disabled={uploading} />
           </label>
           <button style={css.btn()} onClick={exportExcel}>↓ Excel</button>
         </div>
