@@ -1095,6 +1095,8 @@ function ModuloAvanzamentoNovita({ titoli, prenotato, canali, token, ruolo }) {
   const [search, setSearch] = useState("");
   const [sortKey, setSortKey] = useState("cedola");
   const [sortDir, setSortDir] = useState("asc");
+  const [filterDataVendita, setFilterDataVendita] = useState("tutte");
+  const [filterCopieLanciate, setFilterCopieLanciate] = useState("tutte");
   const [editingEan, setEditingEan] = useState(null);
   const [editingVal, setEditingVal] = useState("");
   const [toast, setToast] = useState(null);
@@ -1212,6 +1214,19 @@ function ModuloAvanzamentoNovita({ titoli, prenotato, canali, token, ruolo }) {
       .filter(n => filterNumLancio === "tutti" || String(n.num_lancio) === String(filterNumLancio))
       .filter(n => filterCedola === "tutti" || n.nome_cedola === filterCedola)
       .filter(n => {
+        if (filterDataVendita === "tutte") return true;
+        if (filterDataVendita === "con_data") return !!n.data_messa_in_vendita;
+        if (filterDataVendita === "senza_data") return !n.data_messa_in_vendita;
+        return true;
+      })
+      .filter(n => {
+        if (filterCopieLanciate === "tutte") return true;
+        if (filterCopieLanciate === "con_copie") return n.copie_lanciate > 0;
+        if (filterCopieLanciate === "senza_copie") return !n.copie_lanciate || n.copie_lanciate === 0;
+        if (filterCopieLanciate === "da_compilare") return !!n.data_messa_in_vendita && (!n.copie_lanciate || n.copie_lanciate === 0);
+        return true;
+      })
+      .filter(n => {
         if (!search) return true;
         const q = search.toLowerCase();
         return n.ean?.toLowerCase().includes(q) || n.titolo?.toLowerCase().includes(q) || n.autore?.toLowerCase().includes(q) || n.editore?.toLowerCase().includes(q);
@@ -1222,9 +1237,15 @@ function ModuloAvanzamentoNovita({ titoli, prenotato, canali, token, ruolo }) {
       if (sortKey === "cedola") cmp = (a.nome_cedola || "").localeCompare(b.nome_cedola || "");
       else if (sortKey === "prenotato") cmp = (a.prenotato_giri || 0) - (b.prenotato_giri || 0);
       else if (sortKey === "num_lancio") cmp = (a.num_lancio || 0) - (b.num_lancio || 0);
+      else if (sortKey === "data_vendita") {
+        const da = a.data_messa_in_vendita || "";
+        const db = b.data_messa_in_vendita || "";
+        cmp = da.localeCompare(db);
+      }
+      else if (sortKey === "copie_lanciate") cmp = (a.copie_lanciate || 0) - (b.copie_lanciate || 0);
       return sortDir === "asc" ? cmp : -cmp;
     });
-  }, [novitaArricchite, filterAnno, filterEditore, filterNumLancio, filterCedola, search, sortKey, sortDir]);
+  }, [novitaArricchite, filterAnno, filterEditore, filterNumLancio, filterCedola, filterDataVendita, filterCopieLanciate, search, sortKey, sortDir]);
 
   const editoriList = useMemo(() => [...new Set(novitaArricchite.filter(n => !filterAnno || getAnnoRecord(n) === filterAnno).map(n => n.editore).filter(Boolean))].sort(), [novitaArricchite, filterAnno]);
   const numLanciList = useMemo(() => [...new Set(novitaArricchite.filter(n => !filterAnno || getAnnoRecord(n) === filterAnno).map(n => n.num_lancio).filter(Boolean))].sort((a, b) => Number(a) - Number(b)), [novitaArricchite, filterAnno]);
@@ -1509,6 +1530,17 @@ function ModuloAvanzamentoNovita({ titoli, prenotato, canali, token, ruolo }) {
           <SearchableSelect value={filterNumLancio} onChange={setFilterNumLancio} options={numLanciList.map(String)} placeholder="Tutti i lanci" width={140} />
           <SearchableSelect value={filterCedola} onChange={setFilterCedola} options={cedoleList} placeholder="Tutte le cedole" width={160} />
           <input style={{ ...css.input, width: 180 }} placeholder="Cerca EAN / titolo..." value={search} onChange={e => setSearch(e.target.value)} />
+          <select style={{ ...css.input, fontSize: "11px", color: filterDataVendita !== "tutte" ? T.accent : T.textMid }} value={filterDataVendita} onChange={e => setFilterDataVendita(e.target.value)}>
+            <option value="tutte">Data: tutte</option>
+            <option value="con_data">Con data vendita</option>
+            <option value="senza_data">Senza data vendita</option>
+          </select>
+          <select style={{ ...css.input, fontSize: "11px", color: filterCopieLanciate !== "tutte" ? "#e8a838" : T.textMid }} value={filterCopieLanciate} onChange={e => setFilterCopieLanciate(e.target.value)}>
+            <option value="tutte">Copie: tutte</option>
+            <option value="con_copie">Con copie lanciate</option>
+            <option value="senza_copie">Senza copie lanciate</option>
+            <option value="da_compilare">⚠ Da compilare (data sì, copie no)</option>
+          </select>
           <div style={{ marginLeft: "auto", display: "flex", gap: 8 }}>
             {ruolo !== "agente" && (
               <>
@@ -1552,9 +1584,9 @@ function ModuloAvanzamentoNovita({ titoli, prenotato, canali, token, ruolo }) {
               <th style={css.th}>€</th>
               <th style={{ ...css.th, cursor: "pointer" }} onClick={() => toggleSort("prenotato")}>Pren. Tot.{sortIcon("prenotato")}</th>
               <th style={{ ...css.th, cursor: "pointer" }} onClick={() => toggleSort("num_lancio")}>N. Lancio{sortIcon("num_lancio")}</th>
-              <th style={css.th}>Copie Lanc.</th>
+              <th style={{ ...css.th, cursor: "pointer" }} onClick={() => toggleSort("copie_lanciate")}>Copie Lanc.{sortIcon("copie_lanciate")}</th>
               <th style={css.th}>Val. Lancio</th>
-              <th style={css.th}>Data Vendita</th>
+              <th style={{ ...css.th, cursor: "pointer" }} onClick={() => toggleSort("data_vendita")}>Data Vendita{sortIcon("data_vendita")}</th>
             </tr>
           </thead>
           <tbody>
