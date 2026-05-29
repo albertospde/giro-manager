@@ -1122,27 +1122,109 @@ function ModuloAvanzamentoNovita({ titoli, prenotato, canali, token, ruolo }) {
 
   useEffect(() => { loadNovita(); }, [loadNovita]);
 
-  // Fatturato mensile per proiezione
+  // Fatturato mensile per proiezione (anno corrente + precedente)
+  const annoRif = filterAnno || new Date().getFullYear();
+  const annoPrev = annoRif - 1;
   const loadFatturato = useCallback(async () => {
     if (!token) return;
-    const anno = filterAnno || new Date().getFullYear();
-    const d = await sbFetch(`fatturato_lanci_mensile?anno=eq.${anno}&order=mese.asc`, token);
+    const d = await sbFetch(`fatturato_lanci_mensile?anno=in.(${annoRif},${annoPrev})&order=anno.asc,mese.asc`, token);
     if (Array.isArray(d)) setFatturato(d);
-  }, [token, filterAnno]);
+  }, [token, annoRif, annoPrev]);
   useEffect(() => { loadFatturato(); }, [loadFatturato]);
 
-  const saveFatturato = async (mese, valore) => {
-    const anno = filterAnno || new Date().getFullYear();
+  const saveFatturato = async (anno, mese, valore) => {
     await fetch(`${SUPABASE_URL}/rest/v1/fatturato_lanci_mensile`, {
       method: "POST",
       headers: { "apikey": SUPABASE_KEY, "Authorization": `Bearer ${token}`, "Content-Type": "application/json", "Prefer": "resolution=merge-duplicates" },
       body: JSON.stringify([{ anno, mese, fatturato: parseFloat(valore) || 0 }]),
     });
     setFatturato(prev => {
-      const existing = prev.find(f => f.mese === mese);
-      if (existing) return prev.map(f => f.mese === mese ? { ...f, fatturato: parseFloat(valore) || 0 } : f);
-      return [...prev, { anno, mese, fatturato: parseFloat(valore) || 0 }].sort((a, b) => a.mese - b.mese);
+      const existing = prev.find(f => f.anno === anno && f.mese === mese);
+      if (existing) return prev.map(f => (f.anno === anno && f.mese === mese) ? { ...f, fatturato: parseFloat(valore) || 0 } : f);
+      return [...prev, { anno, mese, fatturato: parseFloat(valore) || 0 }].sort((a, b) => a.anno - b.anno || a.mese - b.mese);
     });
+  };
+
+  // Upload fatturato anno precedente (Excel/CSV con colonne mese + fatturato)
+  const handleFatturatoUpload = async (e) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setUploading(true);
+    try {
+      const XLSX = window.XLSX;
+      const buf = await file.arrayBuffer();
+      const wb = XLSX.read(buf, { type: "array" });
+      const ws = wb.Sheets[wb.SheetNames[0]];
+      const rows = XLSX.utils.sheet_to_json(ws, { header: 1 });
+
+      // Cerca righe con dati mensili - formati accettati:
+      // Riga con nomi mese: Gen, Feb... o Gennaio, Febbraio... o 1, 2...
+      // Riga sotto con valori numerici
+      // OPPURE colonne: Mese | Fatturato
+      const mesiIt = { gen: 1, gennaio: 1, feb: 2, febbraio: 2, mar: 3, marzo: 3, apr: 4, aprile: 4, mag: 5, maggio: 5, giu: 6, giugno: 6, lug: 7, luglio: 7, ago: 8, agosto: 8, set: 9, settembre: 9, ott: 10, ottobre: 10, nov: 11, novembre: 11, dic: 12, dicembre: 12 };
+      const payload = [];
+
+      // Strategia 1: Cerca colonna "mese" e "fatturato/valore/importo"
+      const firstRow = rows[0]?.map(c => String(c || "").toLowerCase().trim()) || [];
+      let colMese = firstRow.findIndex(h => h === "mese" || h === "month");
+      let colVal = firstRow.findIndex(h => h.includes("fatturato") || h.includes("valore") || h.includes("importo") || h.includes("totale") || h.includes("revenue"));
+
+      if (colMese >= 0 && colVal >= 0) {
+        for (let i = 1; i < rows.length; i++) {
+          const r = rows[i];
+          if (!r || !r[colMese]) continue;
+          const meseStr = String(r[colMese]).toLowerCase().trim();
+          const mese = mesiIt[meseStr] || parseInt(meseStr) || null;
+          const val = parseFloat(String(r[colVal] || "0").replace(/\./g, "").replace(",", ".")) || 0;
+          if (mese && mese >= 1 && mese <= 12 && val > 0) payload.push({ anno: annoPrev, mese, fatturato: val });
+        }
+      }
+
+      // Strategia 2: Riga orizzontale — cerca 12 valori numerici consecutivi
+      if (payload.length === 0) {
+        for (const row of rows) {
+          if (!row || row.length < 12) continue;
+          // Cerca 12 celle numeriche consecutive
+          const nums = row.map(c => parseFloat(String(c || "0").replace(/\./g, "").replace(",", ".")) || 0);
+          const nonZero = nums.filter(n => n > 0);
+          if (nonZero.length >= 6) {
+            // Probabilmente i 12 mesi
+            for (let m = 0; m < 12 && m < nums.length; m++) {
+              if (nums[m] > 0) payload.push({ anno: annoPrev, mese: m + 1, fatturato: nums[m] });
+            }
+            break;
+          }
+        }
+      }
+
+      // Strategia 3: Righe verticali — cerca nomi mese nella prima colonna e valore nella seconda
+      if (payload.length === 0) {
+        for (const row of rows) {
+          if (!row || row.length < 2) continue;
+          const meseStr = String(row[0] || "").toLowerCase().trim();
+          const mese = mesiIt[meseStr] || null;
+          if (mese) {
+            const val = parseFloat(String(row[1] || "0").replace(/\./g, "").replace(",", ".")) || 0;
+            if (val > 0) payload.push({ anno: annoPrev, mese, fatturato: val });
+          }
+        }
+      }
+
+      if (payload.length === 0) throw new Error("Nessun dato mensile trovato. Usa un formato con colonne Mese/Fatturato, o 12 valori mensili.");
+
+      // Upsert su Supabase
+      await fetch(`${SUPABASE_URL}/rest/v1/fatturato_lanci_mensile`, {
+        method: "POST",
+        headers: { "apikey": SUPABASE_KEY, "Authorization": `Bearer ${token}`, "Content-Type": "application/json", "Prefer": "resolution=merge-duplicates" },
+        body: JSON.stringify(payload),
+      });
+      await loadFatturato();
+      showToast(`Fatturato ${annoPrev}: ${payload.length} mesi importati`);
+    } catch (err) {
+      showToast(err.message, "err");
+    }
+    setUploading(false);
+    e.target.value = "";
   };
 
   // Dati: SOLO titoli dai giri, arricchiti con dati lancio da titoli_novita (CSV)
@@ -1277,6 +1359,28 @@ function ModuloAvanzamentoNovita({ titoli, prenotato, canali, token, ruolo }) {
   const cedoleList = useMemo(() => [...new Set(novitaArricchite.filter(n => !filterAnno || getAnnoRecord(n) === filterAnno).map(n => n.nome_cedola).filter(c => c && c !== "—"))].sort(), [novitaArricchite, filterAnno]);
 
   // KPI Dashboard
+  const MESI_NOMI = ["Gen","Feb","Mar","Apr","Mag","Giu","Lug","Ago","Set","Ott","Nov","Dic"];
+
+  // Fatturato anno corrente calcolato dai dati app (valore lancio per mese di data_messa_in_vendita)
+  const annoCorrentePerMese = useMemo(() => {
+    const perMese = {};
+    novitaFiltrate.forEach(n => {
+      if (!n.data_messa_in_vendita || !n.copie_lanciate || n.copie_lanciate === 0) return;
+      const d = new Date(n.data_messa_in_vendita);
+      if (isNaN(d)) return;
+      const m = d.getMonth() + 1; // 1-12
+      perMese[m] = (perMese[m] || 0) + (n.valore_lancio || 0);
+    });
+    return perMese;
+  }, [novitaFiltrate]);
+
+  // Fatturato anno precedente (da DB, caricato dall'utente)
+  const annoPrecPerMese = useMemo(() => {
+    const perMese = {};
+    fatturato.filter(f => f.anno === annoPrev).forEach(f => { perMese[f.mese] = f.fatturato || 0; });
+    return perMese;
+  }, [fatturato, annoPrev]);
+
   const kpi = useMemo(() => {
     const totTitoli = novitaFiltrate.length;
 
@@ -1290,34 +1394,38 @@ function ModuloAvanzamentoNovita({ titoli, prenotato, canali, token, ruolo }) {
     const numSbloccati = sbloccati.length;
     const valoreSbloccato = sbloccati.reduce((s, n) => s + (n.valore_lancio || 0), 0);
 
-    // Totale copie/valore trasmessi (lanciati + sbloccati)
     const totTrasmessi = numLanciati + numSbloccati;
     const pctAvanzamento = totTitoli > 0 ? Math.round(totTrasmessi / totTitoli * 100) : 0;
-
-    // Non ancora lanciati o sbloccati
     const nonTrasmessi = totTitoli - totTrasmessi;
 
     // Valore prenotato
     const valPrenotato = novitaFiltrate.reduce((s, n) => s + (n.prezzo || 0) * n.prenotato_giri, 0);
 
-    // Prenotato non ancora lanciato: titoli con prenotato > 0 ma copie_lanciate = 0
+    // Prenotato non ancora lanciato
     const nonLanciati = novitaFiltrate.filter(n => n.prenotato_giri > 0 && (!n.copie_lanciate || n.copie_lanciate === 0));
     const copieNonLanciate = nonLanciati.reduce((s, n) => s + n.prenotato_giri, 0);
     const valNonLanciato = nonLanciati.reduce((s, n) => s + (n.prezzo || 0) * n.prenotato_giri, 0);
 
-    // Proiezione anno
+    // Proiezione basata su anno precedente
     const oggi = new Date();
-    const meseCorrente = oggi.getMonth() + 1; // 1-12
-    const fatturatoYTD = fatturato.reduce((s, f) => s + (f.fatturato || 0), 0);
-    const mesiConFatturato = fatturato.filter(f => f.fatturato > 0).length;
-    const mediaFatturatoMensile = mesiConFatturato > 0 ? fatturatoYTD / mesiConFatturato : 0;
-    // Pipeline: valore prenotato non ancora lanciato
+    const meseCorrente = oggi.getMonth() + 1;
+
+    // YTD anno corrente (dai dati app)
+    const ytdCorrente = Object.values(annoCorrentePerMese).reduce((s, v) => s + v, 0);
+    // Totale anno precedente
+    const totaleAnnoPrev = Object.values(annoPrecPerMese).reduce((s, v) => s + v, 0);
+    // YTD anno precedente (stessi mesi)
+    const ytdPrev = Object.entries(annoPrecPerMese).filter(([m]) => Number(m) <= meseCorrente).reduce((s, [, v]) => s + v, 0);
+    // Mesi futuri anno precedente (dopo mese corrente)
+    const futuriPrev = Object.entries(annoPrecPerMese).filter(([m]) => Number(m) > meseCorrente).reduce((s, [, v]) => s + v, 0);
+    // Trend: crescita anno corrente vs anno precedente allo stesso punto
+    const trend = ytdPrev > 0 ? ytdCorrente / ytdPrev : 1;
+    // Pipeline (prenotato non lanciato)
     const pipeline = valNonLanciato;
-    // Mesi futuri senza fatturato ancora
-    const mesiFuturi = Math.max(0, 12 - meseCorrente);
-    // Stima: fatturato YTD + pipeline + (media mensile × mesi senza dati rimanenti, considerando giro 4 e 5)
-    // Giro 4 tipicamente gen-mar, giro 5 ott-dic — i mesi futuri avranno lancio medio
-    const proiezione = fatturatoYTD + pipeline + (mediaFatturatoMensile * Math.max(0, mesiFuturi - 2));
+    // Proiezione = YTD corrente + pipeline + (mesi futuri anno prec × trend)
+    const proiezione = ytdCorrente + pipeline + (futuriPrev * trend);
+
+    const haFatturatoPrec = totaleAnnoPrev > 0;
 
     return {
       totTitoli, nonTrasmessi,
@@ -1326,9 +1434,9 @@ function ModuloAvanzamentoNovita({ titoli, prenotato, canali, token, ruolo }) {
       numSbloccati, valoreSbloccato,
       totTrasmessi, pctAvanzamento,
       copieNonLanciate, valNonLanciato, numNonLanciati: nonLanciati.length,
-      fatturatoYTD, mediaFatturatoMensile, pipeline, proiezione, mesiFuturi, mesiConFatturato,
+      ytdCorrente, totaleAnnoPrev, ytdPrev, trend, pipeline, proiezione, haFatturatoPrec, meseCorrente,
     };
-  }, [novitaFiltrate, fatturato]);
+  }, [novitaFiltrate, annoCorrentePerMese, annoPrecPerMese]);
 
   // Upload CSV
   const handleCSVUpload = async (e) => {
@@ -1590,6 +1698,10 @@ function ModuloAvanzamentoNovita({ titoli, prenotato, canali, token, ruolo }) {
                   {uploading ? "Caricamento..." : "↑ Upload CSV"}
                   <input type="file" accept=".csv,.txt,.tsv" style={{ display: "none" }} onChange={handleCSVUpload} disabled={uploading} />
                 </label>
+                <label style={{ ...css.btn(), cursor: "pointer", display: "inline-flex", alignItems: "center", gap: 4, borderColor: T.purple, color: T.purple }}>
+                  ↑ Fatturato {annoPrev}
+                  <input type="file" accept=".xlsx,.xls,.csv" style={{ display: "none" }} onChange={handleFatturatoUpload} disabled={uploading} />
+                </label>
               </>
             )}
             <button style={css.btn()} onClick={exportExcel}>↓ Excel</button>
@@ -1619,43 +1731,96 @@ function ModuloAvanzamentoNovita({ titoli, prenotato, canali, token, ruolo }) {
             </div>
             <div style={{ color: T.purple, fontSize: "24px", fontWeight: "700", lineHeight: 1, marginBottom: 4 }}>€ {kpi.proiezione.toLocaleString("it", { maximumFractionDigits: 0 })}</div>
             <div style={{ color: T.textMid, fontSize: "10px" }}>
-              YTD € {kpi.fatturatoYTD.toLocaleString("it", { maximumFractionDigits: 0 })} + pipeline € {kpi.pipeline.toLocaleString("it", { maximumFractionDigits: 0 })}
+              {kpi.haFatturatoPrec ? `trend ${kpi.trend >= 1 ? "+" : ""}${Math.round((kpi.trend - 1) * 100)}% vs ${annoPrev}` : "carica fatturato anno prec."}
             </div>
           </div>
         </div>
         {/* SEZIONE PROIEZIONE ESPANDIBILE */}
         {showProiezione && (
           <div style={{ marginTop: 14, padding: 16, background: T.bg, border: `1px solid ${T.border}`, borderRadius: 6 }}>
-            <div style={{ color: T.purple, fontSize: "11px", fontWeight: "700", letterSpacing: "0.08em", textTransform: "uppercase", marginBottom: 12 }}>Fatturato lanci mensile {filterAnno || new Date().getFullYear()}</div>
-            <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginBottom: 12 }}>
-              {["Gen","Feb","Mar","Apr","Mag","Giu","Lug","Ago","Set","Ott","Nov","Dic"].map((nome, idx) => {
-                const mese = idx + 1;
-                const f = fatturato.find(f => f.mese === mese);
-                const val = f?.fatturato || 0;
-                return (
-                  <div key={mese} style={{ background: T.surface, border: `1px solid ${T.border}`, borderRadius: 4, padding: "8px 10px", minWidth: 80, textAlign: "center" }}>
-                    <div style={{ color: T.textMid, fontSize: "9px", fontWeight: "700", letterSpacing: "0.06em", marginBottom: 4 }}>{nome}</div>
-                    <input
-                      type="text"
-                      style={{ ...css.input, width: 70, textAlign: "center", fontSize: "12px", fontWeight: "600", color: val > 0 ? T.purple : T.textDim, padding: "3px 4px" }}
-                      value={val > 0 ? val.toLocaleString("it") : ""}
-                      placeholder="—"
-                      onFocus={e => { e.target.value = val > 0 ? String(val) : ""; }}
-                      onBlur={e => { saveFatturato(mese, e.target.value); }}
-                      onKeyDown={e => { if (e.key === "Enter") e.target.blur(); }}
-                    />
-                  </div>
-                );
-              })}
+            <div style={{ color: T.purple, fontSize: "11px", fontWeight: "700", letterSpacing: "0.08em", textTransform: "uppercase", marginBottom: 12 }}>
+              Confronto {annoPrev} vs {annoRif} — Proiezione
             </div>
-            <div style={{ display: "flex", gap: 20, fontSize: "11px", color: T.textMid, flexWrap: "wrap" }}>
-              <span>📊 <strong style={{ color: T.purple }}>YTD:</strong> € {kpi.fatturatoYTD.toLocaleString("it", { maximumFractionDigits: 0 })}</span>
-              <span>📈 <strong style={{ color: T.accent }}>Media mensile:</strong> € {kpi.mediaFatturatoMensile.toLocaleString("it", { maximumFractionDigits: 0 })}{kpi.mesiConFatturato > 0 && ` (${kpi.mesiConFatturato} mesi)`}</span>
-              <span>📦 <strong style={{ color: "#e8a838" }}>Pipeline:</strong> € {kpi.pipeline.toLocaleString("it", { maximumFractionDigits: 0 })} (pren. da lanciare)</span>
-              <span>🔮 <strong style={{ color: T.purple }}>Proiezione:</strong> € {kpi.proiezione.toLocaleString("it", { maximumFractionDigits: 0 })} (YTD + pipeline + stima {kpi.mesiFuturi > 2 ? kpi.mesiFuturi - 2 : 0} mesi futuri)</span>
+            {/* Tabella confronto mensile */}
+            <div style={{ overflowX: "auto", marginBottom: 14 }}>
+              <table style={{ ...css.table, fontSize: "11px" }}>
+                <thead>
+                  <tr>
+                    <th style={css.th}></th>
+                    {MESI_NOMI.map((m, i) => <th key={i} style={{ ...css.th, textAlign: "center", minWidth: 60, color: (i + 1) <= kpi.meseCorrente ? T.text : T.textDim }}>{m}</th>)}
+                    <th style={{ ...css.th, textAlign: "center", fontWeight: "700" }}>Totale</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {/* Riga anno precedente */}
+                  <tr>
+                    <td style={{ ...css.td, fontWeight: "700", color: T.textMid, whiteSpace: "nowrap" }}>{annoPrev}</td>
+                    {MESI_NOMI.map((_, i) => {
+                      const val = annoPrecPerMese[i + 1] || 0;
+                      return <td key={i} style={{ ...css.td, textAlign: "right", color: val > 0 ? T.textMid : T.textDim }}>{val > 0 ? `€ ${Math.round(val).toLocaleString("it")}` : "—"}</td>;
+                    })}
+                    <td style={{ ...css.td, textAlign: "right", fontWeight: "700", color: T.textMid }}>€ {kpi.totaleAnnoPrev.toLocaleString("it", { maximumFractionDigits: 0 })}</td>
+                  </tr>
+                  {/* Riga anno corrente */}
+                  <tr>
+                    <td style={{ ...css.td, fontWeight: "700", color: T.accent, whiteSpace: "nowrap" }}>{annoRif}</td>
+                    {MESI_NOMI.map((_, i) => {
+                      const val = annoCorrentePerMese[i + 1] || 0;
+                      const prev = annoPrecPerMese[i + 1] || 0;
+                      const isFuture = (i + 1) > kpi.meseCorrente;
+                      return <td key={i} style={{ ...css.td, textAlign: "right", color: isFuture ? T.textDim : val > prev ? T.green : val > 0 ? T.accent : T.textDim, fontWeight: val > prev ? "700" : "400" }}>
+                        {val > 0 ? `€ ${Math.round(val).toLocaleString("it")}` : "—"}
+                      </td>;
+                    })}
+                    <td style={{ ...css.td, textAlign: "right", fontWeight: "700", color: T.accent }}>€ {kpi.ytdCorrente.toLocaleString("it", { maximumFractionDigits: 0 })}</td>
+                  </tr>
+                  {/* Riga differenza % */}
+                  {kpi.haFatturatoPrec && (
+                    <tr>
+                      <td style={{ ...css.td, fontWeight: "600", color: T.textDim, fontSize: "10px" }}>Δ%</td>
+                      {MESI_NOMI.map((_, i) => {
+                        const cur = annoCorrentePerMese[i + 1] || 0;
+                        const prev = annoPrecPerMese[i + 1] || 0;
+                        if (!prev || !cur) return <td key={i} style={{ ...css.td, textAlign: "right", color: T.textDim }}>—</td>;
+                        const delta = Math.round((cur / prev - 1) * 100);
+                        return <td key={i} style={{ ...css.td, textAlign: "right", fontSize: "10px", fontWeight: "700", color: delta >= 0 ? T.green : T.red }}>{delta >= 0 ? "+" : ""}{delta}%</td>;
+                      })}
+                      <td style={{ ...css.td, textAlign: "right", fontSize: "10px", fontWeight: "700", color: kpi.trend >= 1 ? T.green : T.red }}>
+                        {kpi.ytdPrev > 0 ? `${kpi.trend >= 1 ? "+" : ""}${Math.round((kpi.trend - 1) * 100)}%` : "—"}
+                      </td>
+                    </tr>
+                  )}
+                </tbody>
+              </table>
             </div>
-            <div style={{ marginTop: 8, fontSize: "10px", color: T.textDim, fontStyle: "italic" }}>
-              La proiezione considera il fatturato effettivo, il prenotato non ancora lanciato (pipeline), e una stima dei mesi rimanenti basata sulla media mensile — includendo i giri 4 e 5 non ancora prenotati.
+            {/* Riepilogo proiezione */}
+            <div style={{ display: "flex", gap: 16, fontSize: "11px", color: T.textMid, flexWrap: "wrap", padding: "12px 0", borderTop: `1px solid ${T.border}` }}>
+              <div>
+                <div style={{ fontSize: "9px", textTransform: "uppercase", letterSpacing: "0.06em", marginBottom: 3 }}>YTD {annoRif}</div>
+                <div style={{ color: T.accent, fontWeight: "700", fontSize: "16px" }}>€ {kpi.ytdCorrente.toLocaleString("it", { maximumFractionDigits: 0 })}</div>
+              </div>
+              {kpi.haFatturatoPrec && <div>
+                <div style={{ fontSize: "9px", textTransform: "uppercase", letterSpacing: "0.06em", marginBottom: 3 }}>YTD {annoPrev}</div>
+                <div style={{ color: T.textMid, fontWeight: "700", fontSize: "16px" }}>€ {kpi.ytdPrev.toLocaleString("it", { maximumFractionDigits: 0 })}</div>
+              </div>}
+              <div>
+                <div style={{ fontSize: "9px", textTransform: "uppercase", letterSpacing: "0.06em", marginBottom: 3 }}>Pipeline (pren. da lanciare)</div>
+                <div style={{ color: "#e8a838", fontWeight: "700", fontSize: "16px" }}>€ {kpi.pipeline.toLocaleString("it", { maximumFractionDigits: 0 })}</div>
+              </div>
+              {kpi.haFatturatoPrec && <div>
+                <div style={{ fontSize: "9px", textTransform: "uppercase", letterSpacing: "0.06em", marginBottom: 3 }}>Trend vs {annoPrev}</div>
+                <div style={{ color: kpi.trend >= 1 ? T.green : T.red, fontWeight: "700", fontSize: "16px" }}>{kpi.trend >= 1 ? "+" : ""}{Math.round((kpi.trend - 1) * 100)}%</div>
+              </div>}
+              <div>
+                <div style={{ fontSize: "9px", textTransform: "uppercase", letterSpacing: "0.06em", marginBottom: 3 }}>🔮 Proiezione {annoRif}</div>
+                <div style={{ color: T.purple, fontWeight: "700", fontSize: "20px" }}>€ {kpi.proiezione.toLocaleString("it", { maximumFractionDigits: 0 })}</div>
+              </div>
+            </div>
+            <div style={{ fontSize: "10px", color: T.textDim, fontStyle: "italic", marginTop: 4 }}>
+              {kpi.haFatturatoPrec
+                ? `Proiezione = YTD ${annoRif} + pipeline prenotato + (mesi futuri ${annoPrev} × trend ${Math.round(kpi.trend * 100)}%). Include stima giro 4 e giro 5.`
+                : `Carica il fatturato ${annoPrev} con il bottone "↑ Fatturato ${annoPrev}" per avere una proiezione basata sul confronto anno su anno.`
+              }
             </div>
           </div>
         )}
