@@ -1100,6 +1100,8 @@ function ModuloAvanzamentoNovita({ titoli, prenotato, canali, token, ruolo }) {
   const [editingEan, setEditingEan] = useState(null);
   const [editingVal, setEditingVal] = useState("");
   const [toast, setToast] = useState(null);
+  const [fatturato, setFatturato] = useState([]);
+  const [showProiezione, setShowProiezione] = useState(false);
 
   const toggleSort = (key) => {
     if (sortKey === key) setSortDir(d => d === "asc" ? "desc" : "asc");
@@ -1119,6 +1121,29 @@ function ModuloAvanzamentoNovita({ titoli, prenotato, canali, token, ruolo }) {
   }, [token]);
 
   useEffect(() => { loadNovita(); }, [loadNovita]);
+
+  // Fatturato mensile per proiezione
+  const loadFatturato = useCallback(async () => {
+    if (!token) return;
+    const anno = filterAnno || new Date().getFullYear();
+    const d = await sbFetch(`fatturato_lanci_mensile?anno=eq.${anno}&order=mese.asc`, token);
+    if (Array.isArray(d)) setFatturato(d);
+  }, [token, filterAnno]);
+  useEffect(() => { loadFatturato(); }, [loadFatturato]);
+
+  const saveFatturato = async (mese, valore) => {
+    const anno = filterAnno || new Date().getFullYear();
+    await fetch(`${SUPABASE_URL}/rest/v1/fatturato_lanci_mensile`, {
+      method: "POST",
+      headers: { "apikey": SUPABASE_KEY, "Authorization": `Bearer ${token}`, "Content-Type": "application/json", "Prefer": "resolution=merge-duplicates" },
+      body: JSON.stringify([{ anno, mese, fatturato: parseFloat(valore) || 0 }]),
+    });
+    setFatturato(prev => {
+      const existing = prev.find(f => f.mese === mese);
+      if (existing) return prev.map(f => f.mese === mese ? { ...f, fatturato: parseFloat(valore) || 0 } : f);
+      return [...prev, { anno, mese, fatturato: parseFloat(valore) || 0 }].sort((a, b) => a.mese - b.mese);
+    });
+  };
 
   // Dati: SOLO titoli dai giri, arricchiti con dati lancio da titoli_novita (CSV)
   const novitaArricchite = useMemo(() => {
@@ -1253,40 +1278,57 @@ function ModuloAvanzamentoNovita({ titoli, prenotato, canali, token, ruolo }) {
 
   // KPI Dashboard
   const kpi = useMemo(() => {
-    const totValoreLancio = novitaFiltrate.reduce((s, n) => s + (n.valore_lancio || 0), 0);
-    const totPrenotato = novitaFiltrate.reduce((s, n) => s + n.prenotato_giri, 0);
-    const totObiettivo = novitaFiltrate.reduce((s, n) => s + n.obiettivo_giri, 0);
-    const totCopieLanciate = novitaFiltrate.reduce((s, n) => s + (n.copie_lanciate || 0), 0);
-    // Valore prenotato (prezzo × prenotato_giri)
+    const totTitoli = novitaFiltrate.length;
+
+    // Lanciati: copie_lanciate > 0 e NON manuale
+    const lanciati = novitaFiltrate.filter(n => n.copie_lanciate > 0 && !n.manuale);
+    const numLanciati = lanciati.length;
+    const valoreLancio = lanciati.reduce((s, n) => s + (n.valore_lancio || 0), 0);
+
+    // Sbloccati/Rifo: copie_lanciate > 0 e manuale = true
+    const sbloccati = novitaFiltrate.filter(n => n.copie_lanciate > 0 && n.manuale);
+    const numSbloccati = sbloccati.length;
+    const valoreSbloccato = sbloccati.reduce((s, n) => s + (n.valore_lancio || 0), 0);
+
+    // Totale copie/valore trasmessi (lanciati + sbloccati)
+    const totTrasmessi = numLanciati + numSbloccati;
+    const pctAvanzamento = totTitoli > 0 ? Math.round(totTrasmessi / totTitoli * 100) : 0;
+
+    // Non ancora lanciati o sbloccati
+    const nonTrasmessi = totTitoli - totTrasmessi;
+
+    // Valore prenotato
     const valPrenotato = novitaFiltrate.reduce((s, n) => s + (n.prezzo || 0) * n.prenotato_giri, 0);
-    // Valore mancante = valore lancio - valore prenotato
-    const valMancante = totValoreLancio - valPrenotato;
-    // Prenotato non ancora lanciato: titoli con prenotato dai giri > 0 ma copie_lanciate = 0 o assente
+
+    // Prenotato non ancora lanciato: titoli con prenotato > 0 ma copie_lanciate = 0
     const nonLanciati = novitaFiltrate.filter(n => n.prenotato_giri > 0 && (!n.copie_lanciate || n.copie_lanciate === 0));
     const copieNonLanciate = nonLanciati.reduce((s, n) => s + n.prenotato_giri, 0);
     const valNonLanciato = nonLanciati.reduce((s, n) => s + (n.prezzo || 0) * n.prenotato_giri, 0);
-    // Avanzamento trasmesso: quanti titoli hanno prenotato_giri > 0
-    const titConTrasmesso = novitaFiltrate.filter(n => n.prenotato_giri > 0).length;
-    const totTitoli = novitaFiltrate.length;
-    const pctTrasmesso = totTitoli > 0 ? Math.round(titConTrasmesso / totTitoli * 100) : 0;
-    // Proiezione: media mensile del valore lancio × mesi restanti
+
+    // Proiezione anno
     const oggi = new Date();
-    const mesiRestanti = Math.max(0, 12 - oggi.getMonth());
-    const mesiPassati = Math.max(1, oggi.getMonth() + 1);
-    // Raggruppo per mese per proiezione
-    const perMese = {};
-    novitaFiltrate.forEach(n => {
-      if (!n.data_messa_in_vendita) return;
-      const d = new Date(n.data_messa_in_vendita);
-      if (isNaN(d)) return;
-      const m = d.getMonth();
-      perMese[m] = (perMese[m] || 0) + (n.valore_lancio || 0);
-    });
-    const mesiConDati = Object.keys(perMese).filter(m => Number(m) < oggi.getMonth() + 1);
-    const mediaMensile = mesiConDati.length > 0 ? mesiConDati.reduce((s, m) => s + perMese[m], 0) / mesiConDati.length : 0;
-    const proiezione = totValoreLancio + mediaMensile * Math.max(0, mesiRestanti - (12 - Object.keys(perMese).length));
-    return { totValoreLancio, valPrenotato, valMancante, totPrenotato, totObiettivo, totCopieLanciate, titConTrasmesso, totTitoli, pctTrasmesso, proiezione, copieNonLanciate, valNonLanciato, numNonLanciati: nonLanciati.length };
-  }, [novitaFiltrate]);
+    const meseCorrente = oggi.getMonth() + 1; // 1-12
+    const fatturatoYTD = fatturato.reduce((s, f) => s + (f.fatturato || 0), 0);
+    const mesiConFatturato = fatturato.filter(f => f.fatturato > 0).length;
+    const mediaFatturatoMensile = mesiConFatturato > 0 ? fatturatoYTD / mesiConFatturato : 0;
+    // Pipeline: valore prenotato non ancora lanciato
+    const pipeline = valNonLanciato;
+    // Mesi futuri senza fatturato ancora
+    const mesiFuturi = Math.max(0, 12 - meseCorrente);
+    // Stima: fatturato YTD + pipeline + (media mensile × mesi senza dati rimanenti, considerando giro 4 e 5)
+    // Giro 4 tipicamente gen-mar, giro 5 ott-dic — i mesi futuri avranno lancio medio
+    const proiezione = fatturatoYTD + pipeline + (mediaFatturatoMensile * Math.max(0, mesiFuturi - 2));
+
+    return {
+      totTitoli, nonTrasmessi,
+      valPrenotato,
+      numLanciati, valoreLancio,
+      numSbloccati, valoreSbloccato,
+      totTrasmessi, pctAvanzamento,
+      copieNonLanciate, valNonLanciato, numNonLanciati: nonLanciati.length,
+      fatturatoYTD, mediaFatturatoMensile, pipeline, proiezione, mesiFuturi, mesiConFatturato,
+    };
+  }, [novitaFiltrate, fatturato]);
 
   // Upload CSV
   const handleCSVUpload = async (e) => {
@@ -1554,21 +1596,69 @@ function ModuloAvanzamentoNovita({ titoli, prenotato, canali, token, ruolo }) {
           </div>
         </div>
         <div style={{ display: "flex", gap: 12, flexWrap: "wrap" }}>
-          <KpiCard label="Titoli novità" value={kpi.totTitoli.toLocaleString("it")} color={T.text} sub={`${kpi.titConTrasmesso} con trasmesso`} />
-          <KpiCard label="Valore lancio" value={`€ ${kpi.totValoreLancio.toLocaleString("it", { maximumFractionDigits: 0 })}`} color={T.accent} />
+          <KpiCard label="Titoli novità" value={kpi.totTitoli.toLocaleString("it")} color={T.text} sub={`${kpi.nonTrasmessi} da lanciare/sbloccare`} />
           <KpiCard label="Valore prenotato" value={`€ ${kpi.valPrenotato.toLocaleString("it", { maximumFractionDigits: 0 })}`} color={T.green} />
-          <KpiCard label="Mancante" value={`€ ${kpi.valMancante.toLocaleString("it", { maximumFractionDigits: 0 })}`} color={kpi.valMancante > 0 ? T.red : T.green} />
-          <div style={{ background: T.surface, border: `1px solid ${T.border}`, borderRadius: 4, padding: "16px 20px", minWidth: 180 }}>
-            <div style={{ color: T.textMid, fontSize: "10px", letterSpacing: "0.1em", textTransform: "uppercase", marginBottom: 8 }}>Avanzamento trasmesso</div>
-            <div style={{ color: T.accent, fontSize: "24px", fontWeight: "700", lineHeight: 1, marginBottom: 8 }}>{kpi.pctTrasmesso}%</div>
-            <div style={{ height: 6, background: T.borderHi, borderRadius: 3, overflow: "hidden" }}>
-              <div style={{ width: `${kpi.pctTrasmesso}%`, height: "100%", background: kpi.pctTrasmesso >= 80 ? T.green : kpi.pctTrasmesso >= 50 ? T.accent : T.red }} />
+          <KpiCard label="Valore lancio" value={`€ ${kpi.valoreLancio.toLocaleString("it", { maximumFractionDigits: 0 })}`} color={T.accent} sub={`${kpi.numLanciati} titoli lanciati`} />
+          <KpiCard label="Valore SBL/Rifornimento" value={`€ ${kpi.valoreSbloccato.toLocaleString("it", { maximumFractionDigits: 0 })}`} color="#e8a838" sub={`${kpi.numSbloccati} titoli sbloccati`} />
+          <div style={{ background: T.surface, border: `1px solid ${T.border}`, borderRadius: 4, padding: "16px 20px", minWidth: 200 }}>
+            <div style={{ color: T.textMid, fontSize: "10px", letterSpacing: "0.1em", textTransform: "uppercase", marginBottom: 8 }}>Avanzamento</div>
+            <div style={{ color: kpi.pctAvanzamento >= 80 ? T.green : kpi.pctAvanzamento >= 50 ? T.accent : T.red, fontSize: "28px", fontWeight: "700", lineHeight: 1, marginBottom: 8 }}>{kpi.pctAvanzamento}%</div>
+            <div style={{ height: 8, background: T.borderHi, borderRadius: 4, overflow: "hidden", display: "flex" }}>
+              <div style={{ width: `${Math.round(kpi.numLanciati / Math.max(kpi.totTitoli, 1) * 100)}%`, height: "100%", background: T.accent }} />
+              <div style={{ width: `${Math.round(kpi.numSbloccati / Math.max(kpi.totTitoli, 1) * 100)}%`, height: "100%", background: "#e8a838" }} />
             </div>
-            <div style={{ color: T.textMid, fontSize: "11px", marginTop: 6 }}>{kpi.titConTrasmesso} / {kpi.totTitoli} titoli</div>
+            <div style={{ display: "flex", gap: 12, marginTop: 6, fontSize: "10px" }}>
+              <span style={{ color: T.accent }}>● {kpi.numLanciati} lanciati</span>
+              <span style={{ color: "#e8a838" }}>● {kpi.numSbloccati} sbloccati</span>
+            </div>
           </div>
-          <KpiCard label="Pren. non lanciato" value={`€ ${kpi.valNonLanciato.toLocaleString("it", { maximumFractionDigits: 0 })}`} color="#e8a838" sub={`${kpi.copieNonLanciate.toLocaleString("it")} copie · ${kpi.numNonLanciati} titoli`} />
-          <KpiCard label="Proiezione anno" value={`€ ${kpi.proiezione.toLocaleString("it", { maximumFractionDigits: 0 })}`} color={T.purple} sub="stima a fine anno" />
+          <KpiCard label="Pren. non lanciato" value={`€ ${kpi.valNonLanciato.toLocaleString("it", { maximumFractionDigits: 0 })}`} color={T.red} sub={`${kpi.copieNonLanciate.toLocaleString("it")} copie · ${kpi.numNonLanciati} titoli`} />
+          <div style={{ background: T.surface, border: `1px solid ${T.border}`, borderRadius: 4, padding: "16px 20px", minWidth: 200, cursor: "pointer" }} onClick={() => setShowProiezione(p => !p)}>
+            <div style={{ color: T.textMid, fontSize: "10px", letterSpacing: "0.1em", textTransform: "uppercase", marginBottom: 8, display: "flex", justifyContent: "space-between" }}>
+              Proiezione anno <span>{showProiezione ? "▲" : "▼"}</span>
+            </div>
+            <div style={{ color: T.purple, fontSize: "24px", fontWeight: "700", lineHeight: 1, marginBottom: 4 }}>€ {kpi.proiezione.toLocaleString("it", { maximumFractionDigits: 0 })}</div>
+            <div style={{ color: T.textMid, fontSize: "10px" }}>
+              YTD € {kpi.fatturatoYTD.toLocaleString("it", { maximumFractionDigits: 0 })} + pipeline € {kpi.pipeline.toLocaleString("it", { maximumFractionDigits: 0 })}
+            </div>
+          </div>
         </div>
+        {/* SEZIONE PROIEZIONE ESPANDIBILE */}
+        {showProiezione && (
+          <div style={{ marginTop: 14, padding: 16, background: T.bg, border: `1px solid ${T.border}`, borderRadius: 6 }}>
+            <div style={{ color: T.purple, fontSize: "11px", fontWeight: "700", letterSpacing: "0.08em", textTransform: "uppercase", marginBottom: 12 }}>Fatturato lanci mensile {filterAnno || new Date().getFullYear()}</div>
+            <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginBottom: 12 }}>
+              {["Gen","Feb","Mar","Apr","Mag","Giu","Lug","Ago","Set","Ott","Nov","Dic"].map((nome, idx) => {
+                const mese = idx + 1;
+                const f = fatturato.find(f => f.mese === mese);
+                const val = f?.fatturato || 0;
+                return (
+                  <div key={mese} style={{ background: T.surface, border: `1px solid ${T.border}`, borderRadius: 4, padding: "8px 10px", minWidth: 80, textAlign: "center" }}>
+                    <div style={{ color: T.textMid, fontSize: "9px", fontWeight: "700", letterSpacing: "0.06em", marginBottom: 4 }}>{nome}</div>
+                    <input
+                      type="text"
+                      style={{ ...css.input, width: 70, textAlign: "center", fontSize: "12px", fontWeight: "600", color: val > 0 ? T.purple : T.textDim, padding: "3px 4px" }}
+                      value={val > 0 ? val.toLocaleString("it") : ""}
+                      placeholder="—"
+                      onFocus={e => { e.target.value = val > 0 ? String(val) : ""; }}
+                      onBlur={e => { saveFatturato(mese, e.target.value); }}
+                      onKeyDown={e => { if (e.key === "Enter") e.target.blur(); }}
+                    />
+                  </div>
+                );
+              })}
+            </div>
+            <div style={{ display: "flex", gap: 20, fontSize: "11px", color: T.textMid, flexWrap: "wrap" }}>
+              <span>📊 <strong style={{ color: T.purple }}>YTD:</strong> € {kpi.fatturatoYTD.toLocaleString("it", { maximumFractionDigits: 0 })}</span>
+              <span>📈 <strong style={{ color: T.accent }}>Media mensile:</strong> € {kpi.mediaFatturatoMensile.toLocaleString("it", { maximumFractionDigits: 0 })}{kpi.mesiConFatturato > 0 && ` (${kpi.mesiConFatturato} mesi)`}</span>
+              <span>📦 <strong style={{ color: "#e8a838" }}>Pipeline:</strong> € {kpi.pipeline.toLocaleString("it", { maximumFractionDigits: 0 })} (pren. da lanciare)</span>
+              <span>🔮 <strong style={{ color: T.purple }}>Proiezione:</strong> € {kpi.proiezione.toLocaleString("it", { maximumFractionDigits: 0 })} (YTD + pipeline + stima {kpi.mesiFuturi > 2 ? kpi.mesiFuturi - 2 : 0} mesi futuri)</span>
+            </div>
+            <div style={{ marginTop: 8, fontSize: "10px", color: T.textDim, fontStyle: "italic" }}>
+              La proiezione considera il fatturato effettivo, il prenotato non ancora lanciato (pipeline), e una stima dei mesi rimanenti basata sulla media mensile — includendo i giri 4 e 5 non ancora prenotati.
+            </div>
+          </div>
+        )}
       </div>
 
       {/* TABELLA */}
