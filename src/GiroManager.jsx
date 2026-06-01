@@ -278,11 +278,12 @@ function ModuloDashboard({ titoli, prenotato, canali, spalmatura, ruolo }) {
 
   const prenotatoPerCanale = useMemo(() => {
     const map = {};
-    prenotatoGiro.forEach(p => { const c = canali.find(c => c.id === p.canale_id); if (!c) return; if (ruolo === "agente" && !CANALI_RETE.includes(c.codice)) return; map[c.codice] = (map[c.codice] || 0) + p.quantita; });
+    const CANALI_VIS_AGENTE = [...CANALI_RETE, "FASTBOOK", "CENTROLIBRI", "GROSSISTI"];
+    prenotatoGiro.forEach(p => { const c = canali.find(c => c.id === p.canale_id); if (!c) return; if (ruolo === "agente" && !CANALI_VIS_AGENTE.includes(c.codice)) return; map[c.codice] = (map[c.codice] || 0) + p.quantita; });
     return map;
   }, [prenotatoGiro, canali, ruolo]);
 
-  const macrogruppiVis = ruolo === "agente" ? MACROGRUPPI.filter(mg => mg.id === "RETE") : MACROGRUPPI;
+  const macrogruppiVis = ruolo === "agente" ? MACROGRUPPI.filter(mg => mg.id === "RETE" || mg.id === "GROSSISTI") : MACROGRUPPI;
   const totMacro = useMemo(() => { const map = {}; macrogruppiVis.forEach(mg => { map[mg.id] = mg.canali.reduce((s, cod) => s + (prenotatoPerCanale[cod] || 0), 0); }); return map; }, [prenotatoPerCanale, macrogruppiVis]);
   const maxMacro = Math.max(...Object.values(totMacro), 1);
 
@@ -689,7 +690,7 @@ function ModuloFineGiro({ titoli, prenotato, canali, token, ruolo, spalmatura })
       .sort((a, b) => (a.ranking_editore ?? 99) - (b.ranking_editore ?? 99) || (a.ranking_titolo ?? 99) - (b.ranking_titolo ?? 99));
   }, [titoli, giroLabelSel, extraSel, cedolaSel, filterEditori, filterAccount, search]);
 
-  const macrogruppiVis = ruolo === "agente" ? MACROGRUPPI.filter(mg => mg.id === "RETE") : MACROGRUPPI;
+  const macrogruppiVis = ruolo === "agente" ? MACROGRUPPI.filter(mg => mg.id === "RETE" || mg.id === "GROSSISTI") : MACROGRUPPI;
 
   const byCanaleCliente = useMemo(() => {
     if (!clienteSel || prenotatoCliente.length === 0) return null;
@@ -699,7 +700,8 @@ function ModuloFineGiro({ titoli, prenotato, canali, token, ruolo, spalmatura })
   }, [clienteSel, prenotatoCliente, canali]);
 
   const canaliTabella = useMemo(() => {
-    let base = ruolo === "agente" ? canali.filter(c => CANALI_RETE.includes(c.codice)) : canali.filter(c => c.codice !== "AURORA" && c.codice !== "GDO");
+    const CANALI_AGENTE = [...CANALI_RETE, "FASTBOOK", "CENTROLIBRI", "GROSSISTI"];
+    let base = ruolo === "agente" ? canali.filter(c => CANALI_AGENTE.includes(c.codice)) : canali.filter(c => c.codice !== "AURORA" && c.codice !== "GDO");
     // Se c'è un cliente selezionato, mostra solo la colonna del suo canale
     if (clienteSel && byCanaleCliente) {
       const codiciCliente = Object.keys(byCanaleCliente);
