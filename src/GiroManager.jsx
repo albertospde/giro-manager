@@ -253,10 +253,10 @@ function ModuloDashboard({ titoli, prenotato, canali, spalmatura, ruolo }) {
     });
   }, [titoli]);
 
-  const [giroSel, setGiroSel] = useState(null);
-  useEffect(() => { if (giriLabel.length > 0 && !giroSel) setGiroSel(giriLabel[0]); }, [giriLabel]);
+  const [giriSel, setGiriSel] = useState([]);
+  useEffect(() => { if (giriLabel.length > 0 && giriSel.length === 0) setGiriSel([giriLabel[0]]); }, [giriLabel]);
 
-  const titoliGiro = useMemo(() => giroSel ? titoli.filter(t => t.giro_label === giroSel) : [], [titoli, giroSel]);
+  const titoliGiro = useMemo(() => giriSel.length > 0 ? titoli.filter(t => giriSel.includes(t.giro_label)) : [], [titoli, giriSel]);
   const prenotatoGiro = useMemo(() => { const ids = new Set(titoliGiro.map(t => t.id)); return prenotato.filter(p => ids.has(p.titolo_id)); }, [prenotato, titoliGiro]);
   const totPrenotatoGiro = useMemo(() => prenotatoGiro.reduce((s, p) => s + p.quantita, 0), [prenotatoGiro]);
 
@@ -304,9 +304,7 @@ function ModuloDashboard({ titoli, prenotato, canali, spalmatura, ruolo }) {
   return (
     <div style={{ flex: 1, overflowY: "auto", padding: 20 }}>
       <div style={{ display: "flex", gap: 12, alignItems: "center", marginBottom: 20 }}>
-        <select style={{ ...css.input, fontSize: "14px", fontWeight: "600", color: T.accent }} value={giroSel || ""} onChange={e => setGiroSel(e.target.value)}>
-          {giriLabel.map(g => <option key={g} value={g}>Giro {g}</option>)}
-        </select>
+        <SearchableMultiSelect values={giriSel} onChange={setGiriSel} options={giriLabel} placeholder="Seleziona giro" width={180} />
         <span style={{ color: T.textMid, fontSize: "12px" }}>{kpiGiro.count} titoli · € {kpiGiro.valObj.toLocaleString("it", { maximumFractionDigits: 0 })} valore obiettivo</span>
       </div>
       <div style={{ display: "flex", gap: 12, marginBottom: 24, flexWrap: "wrap" }}>
@@ -494,25 +492,25 @@ function SearchableMultiSelect({ values, onChange, options, placeholder = "Tutti
 }
 
 function ModuloCedola({ titoli, giriList, onUpdateTitolo, spalmatura, prenotato, ruolo, token }) {
-  const [giroLabelSel, setGiroLabelSel] = useState("tutti");
-  const [giroSel, setGiroSel] = useState("tutti");
+  const [giroLabelSel, setGiroLabelSel] = useState([]);
+  const [giroSel, setGiroSel] = useState([]);
   const [search, setSearch] = useState("");
   const [filterFlag, setFilterFlag] = useState("tutti");
   const [filterEditori, setFilterEditori] = useState([]);
-  const [filterAccount, setFilterAccount] = useState("tutti");
+  const [filterAccount, setFilterAccount] = useState([]);
   const [editingId, setEditingId] = useState(null);
   const [sortKey, setSortKey] = useState("n_cedola");
 
   const giriLabel = useMemo(() => [...new Set(titoli.map(t => t.giro_label).filter(Boolean))].sort((a, b) => { const [na, ya] = a.split(" "); const [nb, yb] = b.split(" "); return Number(yb) - Number(ya) || Number(nb) - Number(na); }), [titoli]);
-  const cedole = useMemo(() => { const t = giroLabelSel === "tutti" ? titoli : titoli.filter(t => t.giro_label === giroLabelSel); return [...new Set(t.map(t => t.n_cedola).filter(Boolean))].sort(); }, [titoli, giroLabelSel]);
-  const accounts = useMemo(() => { const t = giroSel === "tutti" ? (giroLabelSel === "tutti" ? titoli : titoli.filter(t => t.giro_label === giroLabelSel)) : titoli.filter(t => t.n_cedola === giroSel); return [...new Set(t.map(t => t.account_editore).filter(Boolean))].sort(); }, [titoli, giroLabelSel, giroSel]);
-  const editori = useMemo(() => { const t = giroSel === "tutti" ? (giroLabelSel === "tutti" ? titoli : titoli.filter(t => t.giro_label === giroLabelSel)) : titoli.filter(t => t.n_cedola === giroSel); return [...new Set(t.map(t => t.editore_nome).filter(Boolean))].sort(); }, [titoli, giroLabelSel, giroSel]);
+  const cedole = useMemo(() => { const t = giroLabelSel.length === 0 ? titoli : titoli.filter(t => giroLabelSel.includes(t.giro_label)); return [...new Set(t.map(t => t.n_cedola).filter(Boolean))].sort(); }, [titoli, giroLabelSel]);
+  const accounts = useMemo(() => { const t = giroSel.length === 0 ? (giroLabelSel.length === 0 ? titoli : titoli.filter(t => giroLabelSel.includes(t.giro_label))) : titoli.filter(t => giroSel.includes(t.n_cedola)); return [...new Set(t.map(t => t.account_editore).filter(Boolean))].sort(); }, [titoli, giroLabelSel, giroSel]);
+  const editori = useMemo(() => { const t = giroSel.length === 0 ? (giroLabelSel.length === 0 ? titoli : titoli.filter(t => giroLabelSel.includes(t.giro_label))) : titoli.filter(t => giroSel.includes(t.n_cedola)); return [...new Set(t.map(t => t.editore_nome).filter(Boolean))].sort(); }, [titoli, giroLabelSel, giroSel]);
 
   const filtered = useMemo(() => titoli
-    .filter(t => giroLabelSel === "tutti" || t.giro_label === giroLabelSel)
-    .filter(t => giroSel === "tutti" || t.n_cedola === giroSel)
+    .filter(t => giroLabelSel.length === 0 || giroLabelSel.includes(t.giro_label))
+    .filter(t => giroSel.length === 0 || giroSel.includes(t.n_cedola))
     .filter(t => filterEditori.length === 0 || filterEditori.includes(t.editore_nome))
-    .filter(t => filterAccount === "tutti" || t.account_editore === filterAccount)
+    .filter(t => filterAccount.length === 0 || filterAccount.includes(t.account_editore))
     .filter(t => { if (!search) return true; const q = search.toLowerCase(); return t.titolo?.toLowerCase().includes(q) || t.autore?.toLowerCase().includes(q) || t.editore_nome?.toLowerCase().includes(q) || t.ean?.includes(q); })
     .filter(t => { if (filterFlag === "triangolo") return t.il_triangolo; if (filterFlag === "top100") return t.top_100; if (filterFlag === "gemelli") return t.ean_gemello_1; return true; })
     .sort((a, b) => { if (sortKey === "n_cedola") return (a.n_cedola ?? "").localeCompare(b.n_cedola ?? ""); if (sortKey === "editore") return (a.editore_nome ?? "").localeCompare(b.editore_nome ?? ""); if (sortKey === "prezzo") return (b.prezzo ?? 0) - (a.prezzo ?? 0); return 0; }),
@@ -532,7 +530,7 @@ function ModuloCedola({ titoli, giriList, onUpdateTitolo, spalmatura, prenotato,
     const rows = filtered.map(t => [t.n_cedola, t.ean, t.titolo, t.autore, t.codice_editore, t.editore_nome, t.prezzo, t.uscita, t.note_comunicazione || t.note, t.ean_gemello_1, t.titolo_gemello_1, t.ean_gemello_2, t.titolo_gemello_2, t.ean_gemello_3, t.titolo_gemello_3, getObjCanale(t, 'INDIPENDENTI_ALTRE_CATENE')]);
     const ws = XLSX.utils.aoa_to_sheet([headers, ...rows]);
     const wb = XLSX.utils.book_new(); XLSX.utils.book_append_sheet(wb, ws, "CEDOLA AGENTI");
-    XLSX.writeFile(wb, `CEDOLA_AGENTI_${giroLabelSel === "tutti" ? "TUTTI" : giroLabelSel}.xlsx`);
+    XLSX.writeFile(wb, `CEDOLA_AGENTI_${giroLabelSel.length === 0 ? "TUTTI" : giroLabelSel.join("-")}.xlsx`);
   };
 
   const exportDirezionale = () => {
@@ -546,7 +544,7 @@ function ModuloCedola({ titoli, giriList, onUpdateTitolo, spalmatura, prenotato,
     const rowsObj = filtered.map(t => [t.n_cedola, t.ean, t.titolo, t.autore, t.codice_editore, t.editore_nome, t.prezzo, t.obiettivo_assegnato || 0, ...canaliDir.map(c => getObjCanale(t, c.codice))]);
     const wsObj = XLSX.utils.aoa_to_sheet([headersObj, ...rowsObj]);
     const wb = XLSX.utils.book_new(); XLSX.utils.book_append_sheet(wb, wsCedola, "CEDOLA"); XLSX.utils.book_append_sheet(wb, wsObj, "OBIETTIVI");
-    XLSX.writeFile(wb, `CEDOLA_DIREZIONALE_${giroLabelSel === "tutti" ? "TUTTI" : giroLabelSel}.xlsx`);
+    XLSX.writeFile(wb, `CEDOLA_DIREZIONALE_${giroLabelSel.length === 0 ? "TUTTI" : giroLabelSel.join("-")}.xlsx`);
   };
 
   return (
@@ -554,13 +552,10 @@ function ModuloCedola({ titoli, giriList, onUpdateTitolo, spalmatura, prenotato,
       {/* FIX 5: Passato token alla EditModal */}
       {editingTitolo && <EditModal titolo={editingTitolo} onSave={onUpdateTitolo} onClose={() => setEditingId(null)} token={token} />}
       <div style={{ padding: "12px 20px", borderBottom: `1px solid ${T.border}`, display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap" }}>
-        <select style={css.input} value={giroLabelSel} onChange={e => { setGiroLabelSel(e.target.value); setGiroSel("tutti"); setFilterEditori([]); }}>
-          <option value="tutti">Tutti i giri</option>
-          {giriLabel.map(g => <option key={g} value={g}>Giro {g}</option>)}
-        </select>
-        <SearchableSelect value={giroSel} onChange={v => { setGiroSel(v); setFilterEditori([]); }} options={cedole} placeholder="Tutte le cedole" width={160} />
+        <SearchableMultiSelect values={giroLabelSel} onChange={v => { setGiroLabelSel(v); setGiroSel([]); setFilterEditori([]); }} options={giriLabel} placeholder="Tutti i giri" width={170} />
+        <SearchableMultiSelect values={giroSel} onChange={v => { setGiroSel(v); setFilterEditori([]); }} options={cedole} placeholder="Tutte le cedole" width={160} />
         <SearchableMultiSelect values={filterEditori} onChange={setFilterEditori} options={editori} placeholder="Tutti gli editori" width={190} />
-        <SearchableSelect value={filterAccount} onChange={setFilterAccount} options={accounts} placeholder="Tutti gli account" width={160} />
+        <SearchableMultiSelect values={filterAccount} onChange={setFilterAccount} options={accounts} placeholder="Tutti gli account" width={160} />
         <input style={{ ...css.input, width: 180 }} placeholder="Cerca..." value={search} onChange={e => setSearch(e.target.value)} />
         {["tutti","triangolo","top100","gemelli"].map(f => (
           <button key={f} style={{ ...css.btn(filterFlag === f ? "accent" : "default"), padding: "5px 10px" }} onClick={() => setFilterFlag(f)}>
@@ -618,10 +613,10 @@ function ModuloFineGiro({ titoli, prenotato, canali, token, ruolo, spalmatura })
 
   const [giroLabelSel, setGiroLabelSel] = useState(null);
   const [extraSel, setExtraSel] = useState(null);
-  const [cedolaSel, setCedolaSel] = useState("tutti");
+  const [cedolaSel, setCedolaSel] = useState([]);
   const [filterEditori, setFilterEditori] = useState([]);
-  const [filterAccount, setFilterAccount] = useState("tutti");
-  const [filterCanale, setFilterCanale] = useState("tutti");
+  const [filterAccount, setFilterAccount] = useState([]);
+  const [filterCanale, setFilterCanale] = useState([]);
   const [search, setSearch] = useState("");
   const [sortPren, setSortPren] = useState(null); // null | "asc" | "desc"
   const [soloPrenotati, setSoloPrenotati] = useState(false);
@@ -633,7 +628,7 @@ function ModuloFineGiro({ titoli, prenotato, canali, token, ruolo, spalmatura })
   const [auroraEdit, setAuroraEdit] = useState({});
   const [auroraEditing, setAuroraEditing] = useState(null);
 
-  const resetFiltri = () => { setGiroLabelSel(null); setExtraSel(null); setCedolaSel("tutti"); setFilterEditori([]); setFilterAccount("tutti"); setFilterCanale("tutti"); setSearch(""); setClienteSel(null); setSoloPrenotati(false); };
+  const resetFiltri = () => { setGiroLabelSel(null); setExtraSel(null); setCedolaSel([]); setFilterEditori([]); setFilterAccount([]); setFilterCanale([]); setSearch(""); setClienteSel(null); setSoloPrenotati(false); };
 
   useEffect(() => {
     if (!token) return;
@@ -686,9 +681,9 @@ function ModuloFineGiro({ titoli, prenotato, canali, token, ruolo, spalmatura })
     if (!giroLabelSel && !extraSel) return [];
     return titoli
       .filter(t => extraSel ? (t.giro_label === "EXTRA" && t.n_cedola === extraSel) : (t.giro_label === giroLabelSel))
-      .filter(t => cedolaSel === "tutti" || t.n_cedola === cedolaSel)
+      .filter(t => cedolaSel.length === 0 || cedolaSel.includes(t.n_cedola))
       .filter(t => filterEditori.length === 0 || filterEditori.includes(t.editore_nome))
-      .filter(t => filterAccount === "tutti" || t.account_editore === filterAccount)
+      .filter(t => filterAccount.length === 0 || filterAccount.includes(t.account_editore))
       .filter(t => { if (!search) return true; const q = search.toLowerCase(); return t.titolo?.toLowerCase().includes(q) || t.ean?.includes(q); })
       .sort((a, b) => (a.ranking_editore ?? 99) - (b.ranking_editore ?? 99) || (a.ranking_titolo ?? 99) - (b.ranking_titolo ?? 99));
   }, [titoli, giroLabelSel, extraSel, cedolaSel, filterEditori, filterAccount, search]);
@@ -709,8 +704,8 @@ function ModuloFineGiro({ titoli, prenotato, canali, token, ruolo, spalmatura })
     if (clienteSel && byCanaleCliente) {
       const codiciCliente = Object.keys(byCanaleCliente);
       if (codiciCliente.length > 0) base = base.filter(c => codiciCliente.includes(c.codice));
-    } else if (filterCanale !== "tutti") {
-      base = base.filter(c => c.codice === filterCanale);
+    } else if (filterCanale.length > 0) {
+      base = base.filter(c => filterCanale.includes(c.codice));
     }
     // Ordina seguendo l'ordine dei MACROGRUPPI (Rete → Catene → Grossisti → Online)
     const ordine = MACROGRUPPI.flatMap(mg => mg.canali);
@@ -771,8 +766,8 @@ function ModuloFineGiro({ titoli, prenotato, canali, token, ruolo, spalmatura })
   const righeFiltrate = useMemo(() => {
     let result = [...righe];
     // Se soloPrenotati è ON e c'è un filtro canale o cliente attivo, mostra solo titoli con prenotato > 0
-    if (soloPrenotati && filterCanale !== "tutti") {
-      result = result.filter(({ byCanale }) => (byCanale[filterCanale] || 0) > 0);
+    if (soloPrenotati && filterCanale.length > 0) {
+      result = result.filter(({ byCanale }) => filterCanale.some(cod => (byCanale[cod] || 0) > 0));
     }
     if (soloPrenotati && clienteSel) {
       result = result.filter(({ totPren }) => totPren > 0);
@@ -886,13 +881,13 @@ function ModuloFineGiro({ titoli, prenotato, canali, token, ruolo, spalmatura })
           </select>
         )}
         {giroLabelSel && (
-          <SearchableSelect value={cedolaSel} onChange={setCedolaSel} options={cedole} placeholder="Tutte le cedole" width={160} />
+          <SearchableMultiSelect values={cedolaSel} onChange={setCedolaSel} options={cedole} placeholder="Tutte le cedole" width={160} />
         )}
         <SearchableMultiSelect values={filterEditori} onChange={setFilterEditori} options={editori} placeholder="Tutti gli editori" width={190} />
-        <SearchableSelect value={filterAccount} onChange={setFilterAccount} options={accounts} placeholder="Tutti gli account" width={160} />
-        <SearchableSelect value={filterCanale} onChange={setFilterCanale} options={canali.filter(c => c.codice !== "AURORA" && c.codice !== "GDO")} placeholder="Tutti i canali" labelKey="nome" valueKey="codice" width={170} />
+        <SearchableMultiSelect values={filterAccount} onChange={setFilterAccount} options={accounts} placeholder="Tutti gli account" width={160} />
+        <SearchableMultiSelect values={filterCanale} onChange={setFilterCanale} options={canali.filter(c => c.codice !== "AURORA" && c.codice !== "GDO").map(c => c.codice)} renderOption={cod => { const c = canali.find(x => x.codice === cod); return c?.nome || cod; }} placeholder="Tutti i canali" width={170} />
         <input style={{ ...css.input, width: 160 }} placeholder="Cerca EAN / titolo..." value={search} onChange={e => setSearch(e.target.value)} />
-        {(filterCanale !== "tutti" || clienteSel) && (
+        {(filterCanale.length > 0 || clienteSel) && (
           <label style={{ display: "flex", alignItems: "center", gap: 5, cursor: "pointer", fontSize: "11px", color: soloPrenotati ? T.accent : T.textMid, userSelect: "none" }}>
             <input type="checkbox" checked={soloPrenotati} onChange={e => setSoloPrenotati(e.target.checked)} style={{ accentColor: T.accent }} />
             Solo prenotati
@@ -1095,15 +1090,15 @@ function ModuloAvanzamentoNovita({ titoli, prenotato, canali, token, ruolo }) {
   const [manualForm, setManualForm] = useState({ ean: "", titolo: "", autore: "", editore: "", prezzo: "", num_lancio: "", copie_lanciate: "", valore_lancio: "", data_messa_in_vendita: "" });
   const [filterAnno, setFilterAnno] = useState(new Date().getFullYear());
   const [filterEditore, setFilterEditore] = useState("tutti");
-  const [filterNumLancio, setFilterNumLancio] = useState("tutti");
+  const [filterNumLancio, setFilterNumLancio] = useState([]);
   const [filterCedole, setFilterCedole] = useState([]); // multi
   const [filterGiri, setFilterGiri] = useState([]);     // multi
   const [filterMesi, setFilterMesi] = useState([]);     // multi mesi (1-12)
   const [search, setSearch] = useState("");
   const [sortKey, setSortKey] = useState("cedola");
   const [sortDir, setSortDir] = useState("asc");
-  const [filterDataVendita, setFilterDataVendita] = useState("tutte");
-  const [filterCopieLanciate, setFilterCopieLanciate] = useState("tutte");
+  const [filterDataVendita, setFilterDataVendita] = useState([]);
+  const [filterCopieLanciate, setFilterCopieLanciate] = useState([]);
   const [editingEan, setEditingEan] = useState(null);
   const [editingVal, setEditingVal] = useState("");
   const [toast, setToast] = useState(null);
@@ -1377,7 +1372,7 @@ function ModuloAvanzamentoNovita({ titoli, prenotato, canali, token, ruolo }) {
         return getAnnoRecord(n) === filterAnno;
       })
       .filter(n => filterEditore === "tutti" || n.editore === filterEditore)
-      .filter(n => filterNumLancio === "tutti" || String(n.num_lancio) === String(filterNumLancio))
+      .filter(n => filterNumLancio.length === 0 || filterNumLancio.includes(String(n.num_lancio)))
       .filter(n => filterCedole.length === 0 || filterCedole.includes(n.nome_cedola))
       .filter(n => filterGiri.length === 0 || filterGiri.includes(n.giro_label))
       .filter(n => {
@@ -1387,17 +1382,20 @@ function ModuloAvanzamentoNovita({ titoli, prenotato, canali, token, ruolo }) {
         return filterMesi.includes(m);
       })
       .filter(n => {
-        if (filterDataVendita === "tutte") return true;
-        if (filterDataVendita === "con_data") return !!n.data_messa_in_vendita;
-        if (filterDataVendita === "senza_data") return !n.data_messa_in_vendita;
-        return true;
+        if (filterDataVendita.length === 0) return true;
+        const haData = !!n.data_messa_in_vendita;
+        if (filterDataVendita.includes("con_data") && haData) return true;
+        if (filterDataVendita.includes("senza_data") && !haData) return true;
+        return false;
       })
       .filter(n => {
-        if (filterCopieLanciate === "tutte") return true;
-        if (filterCopieLanciate === "con_copie") return n.copie_lanciate > 0;
-        if (filterCopieLanciate === "senza_copie") return !n.copie_lanciate || n.copie_lanciate === 0;
-        if (filterCopieLanciate === "da_compilare") return !!n.data_messa_in_vendita && (!n.copie_lanciate || n.copie_lanciate === 0);
-        return true;
+        if (filterCopieLanciate.length === 0) return true;
+        const haCopie = n.copie_lanciate > 0;
+        const haData = !!n.data_messa_in_vendita;
+        if (filterCopieLanciate.includes("con_copie") && haCopie) return true;
+        if (filterCopieLanciate.includes("senza_copie") && !haCopie) return true;
+        if (filterCopieLanciate.includes("da_compilare") && haData && !haCopie) return true;
+        return false;
       })
       .filter(n => {
         if (!search) return true;
@@ -1741,12 +1739,12 @@ function ModuloAvanzamentoNovita({ titoli, prenotato, canali, token, ruolo }) {
       {/* DASHBOARD KPI */}
       <div style={{ padding: "16px 20px", borderBottom: `1px solid ${T.border}` }}>
         <div style={{ display: "flex", gap: 10, alignItems: "center", marginBottom: 14, flexWrap: "wrap" }}>
-          <select style={{ ...css.input, fontSize: "14px", fontWeight: "600", color: T.accent }} value={filterAnno || ""} onChange={e => { setFilterAnno(e.target.value ? Number(e.target.value) : null); setFilterEditore("tutti"); setFilterNumLancio("tutti"); setFilterCedole([]); setFilterGiri([]); setFilterMesi([]); }}>
+          <select style={{ ...css.input, fontSize: "14px", fontWeight: "600", color: T.accent }} value={filterAnno || ""} onChange={e => { setFilterAnno(e.target.value ? Number(e.target.value) : null); setFilterEditore("tutti"); setFilterNumLancio([]); setFilterCedole([]); setFilterGiri([]); setFilterMesi([]); }}>
             <option value="">Tutti gli anni</option>
             {anniDisponibili.map(a => <option key={a} value={a}>{a}</option>)}
           </select>
           <SearchableMultiSelect values={filterEditore === "tutti" ? [] : [filterEditore]} onChange={v => setFilterEditore(v.length > 0 ? v[0] : "tutti")} options={editoriList} placeholder="Tutti gli editori" width={190} />
-          <SearchableSelect value={filterNumLancio} onChange={setFilterNumLancio} options={numLanciList.map(String)} placeholder="Tutti i lanci" width={140} />
+          <SearchableMultiSelect values={filterNumLancio} onChange={setFilterNumLancio} options={numLanciList.map(String)} placeholder="Tutti i lanci" width={150} />
           <SearchableMultiSelect values={filterGiri} onChange={setFilterGiri} options={giriList} placeholder="Tutti i giri" width={160} />
           <SearchableMultiSelect values={filterCedole} onChange={setFilterCedole} options={cedoleList} placeholder="Tutte le cedole" width={170} />
           <SearchableMultiSelect
@@ -1758,17 +1756,22 @@ function ModuloAvanzamentoNovita({ titoli, prenotato, canali, token, ruolo }) {
             width={150}
           />
           <input style={{ ...css.input, width: 180 }} placeholder="Cerca EAN / titolo..." value={search} onChange={e => setSearch(e.target.value)} />
-          <select style={{ ...css.input, fontSize: "11px", color: filterDataVendita !== "tutte" ? T.accent : T.textMid }} value={filterDataVendita} onChange={e => setFilterDataVendita(e.target.value)}>
-            <option value="tutte">Data: tutte</option>
-            <option value="con_data">Con data vendita</option>
-            <option value="senza_data">Senza data vendita</option>
-          </select>
-          <select style={{ ...css.input, fontSize: "11px", color: filterCopieLanciate !== "tutte" ? "#e8a838" : T.textMid }} value={filterCopieLanciate} onChange={e => setFilterCopieLanciate(e.target.value)}>
-            <option value="tutte">Copie: tutte</option>
-            <option value="con_copie">Con copie lanciate</option>
-            <option value="senza_copie">Senza copie lanciate</option>
-            <option value="da_compilare">⚠ Da compilare (data sì, copie no)</option>
-          </select>
+          <SearchableMultiSelect
+            values={filterDataVendita}
+            onChange={setFilterDataVendita}
+            options={["con_data","senza_data"]}
+            renderOption={v => v === "con_data" ? "Con data vendita" : "Senza data vendita"}
+            placeholder="Data: tutte"
+            width={160}
+          />
+          <SearchableMultiSelect
+            values={filterCopieLanciate}
+            onChange={setFilterCopieLanciate}
+            options={["con_copie","senza_copie","da_compilare"]}
+            renderOption={v => v === "con_copie" ? "Con copie lanciate" : v === "senza_copie" ? "Senza copie lanciate" : "⚠ Da compilare"}
+            placeholder="Copie: tutte"
+            width={160}
+          />
           <div style={{ marginLeft: "auto", display: "flex", gap: 8 }}>
             {ruolo !== "agente" && (
               <>
@@ -1996,7 +1999,7 @@ function ModuloLanciSettimanali({ token, titoli, prenotato, canali }) {
   const [uploadMode, setUploadMode] = useState(null);
   const [toast, setToast] = useState(null);
   const [filterAnno, setFilterAnno] = useState(null);
-  const [filterLancio, setFilterLancio] = useState(null);
+  const [filterLancio, setFilterLancio] = useState([]);
   const [search, setSearch] = useState("");
   const [sortKey, setSortKey] = useState(null);
   const [sortDir, setSortDir] = useState("desc");
@@ -2024,7 +2027,7 @@ function ModuloLanciSettimanali({ token, titoli, prenotato, canali }) {
   }, [data, filterAnno, anniDisponibili]);
 
   useEffect(() => { if (!filterAnno && anniDisponibili.length > 0) setFilterAnno(anniDisponibili[0]); }, [anniDisponibili]);
-  useEffect(() => { if (lanciPerAnno.length > 0 && (!filterLancio || !lanciPerAnno.includes(filterLancio))) setFilterLancio(lanciPerAnno[0]); }, [lanciPerAnno]);
+  useEffect(() => { if (lanciPerAnno.length > 0 && filterLancio.length === 0) setFilterLancio([lanciPerAnno[0]]); }, [lanciPerAnno]);
 
   // Mappa prenotato per EAN (da fine giro) — per canale
   const prenByEanCanale = useMemo(() => {
@@ -2059,7 +2062,7 @@ function ModuloLanciSettimanali({ token, titoli, prenotato, canali }) {
   const dataArricchita = useMemo(() => {
     const anno = filterAnno || anniDisponibili[0];
     return data
-      .filter(r => r.anno_lancio === anno && r.num_lancio === filterLancio)
+      .filter(r => r.anno_lancio === anno && (filterLancio.length === 0 || filterLancio.includes(r.num_lancio)))
       .map(r => {
         const prenCanali = prenByEanCanale[r.ean] || {};
         const prenFineGiroLive = Object.entries(prenCanali).reduce((s, [cod, q]) => s + q, 0);
@@ -2246,7 +2249,7 @@ function ModuloLanciSettimanali({ token, titoli, prenotato, canali }) {
           const ean = String(r[col.ean] || "").replace(/\.0$/, "").trim();
           const qta = parseInt(String(r[col.prenotato] || "0").replace(/\./g, "")) || 0;
           const anno = parseInt(r[col.anno]) || filterAnno;
-          const num = parseInt(r[col.num]) || filterLancio;
+          const num = parseInt(r[col.num]) || filterLancio[0];
           if (ean.length < 10) continue;
           const resp = await fetch(`${SUPABASE_URL}/rest/v1/lanci_settimanali?anno_lancio=eq.${anno}&num_lancio=eq.${num}&ean=eq.${encodeURIComponent(ean)}`, {
             method: "PATCH",
@@ -2283,9 +2286,9 @@ function ModuloLanciSettimanali({ token, titoli, prenotato, canali }) {
     const ws = XLSX.utils.aoa_to_sheet([headers, ...rows]);
     const wsR = XLSX.utils.aoa_to_sheet([rH, ...rR]);
     const wb = XLSX.utils.book_new();
-    XLSX.utils.book_append_sheet(wb, ws, `Lancio ${filterLancio}`);
+    XLSX.utils.book_append_sheet(wb, ws, `Lanci ${filterLancio.join("-")}`);
     XLSX.utils.book_append_sheet(wb, wsR, "Riepilogo Editori");
-    XLSX.writeFile(wb, `Lancio_${filterLancio}_${filterAnno}.xlsx`);
+    XLSX.writeFile(wb, `Lancio_${filterLancio.join("-")}_${filterAnno}.xlsx`);
   };
 
   if (loading) return <div style={{ flex: 1, display: "flex", alignItems: "center", justifyContent: "center", color: T.textMid }}>Caricamento lanci...</div>;
@@ -2308,12 +2311,10 @@ function ModuloLanciSettimanali({ token, titoli, prenotato, canali }) {
     <div style={{ display: "flex", flexDirection: "column", height: "100%", overflow: "hidden" }}>
       {/* TOOLBAR */}
       <div style={{ padding: "14px 20px", borderBottom: `1px solid ${T.border}`, display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap" }}>
-        <select style={{ ...css.input, fontSize: "13px", fontWeight: "600", color: T.accent }} value={filterAnno || ""} onChange={e => { setFilterAnno(Number(e.target.value)); setFilterLancio(null); }}>
+        <select style={{ ...css.input, fontSize: "13px", fontWeight: "600", color: T.accent }} value={filterAnno || ""} onChange={e => { setFilterAnno(Number(e.target.value)); setFilterLancio([]); }}>
           {anniDisponibili.map(a => <option key={a} value={a}>{a}</option>)}
         </select>
-        <select style={{ ...css.input, fontSize: "14px", fontWeight: "700", color: T.text, minWidth: 140 }} value={filterLancio || ""} onChange={e => setFilterLancio(Number(e.target.value))}>
-          {lanciPerAnno.map(l => <option key={l} value={l}>Lancio {l}</option>)}
-        </select>
+        <SearchableMultiSelect values={filterLancio.map(String)} onChange={v => setFilterLancio(v.map(Number))} options={lanciPerAnno.map(String)} renderOption={v => `Lancio ${v}`} placeholder="Seleziona lancio" width={170} />
         <input style={{ ...css.input, width: 180 }} placeholder="Cerca EAN / titolo..." value={search} onChange={e => setSearch(e.target.value)} />
         {/* Riepilogo giorni */}
         <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
