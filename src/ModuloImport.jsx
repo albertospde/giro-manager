@@ -46,30 +46,16 @@ const CANALI_MAP = {
   14: "GDO",
 };
 
-// Verifica se l'utente loggato è admin controllando la tabella utenti su Supabase
+// Verifica se l'utente loggato è admin leggendo user_profiles
 async function checkIsAdmin(token) {
-  const res = await fetch(`${SUPABASE_URL}/rest/v1/rpc/is_admin`, {
-    method: "POST",
+  const res = await fetch(`${SUPABASE_URL}/rest/v1/user_profiles?select=ruolo&limit=1`, {
     headers: {
-      "Content-Type": "application/json",
       "apikey": SUPABASE_KEY,
       "Authorization": `Bearer ${token}`,
     },
-    body: JSON.stringify({}),
   });
   if (res.ok) {
     const data = await res.json();
-    return data === true;
-  }
-  // Fallback: controlla tabella utenti direttamente
-  const res2 = await fetch(`${SUPABASE_URL}/rest/v1/utenti?select=ruolo&limit=1`, {
-    headers: {
-      "apikey": SUPABASE_KEY,
-      "Authorization": `Bearer ${token}`,
-    },
-  });
-  if (res2.ok) {
-    const data = await res2.json();
     return data?.[0]?.ruolo === "admin";
   }
   return false;
