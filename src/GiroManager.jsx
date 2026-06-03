@@ -1694,7 +1694,6 @@ function ModuloAvanzamentoNovita({ titoli, prenotato, canali, token, ruolo }) {
           <SearchableSelect value={filterNumLancio} onChange={setFilterNumLancio} options={numLanciList.map(String)} placeholder="Tutti i lanci" width={140} />
           <SearchableSelect value={filterCedola} onChange={setFilterCedola} options={cedoleList} placeholder="Tutte le cedole" width={160} />
           <input style={{ ...css.input, width: 180 }} placeholder="Cerca EAN / titolo..." value={search} onChange={e => setSearch(e.target.value)} />
-          {isEanSearch && <span style={{ fontSize: 11, color: "#00b4e8", marginLeft: 8 }}>🔍 ricerca su tutti gli anni</span>}
           <select style={{ ...css.input, fontSize: "11px", color: filterDataVendita !== "tutte" ? T.accent : T.textMid }} value={filterDataVendita} onChange={e => setFilterDataVendita(e.target.value)}>
             <option value="tutte">Data: tutte</option>
             <option value="con_data">Con data vendita</option>
@@ -1989,26 +1988,6 @@ function ModuloLanciSettimanali({ token, titoli, prenotato, canali }) {
   const amazonCodice = "AMAZON";
 
   // Arricchisci dati lancio con dati fine giro (live DB → fallback manuale)
-  // Versione cross-anno per ricerca EAN
-  const arricchisciRecord = useCallback((r) => {
-    const prenCanali = prenByEanCanale[r.ean] || {};
-    const prenFineGiroLive = Object.entries(prenCanali).reduce((s, [, q]) => s + q, 0);
-    const prenAmazonLive = prenCanali[amazonCodice] || 0;
-    const cedoleLive = cedoleByEan[r.ean] || [];
-    const haLiveCedole = cedoleLive.length > 0;
-    const haLiveFG = prenFineGiroLive > 0;
-    const haLiveAmazon = prenAmazonLive > 0;
-    const cedole = haLiveCedole ? cedoleLive : (r.cedole_manual ? r.cedole_manual.split(",").map(s => s.trim()).filter(Boolean) : []);
-    const prenFineGiro = haLiveFG ? prenFineGiroLive : (r.pren_fine_giro_manual || 0);
-    const prenAmazon = haLiveAmazon ? prenAmazonLive : (r.pren_amazon_manual || 0);
-    const prenSenzaAmazon = prenFineGiro - prenAmazon;
-    const teorico = (r.prenotato_trasmesso ?? r.prenotato_iscrizione ?? 0) + prenAmazon;
-    const giornoCalcolato = teorico >= 2000 ? "martedì" : "venerdì";
-    const giornoUscita = r.giorno_uscita_override || giornoCalcolato;
-    const isOverride = !!r.giorno_uscita_override;
-    return { ...r, cedole, pren_fine_giro: prenFineGiro, pren_amazon: prenAmazon, pren_senza_amazon: prenSenzaAmazon, teorico, giorno_calcolato: giornoCalcolato, giorno_uscita: giornoUscita, is_override: isOverride, is_live_cedole: haLiveCedole, is_live_fg: haLiveFG, is_live_amazon: haLiveAmazon, is_manual_cedole: !haLiveCedole && !!r.cedole_manual, is_manual_fg: !haLiveFG && r.pren_fine_giro_manual > 0, is_manual_amazon: !haLiveAmazon && r.pren_amazon_manual > 0 };
-  }, [prenByEanCanale, cedoleByEan, amazonCodice]);
-
   const dataArricchita = useMemo(() => {
     const anno = filterAnno || anniDisponibili[0];
     return data
@@ -2054,22 +2033,12 @@ function ModuloLanciSettimanali({ token, titoli, prenotato, canali }) {
           is_manual_amazon: !haLiveAmazon && r.pren_amazon_manual > 0,
         };
       });
-  }, [data, filterAnno, filterLancio, anniDisponibili, prenByEanCanale, cedoleByEan, arricchisciRecord]);
-
-  // Ricerca EAN cross-anno: quando search è attiva cerca su tutti i dati
-  const isEanSearch = search.trim().length >= 3 && /^[0-9]/.test(search.trim());
-  const dataEanCrossAnno = useMemo(() => {
-    if (!isEanSearch) return null;
-    const q = search.toLowerCase();
-    return data
-      .filter(r => r.ean?.toLowerCase().includes(q) || r.titolo?.toLowerCase().includes(q))
-      .map(arricchisciRecord);
-  }, [isEanSearch, search, data, arricchisciRecord]);
+  }, [data, filterAnno, filterLancio, anniDisponibili, prenByEanCanale, cedoleByEan]);
 
   // Filtro e sort
   const dataFiltrata = useMemo(() => {
-    let result = dataEanCrossAnno ? [...dataEanCrossAnno] : [...dataArricchita];
-    if (search && !isEanSearch) {
+    let result = [...dataArricchita];
+    if (search) {
       const q = search.toLowerCase();
       result = result.filter(r => r.ean?.toLowerCase().includes(q) || r.titolo?.toLowerCase().includes(q) || r.autore?.toLowerCase().includes(q) || r.editore?.toLowerCase().includes(q));
     }
@@ -2080,7 +2049,7 @@ function ModuloLanciSettimanali({ token, titoli, prenotato, canali }) {
       });
     }
     return result;
-  }, [dataArricchita, dataEanCrossAnno, isEanSearch, search, sortKey, sortDir]);
+  }, [dataArricchita, search, sortKey, sortDir]);
 
   // KPI
   const kpi = useMemo(() => {
@@ -2530,7 +2499,7 @@ export default function App() {
   if (checkingAuth) return <div style={{ ...css.app, display: "flex", alignItems: "center", justifyContent: "center", height: "100vh", color: T.textMid }}>Caricamento...</div>;
   if (!session) return <LoginScreen onLogin={handleLogin} />;
 
-  const moduliVis = ruolo === "agente" ? MODULES.filter(m => ["cedola","lanci","avanzamento"].includes(m.id)) : MODULES;
+  const moduliVis = ruolo === "agente" ? MODULES.filter(m => ["dashboard","cedola","finegiro"].includes(m.id)) : MODULES;
   const moduliImport = ruolo !== "agente" ? MODULES_IMPORT : [];
 
   return (
