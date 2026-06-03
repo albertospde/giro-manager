@@ -1134,12 +1134,12 @@ function ModuloAvanzamentoNovita({ titoli, prenotato, canali, token, ruolo }) {
   }, [token, annoRif, annoPrev]);
   useEffect(() => { loadFatturato(); }, [loadFatturato]);
 
-  const saveFatturato = async (anno, mese, valore) => {
+const saveFatturato = async (anno, mese, valore) => {
     await fetch(`${SUPABASE_URL}/rest/v1/fatturato_lanci_mensile?on_conflict=anno,mese`, {
-  method: "POST",
-  headers: { ..., "Prefer": "resolution=merge-duplicates,return=representation" },
-  body: JSON.stringify([{ anno, mese, fatturato: parseFloat(valore) || 0 }]),
-});
+      method: "POST",
+      headers: { "apikey": SUPABASE_KEY, "Authorization": `Bearer ${token}`, "Content-Type": "application/json", "Prefer": "resolution=merge-duplicates" },
+      body: JSON.stringify([{ anno, mese, fatturato: parseFloat(valore) || 0 }]),
+    });
     setFatturato(prev => {
       const existing = prev.find(f => f.anno === anno && f.mese === mese);
       if (existing) return prev.map(f => (f.anno === anno && f.mese === mese) ? { ...f, fatturato: parseFloat(valore) || 0 } : f);
