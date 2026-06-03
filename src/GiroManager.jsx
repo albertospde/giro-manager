@@ -2449,6 +2449,7 @@ const MODULES = [
 const MODULES_IMPORT = [
   { id: "import", label: "Import Cedola", icon: "↑" },
   { id: "prenotato", label: "Import Prenotato", icon: "↳" },
+  { id: "importobiettivi", label: "Import Obiettivi", icon: "◎" },
 ];
 
 const style = document.createElement('style');
@@ -2564,6 +2565,7 @@ export default function App() {
           {activeModule === "avanzamento" && <ModuloAvanzamentoNovita titoli={titoli} prenotato={prenotato} canali={canali} token={session.token} ruolo={ruolo} />}
           {activeModule === "lanci" && <ModuloLanciSettimanali token={session.token} titoli={titoli} prenotato={prenotato} canali={canali} />}
           {activeModule === "import" && <ModuloImport giriList={giriDB} token={session.token} />}
+          {activeModule === "importobiettivi" && <ModuloImport giriList={giriDB} token={session.token} onlyObiettivi={true} />}
         </div>
       </div>
     </div>
