@@ -2502,7 +2502,10 @@ export default function App() {
     sbFetch("prenotato?select=*&limit=100000", session.token).then(setPrenotato);
     sbFetch("spalmatura_obiettivo?select=*", session.token).then(setSpalmatura);
     sbFetch("canali?select=*&order=nome.asc", session.token).then(setCanali);
-    sbFetch(`user_profiles?id=eq.${session.user.id}&select=ruolo`, session.token).then(data => { if (Array.isArray(data) && data[0]) setRuolo(data[0].ruolo); });
+    sbFetch(`user_profiles?id=eq.${session.user.id}&select=ruolo`, session.token).then(data => { if (Array.isArray(data) && data[0]) {
+        setRuolo(data[0].ruolo);
+        if (data[0].ruolo === "agente") setActiveModule("cedola");
+      } });
   }, [session]);
 
   useEffect(() => {
