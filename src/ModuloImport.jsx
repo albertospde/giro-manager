@@ -375,7 +375,7 @@ function ImportObiettiviSection({ token }) {
 }
 
 // ─── Componente principale ────────────────────────────────────────────────────
-export default function ModuloImport({ giriList, token, onImportDone }) {
+export default function ModuloImport({ giriList, token, onImportDone, onlyObiettivi = false }) {
   const [giroSel, setGiroSel] = useState(giriList[0]?.id ?? null);
   const [file, setFile] = useState(null);
   const [rows, setRows] = useState([]);
@@ -464,6 +464,7 @@ export default function ModuloImport({ giriList, token, onImportDone }) {
 
   return (
     <div style={{ flex: 1, overflowY: "auto", padding: 24 }}>
+      {!onlyObiettivi && (<>
       {/* Step indicator cedola */}
       <div style={{ display: "flex", gap: 8, marginBottom: 24, alignItems: "center" }}>
         {["upload", "preview", "result"].map((s, i) => (
@@ -560,6 +561,7 @@ export default function ModuloImport({ giriList, token, onImportDone }) {
         </div>
       )}
 
+      </>)}
       {/* ── IMPORT OBIETTIVI (solo admin) ── */}
       <ImportObiettiviSection token={token} />
     </div>
