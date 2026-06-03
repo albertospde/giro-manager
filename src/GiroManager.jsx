@@ -1093,7 +1093,8 @@ function ModuloAvanzamentoNovita({ titoli, prenotato, canali, token, ruolo }) {
   const [filterAnno, setFilterAnno] = useState(new Date().getFullYear());
   const [filterEditore, setFilterEditore] = useState("tutti");
   const [filterNumLancio, setFilterNumLancio] = useState("tutti");
-  const [filterCedola, setFilterCedola] = useState("tutti");
+  const [filterCedole, setFilterCedole] = useState([]); // multi
+  const [filterGiri, setFilterGiri] = useState([]);     // multi
   const [search, setSearch] = useState("");
   const [sortKey, setSortKey] = useState("cedola");
   const [sortDir, setSortDir] = useState("asc");
@@ -1331,7 +1332,8 @@ function ModuloAvanzamentoNovita({ titoli, prenotato, canali, token, ruolo }) {
       })
       .filter(n => filterEditore === "tutti" || n.editore === filterEditore)
       .filter(n => filterNumLancio === "tutti" || String(n.num_lancio) === String(filterNumLancio))
-      .filter(n => filterCedola === "tutti" || n.nome_cedola === filterCedola)
+      .filter(n => filterCedole.length === 0 || filterCedole.includes(n.nome_cedola))
+      .filter(n => filterGiri.length === 0 || filterGiri.includes(n.giro_label))
       .filter(n => {
         if (filterDataVendita === "tutte") return true;
         if (filterDataVendita === "con_data") return !!n.data_messa_in_vendita;
@@ -1364,11 +1366,12 @@ function ModuloAvanzamentoNovita({ titoli, prenotato, canali, token, ruolo }) {
       else if (sortKey === "copie_lanciate") cmp = (a.copie_lanciate || 0) - (b.copie_lanciate || 0);
       return sortDir === "asc" ? cmp : -cmp;
     });
-  }, [novitaArricchite, filterAnno, filterEditore, filterNumLancio, filterCedola, filterDataVendita, filterCopieLanciate, search, sortKey, sortDir]);
+  }, [novitaArricchite, filterAnno, filterEditore, filterNumLancio, filterCedole, filterGiri, filterDataVendita, filterCopieLanciate, search, sortKey, sortDir]);
 
   const editoriList = useMemo(() => [...new Set(novitaArricchite.filter(n => !filterAnno || getAnnoRecord(n) === filterAnno).map(n => n.editore).filter(Boolean))].sort(), [novitaArricchite, filterAnno]);
   const numLanciList = useMemo(() => [...new Set(novitaArricchite.filter(n => !filterAnno || getAnnoRecord(n) === filterAnno).map(n => n.num_lancio).filter(Boolean))].sort((a, b) => Number(a) - Number(b)), [novitaArricchite, filterAnno]);
-  const cedoleList = useMemo(() => [...new Set(novitaArricchite.filter(n => !filterAnno || getAnnoRecord(n) === filterAnno).map(n => n.nome_cedola).filter(c => c && c !== "—"))].sort(), [novitaArricchite, filterAnno]);
+  const cedoleList = useMemo(() => [...new Set(novitaArricchite.filter(n => (!filterAnno || getAnnoRecord(n) === filterAnno) && (filterGiri.length === 0 || filterGiri.includes(n.giro_label))).map(n => n.nome_cedola).filter(c => c && c !== "—"))].sort(), [novitaArricchite, filterAnno, filterGiri]);
+  const giriList = useMemo(() => [...new Set(novitaArricchite.filter(n => !filterAnno || getAnnoRecord(n) === filterAnno).map(n => n.giro_label).filter(Boolean))].sort(), [novitaArricchite, filterAnno]);
 
   // KPI Dashboard
   const MESI_NOMI = ["Gen","Feb","Mar","Apr","Mag","Giu","Lug","Ago","Set","Ott","Nov","Dic"];
@@ -1686,13 +1689,14 @@ function ModuloAvanzamentoNovita({ titoli, prenotato, canali, token, ruolo }) {
       {/* DASHBOARD KPI */}
       <div style={{ padding: "16px 20px", borderBottom: `1px solid ${T.border}` }}>
         <div style={{ display: "flex", gap: 10, alignItems: "center", marginBottom: 14, flexWrap: "wrap" }}>
-          <select style={{ ...css.input, fontSize: "14px", fontWeight: "600", color: T.accent }} value={filterAnno || ""} onChange={e => { setFilterAnno(e.target.value ? Number(e.target.value) : null); setFilterEditore("tutti"); setFilterNumLancio("tutti"); }}>
+          <select style={{ ...css.input, fontSize: "14px", fontWeight: "600", color: T.accent }} value={filterAnno || ""} onChange={e => { setFilterAnno(e.target.value ? Number(e.target.value) : null); setFilterEditore("tutti"); setFilterNumLancio("tutti"); setFilterCedole([]); setFilterGiri([]); }}>
             <option value="">Tutti gli anni</option>
             {anniDisponibili.map(a => <option key={a} value={a}>{a}</option>)}
           </select>
           <SearchableMultiSelect values={filterEditore === "tutti" ? [] : [filterEditore]} onChange={v => setFilterEditore(v.length > 0 ? v[0] : "tutti")} options={editoriList} placeholder="Tutti gli editori" width={190} />
           <SearchableSelect value={filterNumLancio} onChange={setFilterNumLancio} options={numLanciList.map(String)} placeholder="Tutti i lanci" width={140} />
-          <SearchableSelect value={filterCedola} onChange={setFilterCedola} options={cedoleList} placeholder="Tutte le cedole" width={160} />
+          <SearchableMultiSelect values={filterGiri} onChange={setFilterGiri} options={giriList} placeholder="Tutti i giri" width={160} />
+          <SearchableMultiSelect values={filterCedole} onChange={setFilterCedole} options={cedoleList} placeholder="Tutte le cedole" width={170} />
           <input style={{ ...css.input, width: 180 }} placeholder="Cerca EAN / titolo..." value={search} onChange={e => setSearch(e.target.value)} />
           <select style={{ ...css.input, fontSize: "11px", color: filterDataVendita !== "tutte" ? T.accent : T.textMid }} value={filterDataVendita} onChange={e => setFilterDataVendita(e.target.value)}>
             <option value="tutte">Data: tutte</option>
@@ -1795,7 +1799,8 @@ function ModuloAvanzamentoNovita({ titoli, prenotato, canali, token, ruolo }) {
                       {MESI_NOMI.map((_, i) => {
                         const cur = annoCorrentePerMese[i + 1] || 0;
                         const prev = annoPrecPerMese[i + 1] || 0;
-                        if (!prev || !cur) return <td key={i} style={{ ...css.td, textAlign: "right", color: T.textDim }}>—</td>;
+                        const isFuture = (i + 1) > kpi.meseCorrente;
+                        if (isFuture || !prev) return <td key={i} style={{ ...css.td, textAlign: "right", color: T.textDim }}>—</td>;
                         const delta = Math.round((cur / prev - 1) * 100);
                         return <td key={i} style={{ ...css.td, textAlign: "right", fontSize: "10px", fontWeight: "700", color: delta >= 0 ? T.green : T.red }}>{delta >= 0 ? "+" : ""}{delta}%</td>;
                       })}
@@ -1835,6 +1840,9 @@ function ModuloAvanzamentoNovita({ titoli, prenotato, canali, token, ruolo }) {
                 ? `Proiezione = YTD ${annoRif} + pipeline prenotato + (mesi futuri ${annoPrev} × trend ${Math.round(kpi.trend * 100)}%). Include stima giro 4 e giro 5.`
                 : `Carica il fatturato ${annoPrev} con il bottone "↑ Fatturato ${annoPrev}" per avere una proiezione basata sul confronto anno su anno.`
               }
+            </div>
+            <div style={{ fontSize: "10px", color: T.textDim, marginTop: 6 }}>
+              ⓘ I valori <span style={{ color: T.accent }}>{annoRif}</span> sono calcolati dal campo <b>valore_lancio</b> caricato via CSV (aggregato per mese di messa in vendita). Se un mese risulta -% rispetto all'anno precedente, verifica che il CSV sia aggiornato con tutti i titoli del mese.
             </div>
           </div>
         )}
