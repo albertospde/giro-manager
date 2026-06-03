@@ -701,7 +701,7 @@ function ModuloFineGiro({ titoli, prenotato, canali, token, ruolo, spalmatura })
 
   const canaliTabella = useMemo(() => {
     const CANALI_AGENTE = [...CANALI_RETE, "FASTBOOK", "CENTROLIBRI", "GROSSISTI"];
-    let base = ruolo === "agente" ? canali.filter(c => c.codice === "INDIPENDENTI_ALTRE_CATENE") : canali.filter(c => c.codice !== "AURORA" && c.codice !== "GDO");
+    let base = ruolo === "agente" ? canali.filter(c => CANALI_AGENTE.includes(c.codice)) : canali.filter(c => c.codice !== "AURORA" && c.codice !== "GDO");
     // Se c'è un cliente selezionato, mostra solo la colonna del suo canale
     if (clienteSel && byCanaleCliente) {
       const codiciCliente = Object.keys(byCanaleCliente);
@@ -1005,20 +1005,9 @@ function ModuloFineGiro({ titoli, prenotato, canali, token, ruolo, spalmatura })
                   <td style={{ ...css.td, color: T.textMid, fontSize: "11px" }}>{t.codice_editore}</td>
                   <td style={{ ...css.td, color: T.accent, fontWeight: "600", whiteSpace: "nowrap" }}>{t.editore_nome}</td>
                   <td style={{ ...css.td, whiteSpace: "nowrap" }}>€ {t.prezzo?.toFixed(2)}</td>
-                  <td style={css.td}>{ruolo === "agente"
-                    ? (byCanaleObj?.["INDIPENDENTI_ALTRE_CATENE"] || 0).toLocaleString("it")
-                    : t.obiettivo_assegnato?.toLocaleString("it")
-                  }</td>
-                  <td style={{ ...css.td, color: T.green, fontWeight: "600" }}>{ruolo === "agente"
-                    ? ((byCanale?.["INDIPENDENTI_ALTRE_CATENE"] || 0) > 0 ? (byCanale["INDIPENDENTI_ALTRE_CATENE"]).toLocaleString("it") : "—")
-                    : (totPren > 0 ? totPren.toLocaleString("it") : "—")
-                  }</td>
-                  {(() => {
-                    const pctDisplay = ruolo === "agente"
-                      ? (byCanaleObj?.["INDIPENDENTI_ALTRE_CATENE"] > 0 ? Math.round((byCanale?.["INDIPENDENTI_ALTRE_CATENE"] || 0) / byCanaleObj["INDIPENDENTI_ALTRE_CATENE"] * 100) : 0)
-                      : pct;
-                    return <td style={css.td}><span style={{ color: pctDisplay >= 80 ? T.green : pctDisplay >= 50 ? T.accent : T.red, fontWeight: "700" }}>{pctDisplay}%</span></td>;
-                  })()}
+                  <td style={css.td}>{t.obiettivo_assegnato?.toLocaleString("it")}</td>
+                  <td style={{ ...css.td, color: T.green, fontWeight: "600" }}>{totPren > 0 ? totPren.toLocaleString("it") : "—"}</td>
+                  <td style={css.td}><span style={{ color: pct >= 80 ? T.green : pct >= 50 ? T.accent : T.red, fontWeight: "700" }}>{pct}%</span></td>
                   {canaliTabella.map(c => {
                     const qta = byCanale[c.codice] || 0;
                     const obj = byCanaleObj?.[c.codice] || 0;
@@ -1705,7 +1694,6 @@ function ModuloAvanzamentoNovita({ titoli, prenotato, canali, token, ruolo }) {
           <SearchableSelect value={filterNumLancio} onChange={setFilterNumLancio} options={numLanciList.map(String)} placeholder="Tutti i lanci" width={140} />
           <SearchableSelect value={filterCedola} onChange={setFilterCedola} options={cedoleList} placeholder="Tutte le cedole" width={160} />
           <input style={{ ...css.input, width: 180 }} placeholder="Cerca EAN / titolo..." value={search} onChange={e => setSearch(e.target.value)} />
-          {isEanSearch && <span style={{ fontSize: 11, color: "#00b4e8", marginLeft: 8 }}>🔍 ricerca su tutti gli anni</span>}
           <select style={{ ...css.input, fontSize: "11px", color: filterDataVendita !== "tutte" ? T.accent : T.textMid }} value={filterDataVendita} onChange={e => setFilterDataVendita(e.target.value)}>
             <option value="tutte">Data: tutte</option>
             <option value="con_data">Con data vendita</option>
@@ -2000,25 +1988,6 @@ function ModuloLanciSettimanali({ token, titoli, prenotato, canali }) {
   const amazonCodice = "AMAZON";
 
   // Arricchisci dati lancio con dati fine giro (live DB → fallback manuale)
-  const arricchisciRecord = useCallback((r) => {
-    const prenCanali = prenByEanCanale[r.ean] || {};
-    const prenFineGiroLive = Object.entries(prenCanali).reduce((s, [, q]) => s + q, 0);
-    const prenAmazonLive = prenCanali[amazonCodice] || 0;
-    const cedoleLive = cedoleByEan[r.ean] || [];
-    const haLiveCedole = cedoleLive.length > 0;
-    const haLiveFG = prenFineGiroLive > 0;
-    const haLiveAmazon = prenAmazonLive > 0;
-    const cedole = haLiveCedole ? cedoleLive : (r.cedole_manual ? r.cedole_manual.split(",").map(s => s.trim()).filter(Boolean) : []);
-    const prenFineGiro = haLiveFG ? prenFineGiroLive : (r.pren_fine_giro_manual || 0);
-    const prenAmazon = haLiveAmazon ? prenAmazonLive : (r.pren_amazon_manual || 0);
-    const prenSenzaAmazon = prenFineGiro - prenAmazon;
-    const teorico = (r.prenotato_trasmesso ?? r.prenotato_iscrizione ?? 0) + prenAmazon;
-    const giornoCalcolato = teorico >= 2000 ? "martedì" : "venerdì";
-    const giornoUscita = r.giorno_uscita_override || giornoCalcolato;
-    const isOverride = !!r.giorno_uscita_override;
-    return { ...r, cedole, pren_fine_giro: prenFineGiro, pren_amazon: prenAmazon, pren_senza_amazon: prenSenzaAmazon, teorico, giorno_calcolato: giornoCalcolato, giorno_uscita: giornoUscita, is_override: isOverride, is_live_cedole: haLiveCedole, is_live_fg: haLiveFG, is_live_amazon: haLiveAmazon, is_manual_cedole: !haLiveCedole && !!r.cedole_manual, is_manual_fg: !haLiveFG && r.pren_fine_giro_manual > 0, is_manual_amazon: !haLiveAmazon && r.pren_amazon_manual > 0 };
-  }, [prenByEanCanale, cedoleByEan, amazonCodice]);
-
   const dataArricchita = useMemo(() => {
     const anno = filterAnno || anniDisponibili[0];
     return data
@@ -2064,21 +2033,12 @@ function ModuloLanciSettimanali({ token, titoli, prenotato, canali }) {
           is_manual_amazon: !haLiveAmazon && r.pren_amazon_manual > 0,
         };
       });
-  }, [data, filterAnno, filterLancio, anniDisponibili, prenByEanCanale, cedoleByEan, arricchisciRecord]);
-
-  const isEanSearch = search.trim().length >= 3 && /^[0-9]/.test(search.trim());
-  const dataEanCrossAnno = useMemo(() => {
-    if (!isEanSearch) return null;
-    const q = search.toLowerCase();
-    return data
-      .filter(r => r.ean?.toLowerCase().includes(q) || r.titolo?.toLowerCase().includes(q))
-      .map(arricchisciRecord);
-  }, [isEanSearch, search, data, arricchisciRecord]);
+  }, [data, filterAnno, filterLancio, anniDisponibili, prenByEanCanale, cedoleByEan]);
 
   // Filtro e sort
   const dataFiltrata = useMemo(() => {
-    let result = dataEanCrossAnno ? [...dataEanCrossAnno] : [...dataArricchita];
-    if (search && !isEanSearch) {
+    let result = [...dataArricchita];
+    if (search) {
       const q = search.toLowerCase();
       result = result.filter(r => r.ean?.toLowerCase().includes(q) || r.titolo?.toLowerCase().includes(q) || r.autore?.toLowerCase().includes(q) || r.editore?.toLowerCase().includes(q));
     }
@@ -2089,7 +2049,7 @@ function ModuloLanciSettimanali({ token, titoli, prenotato, canali }) {
       });
     }
     return result;
-  }, [dataArricchita, dataEanCrossAnno, isEanSearch, search, sortKey, sortDir]);
+  }, [dataArricchita, search, sortKey, sortDir]);
 
   // KPI
   const kpi = useMemo(() => {
@@ -2513,10 +2473,7 @@ export default function App() {
     sbFetch("prenotato?select=*&limit=100000", session.token).then(setPrenotato);
     sbFetch("spalmatura_obiettivo?select=*", session.token).then(setSpalmatura);
     sbFetch("canali?select=*&order=nome.asc", session.token).then(setCanali);
-    sbFetch(`user_profiles?id=eq.${session.user.id}&select=ruolo`, session.token).then(data => { if (Array.isArray(data) && data[0]) {
-        setRuolo(data[0].ruolo);
-        if (data[0].ruolo === "agente") setActiveModule("cedola");
-      } });
+    sbFetch(`user_profiles?id=eq.${session.user.id}&select=ruolo`, session.token).then(data => { if (Array.isArray(data) && data[0]) setRuolo(data[0].ruolo); });
   }, [session]);
 
   useEffect(() => {
@@ -2542,7 +2499,7 @@ export default function App() {
   if (checkingAuth) return <div style={{ ...css.app, display: "flex", alignItems: "center", justifyContent: "center", height: "100vh", color: T.textMid }}>Caricamento...</div>;
   if (!session) return <LoginScreen onLogin={handleLogin} />;
 
-  const moduliVis = ruolo === "agente" ? MODULES.filter(m => ["cedola"].includes(m.id)) : MODULES;
+  const moduliVis = ruolo === "agente" ? MODULES.filter(m => ["dashboard","cedola","finegiro"].includes(m.id)) : MODULES;
   const moduliImport = ruolo !== "agente" ? MODULES_IMPORT : [];
 
   return (
