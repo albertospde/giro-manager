@@ -454,14 +454,17 @@ function SearchableSelect({ value, onChange, options, placeholder = "Tutti", lab
 }
 
 // Dropdown con ricerca testuale — selezione multipla
-function SearchableMultiSelect({ values, onChange, options, placeholder = "Tutti", width = 180 }) {
+function SearchableMultiSelect({ values, onChange, options, placeholder = "Tutti", width = 180, renderOption }) {
   const [open, setOpen] = useState(false);
   const [search, setSearch] = useState("");
-  const filtered = options.filter(o => o.toLowerCase().includes(search.toLowerCase()));
+  const label = (o) => renderOption ? renderOption(o) : o;
+  const filtered = options.filter(o => label(o).toLowerCase().includes(search.toLowerCase()));
   return (
     <div style={{ position: "relative" }}>
       <button style={{ ...css.btn(values.length > 0 ? "accent" : "default"), minWidth: width, display: "flex", justifyContent: "space-between", alignItems: "center", gap: 8 }} onClick={() => setOpen(o => !o)}>
-        <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", maxWidth: width - 30 }}>{values.length === 0 ? placeholder : `${values.length} selezionati`}</span>
+        <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", maxWidth: width - 30 }}>
+          {values.length === 0 ? placeholder : renderOption ? values.map(renderOption).join(", ") : `${values.length} selezionati`}
+        </span>
         <span>▾</span>
       </button>
       {open && (
@@ -477,7 +480,7 @@ function SearchableMultiSelect({ values, onChange, options, placeholder = "Tutti
             {filtered.map((o, i) => (
               <label key={i} style={{ display: "flex", alignItems: "center", gap: 8, padding: "7px 12px", cursor: "pointer", borderBottom: `1px solid ${T.border}22`, background: values.includes(o) ? T.accent + "18" : "transparent" }}>
                 <input type="checkbox" checked={values.includes(o)} onChange={() => onChange(values.includes(o) ? values.filter(x => x !== o) : [...values, o])} style={{ accentColor: T.accent }} />
-                <span style={{ fontSize: "12px", color: values.includes(o) ? T.accent : T.text }}>{o}</span>
+                <span style={{ fontSize: "12px", color: values.includes(o) ? T.accent : T.text }}>{label(o)}</span>
               </label>
             ))}
           </div>
@@ -1095,6 +1098,7 @@ function ModuloAvanzamentoNovita({ titoli, prenotato, canali, token, ruolo }) {
   const [filterNumLancio, setFilterNumLancio] = useState("tutti");
   const [filterCedole, setFilterCedole] = useState([]); // multi
   const [filterGiri, setFilterGiri] = useState([]);     // multi
+  const [filterMesi, setFilterMesi] = useState([]);     // multi mesi (1-12)
   const [search, setSearch] = useState("");
   const [sortKey, setSortKey] = useState("cedola");
   const [sortDir, setSortDir] = useState("asc");
@@ -1148,7 +1152,7 @@ function ModuloAvanzamentoNovita({ titoli, prenotato, canali, token, ruolo }) {
     });
   };
 
-  // Upload fatturato anno precedente (Excel/CSV con colonne mese + fatturato)
+  // Upload fatturato anno precedente — parser universale
   const handleFatturatoUpload = async (e) => {
     const file = e.target.files?.[0];
     if (!file) return;
@@ -1156,83 +1160,125 @@ function ModuloAvanzamentoNovita({ titoli, prenotato, canali, token, ruolo }) {
     try {
       const XLSX = window.XLSX;
       const buf = await file.arrayBuffer();
-      const wb = XLSX.read(buf, { type: "array" });
+      const wb = XLSX.read(buf, { type: "array", cellDates: true });
       const ws = wb.Sheets[wb.SheetNames[0]];
-      const rows = XLSX.utils.sheet_to_json(ws, { header: 1 });
+      const rows = XLSX.utils.sheet_to_json(ws, { header: 1, defval: null });
 
-      // Cerca righe con dati mensili - formati accettati:
-      // Riga con nomi mese: Gen, Feb... o Gennaio, Febbraio... o 1, 2...
-      // Riga sotto con valori numerici
-      // OPPURE colonne: Mese | Fatturato
-      const mesiIt = { gen: 1, gennaio: 1, feb: 2, febbraio: 2, mar: 3, marzo: 3, apr: 4, aprile: 4, mag: 5, maggio: 5, giu: 6, giugno: 6, lug: 7, luglio: 7, ago: 8, agosto: 8, set: 9, settembre: 9, ott: 10, ottobre: 10, nov: 11, novembre: 11, dic: 12, dicembre: 12 };
-      const payload = [];
+      const MESI = { gen:1,gennaio:1,jan:1,january:1, feb:2,febbraio:2,february:2, mar:3,marzo:3,march:3, apr:4,aprile:4,april:4, mag:5,maggio:5,may:5, giu:6,giugno:6,jun:6,june:6, lug:7,luglio:7,jul:7,july:7, ago:8,agosto:8,aug:8,august:8, set:9,settembre:9,sep:9,september:9, ott:10,ottobre:10,oct:10,october:10, nov:11,novembre:11,november:11, dic:12,dicembre:12,dec:12,december:12 };
 
-      // Strategia 1: Cerca colonna "mese" e "fatturato/valore/importo"
-      const firstRow = rows[0]?.map(c => String(c || "").toLowerCase().trim()) || [];
-      let colMese = firstRow.findIndex(h => h === "mese" || h.startsWith("mese") || h === "month");
-      let colVal = firstRow.findIndex(h => h.includes("fatturato") || h.includes("valore") || h.includes("importo") || h.includes("totale") || h.includes("revenue"));
-      // Fallback: se trovo la colonna mese ma non quella valore, prendo la colonna subito dopo
-      if (colMese >= 0 && colVal < 0) colVal = colMese + 1;
-
-      // Helper: converte valore numerico — se già number lo usa diretto, se stringa converte formato italiano
-      const parseVal = (v) => {
-        if (v == null) return 0;
+      // Normalizza una cella a numero (supporta formato IT 1.234,56 e EN 1,234.56)
+      const toNum = (v) => {
+        if (v == null || v === "") return 0;
         if (typeof v === "number") return v;
-        const s = String(v).trim();
-        // Se contiene virgola come decimale (formato IT: 1.234,56)
-        if (s.includes(",")) return parseFloat(s.replace(/\./g, "").replace(",", ".")) || 0;
+        const s = String(v).trim().replace(/\s/g, "").replace(/[€$£\xac]/g, "");
+        if (!s) return 0;
+        // Formato IT con punti come separatore migliaia (es. 3.228.648 o 3.228.648,50)
+        if (/^\d{1,3}(\.\d{3})+(,\d+)?$/.test(s)) return parseFloat(s.replace(/\./g, "").replace(",", ".")) || 0;
+        // Formato EN con virgole come separatore migliaia (es. 3,228,648)
+        if (/^\d{1,3}(,\d{3})+(\.\d+)?$/.test(s)) return parseFloat(s.replace(/,/g, "")) || 0;
+        // Virgola come decimale senza punti (es. 1234,56)
+        if (s.includes(",") && !s.includes(".")) return parseFloat(s.replace(",", ".")) || 0;
         return parseFloat(s) || 0;
       };
 
-      if (colMese >= 0 && colVal >= 0) {
-        for (let i = 1; i < rows.length; i++) {
-          const r = rows[i];
-          if (!r || !r[colMese]) continue;
-          const meseStr = String(r[colMese]).toLowerCase().trim();
-          const mese = mesiIt[meseStr] || parseInt(meseStr) || null;
-          const val = parseVal(r[colVal]);
-          if (mese && mese >= 1 && mese <= 12 && val > 0) payload.push({ anno: annoPrev, mese, fatturato: val });
+      // Normalizza stringa cella → stringa pulita lowercase
+      const toStr = (v) => String(v == null ? "" : v).trim().toLowerCase().replace(/[^a-zàèéìòù0-9]/g, " ").trim();
+
+      // Cerca numero di mese in una stringa (accetta "gennaio", "gen", "1", "01", "gen 2024", ecc.)
+      const getMese = (v) => {
+        if (v == null) return null;
+        const s = toStr(v);
+        // Nome mese
+        for (const [key, num] of Object.entries(MESI)) { if (s === key || s.startsWith(key + " ") || s.endsWith(" " + key)) return num; }
+        // Numero puro 1-12
+        const n = parseInt(s);
+        if (!isNaN(n) && n >= 1 && n <= 12) return n;
+        return null;
+      };
+
+      const payload = [];
+      const found = {}; // dedup per mese
+
+      // ── STRATEGIA A: header row con "mese" + colonna valore ──────────────
+      for (let ri = 0; ri < Math.min(rows.length, 10); ri++) {
+        const hrow = (rows[ri] || []).map(toStr);
+        const colM = hrow.findIndex(h => h === "mese" || h === "month" || h === "mese anno");
+        const colV = hrow.findIndex(h => h.includes("fatturato") || h.includes("valore") || h.includes("importo") || h.includes("totale") || h.includes("revenue") || h.includes("ricavo"));
+        const colV2 = colM >= 0 && colV < 0 ? colM + 1 : colV; // fallback: cella subito a destra del mese
+        if (colM >= 0 && colV2 >= 0 && colV2 !== colM) {
+          for (let i = ri + 1; i < rows.length; i++) {
+            const r = rows[i] || [];
+            const m = getMese(r[colM]);
+            const val = toNum(r[colV2]);
+            if (m && val > 0 && !found[m]) { found[m] = true; payload.push({ anno: annoPrev, mese: m, fatturato: val }); }
+          }
+          if (payload.length >= 3) break;
         }
       }
 
-      // Strategia 2: Riga orizzontale — cerca 12 valori numerici consecutivi
-      if (payload.length === 0) {
+      // ── STRATEGIA B: colonna A = nome mese, ricerca valore numerica in B/C/D ──
+      if (payload.length < 3) {
         for (const row of rows) {
-          if (!row || row.length < 12) continue;
-          const nums = row.map(c => parseVal(c));
-          const nonZero = nums.filter(n => n > 0);
-          if (nonZero.length >= 6) {
-            for (let m = 0; m < 12 && m < nums.length; m++) {
-              if (nums[m] > 0) payload.push({ anno: annoPrev, mese: m + 1, fatturato: nums[m] });
-            }
+          if (!row) continue;
+          const m = getMese(row[0]);
+          if (!m || found[m]) continue;
+          // Cerca il primo valore numerico significativo (> 100) nelle colonne seguenti
+          for (let ci = 1; ci < Math.min(row.length, 6); ci++) {
+            const val = toNum(row[ci]);
+            if (val > 100) { found[m] = true; payload.push({ anno: annoPrev, mese: m, fatturato: val }); break; }
+          }
+        }
+      }
+
+      // ── STRATEGIA C: riga con nomi mese in orizzontale, valori nella riga sotto ──
+      if (payload.length < 3) {
+        for (let ri = 0; ri < rows.length - 1; ri++) {
+          const row = rows[ri] || [];
+          const mesiTrovati = row.map((c, ci) => ({ ci, m: getMese(c) })).filter(x => x.m);
+          if (mesiTrovati.length >= 3) {
+            const valRow = rows[ri + 1] || [];
+            mesiTrovati.forEach(({ ci, m }) => {
+              if (found[m]) return;
+              const val = toNum(valRow[ci]);
+              if (val > 100) { found[m] = true; payload.push({ anno: annoPrev, mese: m, fatturato: val }); }
+            });
+            if (payload.length >= 3) break;
+          }
+        }
+      }
+
+      // ── STRATEGIA D: riga unica con ≥3 numeri significativi, assume mese 1..N ──
+      if (payload.length < 3) {
+        for (const row of rows) {
+          if (!row) continue;
+          const nums = row.map(toNum).filter(v => v > 100);
+          if (nums.length >= 3) {
+            nums.forEach((val, idx) => {
+              const m = idx + 1;
+              if (m <= 12 && !found[m]) { found[m] = true; payload.push({ anno: annoPrev, mese: m, fatturato: val }); }
+            });
             break;
           }
         }
       }
 
-      // Strategia 3: Righe verticali — cerca nomi mese nella prima colonna e valore nella seconda
       if (payload.length === 0) {
-        for (const row of rows) {
-          if (!row || row.length < 2) continue;
-          const meseStr = String(row[0] || "").toLowerCase().trim();
-          const mese = mesiIt[meseStr] || null;
-          if (mese) {
-            const val = parseVal(row[1]);
-            if (val > 0) payload.push({ anno: annoPrev, mese, fatturato: val });
-          }
-        }
+        // Mostra un preview del contenuto per aiutare il debug
+        const preview = rows.slice(0, 5).map(r => (r || []).slice(0, 6).map(c => String(c ?? "")).join(" | ")).join("\n");
+        throw new Error(`Nessun dato trovato. Prime righe del file:\n${preview}`);
       }
 
-      if (payload.length === 0) throw new Error("Nessun dato mensile trovato. Usa un formato con colonne Mese/Fatturato, o 12 valori mensili.");
+      payload.sort((a, b) => a.mese - b.mese);
 
-      // Upsert su Supabase
       await fetch(`${SUPABASE_URL}/rest/v1/fatturato_lanci_mensile`, {
         method: "POST",
         headers: { "apikey": SUPABASE_KEY, "Authorization": `Bearer ${token}`, "Content-Type": "application/json", "Prefer": "resolution=merge-duplicates" },
         body: JSON.stringify(payload),
       });
       await loadFatturato();
-      showToast(`Fatturato ${annoPrev}: ${payload.length} mesi importati`);
+      const mesiNomi = ["Gen","Feb","Mar","Apr","Mag","Giu","Lug","Ago","Set","Ott","Nov","Dic"];
+      const riepilogo = payload.map(p => `${mesiNomi[p.mese-1]}: €${Math.round(p.fatturato).toLocaleString("it")}`).join(" · ");
+      showToast(`${annoPrev}: ${payload.length} mesi importati — ${riepilogo}`);
     } catch (err) {
       showToast(err.message, "err");
     }
@@ -1335,6 +1381,12 @@ function ModuloAvanzamentoNovita({ titoli, prenotato, canali, token, ruolo }) {
       .filter(n => filterCedole.length === 0 || filterCedole.includes(n.nome_cedola))
       .filter(n => filterGiri.length === 0 || filterGiri.includes(n.giro_label))
       .filter(n => {
+        if (filterMesi.length === 0) return true;
+        if (!n.data_messa_in_vendita) return false;
+        const m = new Date(n.data_messa_in_vendita).getMonth() + 1;
+        return filterMesi.includes(m);
+      })
+      .filter(n => {
         if (filterDataVendita === "tutte") return true;
         if (filterDataVendita === "con_data") return !!n.data_messa_in_vendita;
         if (filterDataVendita === "senza_data") return !n.data_messa_in_vendita;
@@ -1366,7 +1418,7 @@ function ModuloAvanzamentoNovita({ titoli, prenotato, canali, token, ruolo }) {
       else if (sortKey === "copie_lanciate") cmp = (a.copie_lanciate || 0) - (b.copie_lanciate || 0);
       return sortDir === "asc" ? cmp : -cmp;
     });
-  }, [novitaArricchite, filterAnno, filterEditore, filterNumLancio, filterCedole, filterGiri, filterDataVendita, filterCopieLanciate, search, sortKey, sortDir]);
+  }, [novitaArricchite, filterAnno, filterEditore, filterNumLancio, filterCedole, filterGiri, filterMesi, filterDataVendita, filterCopieLanciate, search, sortKey, sortDir]);
 
   const editoriList = useMemo(() => [...new Set(novitaArricchite.filter(n => !filterAnno || getAnnoRecord(n) === filterAnno).map(n => n.editore).filter(Boolean))].sort(), [novitaArricchite, filterAnno]);
   const numLanciList = useMemo(() => [...new Set(novitaArricchite.filter(n => !filterAnno || getAnnoRecord(n) === filterAnno).map(n => n.num_lancio).filter(Boolean))].sort((a, b) => Number(a) - Number(b)), [novitaArricchite, filterAnno]);
@@ -1391,12 +1443,12 @@ function ModuloAvanzamentoNovita({ titoli, prenotato, canali, token, ruolo }) {
     return perMese;
   }, [novitaFiltrate, meseOggi]);
 
-  // Fatturato anno precedente (da DB, caricato dall'utente)
+  // Fatturato anno precedente (da DB, caricato dall'utente) — filtrato per mesi selezionati
   const annoPrecPerMese = useMemo(() => {
     const perMese = {};
-    fatturato.filter(f => f.anno === annoPrev).forEach(f => { perMese[f.mese] = f.fatturato || 0; });
+    fatturato.filter(f => f.anno === annoPrev && (filterMesi.length === 0 || filterMesi.includes(f.mese))).forEach(f => { perMese[f.mese] = f.fatturato || 0; });
     return perMese;
-  }, [fatturato, annoPrev]);
+  }, [fatturato, annoPrev, filterMesi]);
 
   const kpi = useMemo(() => {
     const totTitoli = novitaFiltrate.length;
@@ -1689,7 +1741,7 @@ function ModuloAvanzamentoNovita({ titoli, prenotato, canali, token, ruolo }) {
       {/* DASHBOARD KPI */}
       <div style={{ padding: "16px 20px", borderBottom: `1px solid ${T.border}` }}>
         <div style={{ display: "flex", gap: 10, alignItems: "center", marginBottom: 14, flexWrap: "wrap" }}>
-          <select style={{ ...css.input, fontSize: "14px", fontWeight: "600", color: T.accent }} value={filterAnno || ""} onChange={e => { setFilterAnno(e.target.value ? Number(e.target.value) : null); setFilterEditore("tutti"); setFilterNumLancio("tutti"); setFilterCedole([]); setFilterGiri([]); }}>
+          <select style={{ ...css.input, fontSize: "14px", fontWeight: "600", color: T.accent }} value={filterAnno || ""} onChange={e => { setFilterAnno(e.target.value ? Number(e.target.value) : null); setFilterEditore("tutti"); setFilterNumLancio("tutti"); setFilterCedole([]); setFilterGiri([]); setFilterMesi([]); }}>
             <option value="">Tutti gli anni</option>
             {anniDisponibili.map(a => <option key={a} value={a}>{a}</option>)}
           </select>
@@ -1697,6 +1749,14 @@ function ModuloAvanzamentoNovita({ titoli, prenotato, canali, token, ruolo }) {
           <SearchableSelect value={filterNumLancio} onChange={setFilterNumLancio} options={numLanciList.map(String)} placeholder="Tutti i lanci" width={140} />
           <SearchableMultiSelect values={filterGiri} onChange={setFilterGiri} options={giriList} placeholder="Tutti i giri" width={160} />
           <SearchableMultiSelect values={filterCedole} onChange={setFilterCedole} options={cedoleList} placeholder="Tutte le cedole" width={170} />
+          <SearchableMultiSelect
+            values={filterMesi.map(String)}
+            onChange={v => setFilterMesi(v.map(Number))}
+            options={["1","2","3","4","5","6","7","8","9","10","11","12"]}
+            renderOption={v => ["Gen","Feb","Mar","Apr","Mag","Giu","Lug","Ago","Set","Ott","Nov","Dic"][Number(v)-1]}
+            placeholder="Tutti i mesi"
+            width={150}
+          />
           <input style={{ ...css.input, width: 180 }} placeholder="Cerca EAN / titolo..." value={search} onChange={e => setSearch(e.target.value)} />
           <select style={{ ...css.input, fontSize: "11px", color: filterDataVendita !== "tutte" ? T.accent : T.textMid }} value={filterDataVendita} onChange={e => setFilterDataVendita(e.target.value)}>
             <option value="tutte">Data: tutte</option>
