@@ -701,7 +701,7 @@ function ModuloFineGiro({ titoli, prenotato, canali, token, ruolo, spalmatura })
 
   const canaliTabella = useMemo(() => {
     const CANALI_AGENTE = [...CANALI_RETE, "FASTBOOK", "CENTROLIBRI", "GROSSISTI"];
-    let base = ruolo === "agente" ? canali.filter(c => CANALI_AGENTE.includes(c.codice)) : canali.filter(c => c.codice !== "AURORA" && c.codice !== "GDO");
+    let base = ruolo === "agente" ? canali.filter(c => c.codice === "INDIPENDENTI_ALTRE_CATENE") : canali.filter(c => c.codice !== "AURORA" && c.codice !== "GDO");
     // Se c'è un cliente selezionato, mostra solo la colonna del suo canale
     if (clienteSel && byCanaleCliente) {
       const codiciCliente = Object.keys(byCanaleCliente);
@@ -1005,9 +1005,20 @@ function ModuloFineGiro({ titoli, prenotato, canali, token, ruolo, spalmatura })
                   <td style={{ ...css.td, color: T.textMid, fontSize: "11px" }}>{t.codice_editore}</td>
                   <td style={{ ...css.td, color: T.accent, fontWeight: "600", whiteSpace: "nowrap" }}>{t.editore_nome}</td>
                   <td style={{ ...css.td, whiteSpace: "nowrap" }}>€ {t.prezzo?.toFixed(2)}</td>
-                  <td style={css.td}>{t.obiettivo_assegnato?.toLocaleString("it")}</td>
-                  <td style={{ ...css.td, color: T.green, fontWeight: "600" }}>{totPren > 0 ? totPren.toLocaleString("it") : "—"}</td>
-                  <td style={css.td}><span style={{ color: pct >= 80 ? T.green : pct >= 50 ? T.accent : T.red, fontWeight: "700" }}>{pct}%</span></td>
+                  <td style={css.td}>{ruolo === "agente"
+                    ? (byCanaleObj?.["INDIPENDENTI_ALTRE_CATENE"] || 0).toLocaleString("it")
+                    : t.obiettivo_assegnato?.toLocaleString("it")
+                  }</td>
+                  <td style={{ ...css.td, color: T.green, fontWeight: "600" }}>{ruolo === "agente"
+                    ? ((byCanale?.["INDIPENDENTI_ALTRE_CATENE"] || 0) > 0 ? (byCanale["INDIPENDENTI_ALTRE_CATENE"]).toLocaleString("it") : "—")
+                    : (totPren > 0 ? totPren.toLocaleString("it") : "—")
+                  }</td>
+                  {(() => {
+                    const pctDisplay = ruolo === "agente"
+                      ? (byCanaleObj?.["INDIPENDENTI_ALTRE_CATENE"] > 0 ? Math.round((byCanale?.["INDIPENDENTI_ALTRE_CATENE"] || 0) / byCanaleObj["INDIPENDENTI_ALTRE_CATENE"] * 100) : 0)
+                      : pct;
+                    return <td style={css.td}><span style={{ color: pctDisplay >= 80 ? T.green : pctDisplay >= 50 ? T.accent : T.red, fontWeight: "700" }}>{pctDisplay}%</span></td>;
+                  })()}
                   {canaliTabella.map(c => {
                     const qta = byCanale[c.codice] || 0;
                     const obj = byCanaleObj?.[c.codice] || 0;
