@@ -1140,11 +1140,11 @@ const saveFatturato = async (anno, mese, valore) => {
       headers: { "apikey": SUPABASE_KEY, "Authorization": `Bearer ${token}`, "Content-Type": "application/json", "Prefer": "resolution=merge-duplicates" },
       body: JSON.stringify([{ anno, mese, fatturato: parseFloat(valore) || 0 }]),
     });
-    setFatturato(prev => {
-      const existing = prev.find(f => f.anno === anno && f.mese === mese);
-      if (existing) return prev.map(f => (f.anno === anno && f.mese === mese) ? { ...f, fatturato: parseFloat(valore) || 0 } : f);
-      return [...prev, { anno, mese, fatturato: parseFloat(valore) || 0 }].sort((a, b) => a.anno - b.anno || a.mese - b.mese);
-    });
+setFatturato(prev => {
+  const existing = prev.find(f => Number(f.anno) === Number(anno) && Number(f.mese) === Number(mese));
+  if (existing) return prev.map(f => (Number(f.anno) === Number(anno) && Number(f.mese) === Number(mese)) ? { ...f, fatturato: parseFloat(valore) || 0 } : f);
+  return [...prev, { anno: Number(anno), mese: Number(mese), fatturato: parseFloat(valore) || 0 }].sort((a, b) => a.anno - b.anno || a.mese - b.mese);
+});
   };
 
   // Upload fatturato anno precedente — parser universale
