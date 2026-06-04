@@ -2237,7 +2237,7 @@ function ModuloLanciSettimanali({ token, titoli, prenotato, canali }) {
           const batch = payload.slice(i, i + 500);
           const r = await fetch(`${SUPABASE_URL}/rest/v1/lanci_settimanali`, {
             method: "POST",
-            headers: { "apikey": SUPABASE_KEY, "Authorization": `Bearer ${token}`, "Content-Type": "application/json", "Prefer": "resolution=merge-duplicates" },
+            headers: { "apikey": SUPABASE_KEY, "Authorization": `Bearer ${token}`, "Content-Type": "application/json", "Prefer": "resolution=merge-duplicates,return=minimal" },
             body: JSON.stringify(batch),
           });
           if (!r.ok) throw new Error(await r.text());
