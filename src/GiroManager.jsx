@@ -1540,16 +1540,17 @@ setFatturato(prev => {
       // Mappa colonne con nomi flessibili
       const colMap = {};
       headers.forEach((h, i) => {
-        const hl = h.toLowerCase();
+        const hl = h.toLowerCase().trim();
         if (hl.includes("ean")) colMap.ean = i;
-        else if (hl === "titolo" || hl.includes("titolo")) colMap.titolo = i;
-        else if (hl === "autore" || hl.includes("autore")) colMap.autore = i;
-        else if (hl === "editore" || hl.includes("editore")) colMap.editore = i;
+        else if (hl.includes("titolo")) colMap.titolo = i;
+        else if (hl.includes("autore")) colMap.autore = i;
+        else if (hl.includes("editore")) colMap.editore = i;
         else if (hl.includes("prezzo")) colMap.prezzo = i;
-        else if (hl.includes("data") && hl.includes("pubbl")) colMap.data = i;
-        else if (hl === "num. lancio" || hl.includes("num") && hl.includes("lancio")) colMap.num_lancio = i;
-        else if (hl === "lancio" || (hl.includes("lancio") && !hl.includes("valore") && !hl.includes("num"))) colMap.copie = i;
+        else if (hl.includes("data") && (hl.includes("pubbl") || hl.includes("vendita"))) colMap.data = i;
+        else if (hl.includes("num") && hl.includes("lancio")) colMap.num_lancio = i;
+        else if (hl.includes("copie") && hl.includes("lanciate")) colMap.copie = i;
         else if (hl.includes("valore") && hl.includes("lancio")) colMap.valore = i;
+        else if (hl === "lancio") colMap.copie = i; // fallback vecchio formato
       });
       if (colMap.ean === undefined) throw new Error("Colonna EAN non trovata");
       const payload = rows.map(r => {
