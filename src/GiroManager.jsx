@@ -2235,12 +2235,12 @@ function ModuloLanciSettimanali({ token, titoli, prenotato, canali }) {
         if (payload.length === 0) throw new Error("Nessun EAN valido");
         for (let i = 0; i < payload.length; i += 500) {
           const batch = payload.slice(i, i + 500);
-          const r = await fetch(`${SUPABASE_URL}/rest/v1/lanci_settimanali`, {
-            method: "POST",
-            headers: { "apikey": SUPABASE_KEY, "Authorization": `Bearer ${token}`, "Content-Type": "application/json", "Prefer": "resolution=merge-duplicates,return=minimal" },
-            body: JSON.stringify(batch),
-          });
-          if (!r.ok) throw new Error(await r.text());
+          const r = await fetch(`${SUPABASE_URL}/rest/v1/rpc/upsert_lanci`, {
+  method: "POST",
+  headers: { "apikey": SUPABASE_KEY, "Authorization": `Bearer ${token}`, "Content-Type": "application/json" },
+  body: JSON.stringify({ payload: batch }),
+});
+if (!r.ok) throw new Error(await r.text());
         }
         showToast(`Lancio: ${payload.length} titoli caricati (lancio ${payload[0]?.num_lancio})`);
       } else {
