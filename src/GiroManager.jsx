@@ -1550,7 +1550,9 @@ setFatturato(prev => {
         else if (hl.includes("num") && hl.includes("lancio")) colMap.num_lancio = i;
         else if (hl.includes("copie") && hl.includes("lanciate")) colMap.copie = i;
         else if (hl.includes("valore") && hl.includes("lancio")) colMap.valore = i;
+        else if (hl.includes("fatturato")) colMap.valore = i;
         else if (hl === "lancio") colMap.copie = i; // fallback vecchio formato
+        else if (hl.includes("mov") || hl.includes("uscita")) colMap.copie = i;
       });
       if (colMap.ean === undefined) throw new Error("Colonna EAN non trovata");
       const payload = rows.map(r => {
