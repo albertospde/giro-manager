@@ -1616,7 +1616,12 @@ if (payload.length < 3) {
       if (colMap.ean === undefined) throw new Error("Colonna EAN non trovata");
       const payload = rows.map(r => {
         const dataStr = colMap.data !== undefined ? r[colMap.data] : null;
-        const dataObj = parseDataIt(dataStr);
+let dataObj = parseDataIt(dataStr);
+// Fallback: formato DD/MM/YYYY o DD-MM-YYYY
+if (!dataObj && dataStr) {
+  const m = String(dataStr).trim().match(/^(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{2,4})$/);
+  if (m) dataObj = new Date(Number(m[3].length === 2 ? "20" + m[3] : m[3]), Number(m[2]) - 1, Number(m[1]));
+}
         return {
           ean: String(r[colMap.ean] || "").trim(),
           titolo: r[colMap.titolo] || "",
