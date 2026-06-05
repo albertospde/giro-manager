@@ -1325,6 +1325,8 @@ setFatturato(prev => {
         copie_lanciate: nov?.copie_lanciate || 0,
         valore_lancio: nov?.valore_lancio || 0,
         data_messa_in_vendita: nov?.data_messa_in_vendita || null,
+        stato_vendita: nov?.stato_vendita || null,
+        risposta_editore: nov?.risposta_editore || null,
         manuale: nov?.manuale || false,
         ha_lancio: !!nov,
       };
@@ -1553,6 +1555,8 @@ setFatturato(prev => {
         else if (hl.includes("fatturato")) colMap.valore = i;
         else if (hl === "lancio") colMap.copie = i; // fallback vecchio formato
         else if (hl.includes("mov") || hl.includes("uscita")) colMap.copie = i;
+        else if (hl.includes("stato") && hl.includes("vendita") || hl === "sv") colMap.stato_vendita = i;
+        else if (hl.includes("risposta") && hl.includes("editore") || hl === "re") colMap.risposta_editore = i;
       });
       if (colMap.ean === undefined) throw new Error("Colonna EAN non trovata");
       const payload = rows.map(r => {
@@ -1568,6 +1572,8 @@ setFatturato(prev => {
           copie_lanciate: colMap.copie !== undefined ? parseInt(String(r[colMap.copie]).replace(/\./g, "")) || 0 : 0,
           valore_lancio: colMap.valore !== undefined ? parseValoreLancio(r[colMap.valore]) : 0,
           data_messa_in_vendita: dataObj ? dataObj.toISOString().split("T")[0] : null,
+          stato_vendita: colMap.stato_vendita !== undefined ? String(r[colMap.stato_vendita] || "").trim() || null : null,
+          risposta_editore: colMap.risposta_editore !== undefined ? String(r[colMap.risposta_editore] || "").trim() || null : null,
           manuale: false,
         };
       }).filter(r => r.ean.length >= 10);
@@ -1723,11 +1729,11 @@ setFatturato(prev => {
   // Export Excel
   const exportExcel = () => {
     const XLSX = window.XLSX;
-    const headers = ["CEDOLA","EAN","TITOLO","AUTORE","EDITORE","PREZZO","PRENOTATO TOTALE","N. LANCIO","COPIE LANCIATE","VALORE LANCIO","DATA MESSA IN VENDITA"];
+    const headers = ["CEDOLA","EAN","TITOLO","AUTORE","EDITORE","PREZZO","PRENOTATO TOTALE","N. LANCIO","COPIE LANCIATE","VALORE LANCIO","DATA MESSA IN VENDITA","SV","RE"];
     const rows = novitaFiltrate.map(n => [
       n.nome_cedola, n.ean, n.titolo, n.autore, n.editore, n.prezzo,
       n.prenotato_giri, (n.manuale && n.copie_lanciate > 0) ? "SBL/RIFO" : (n.num_lancio || ""), n.copie_lanciate,
-      n.valore_lancio, fmtDate(n.data_messa_in_vendita)
+      n.valore_lancio, fmtDate(n.data_messa_in_vendita), n.stato_vendita || "", n.risposta_editore || ""
     ]);
     const ws = XLSX.utils.aoa_to_sheet([headers, ...rows]);
     const wb = XLSX.utils.book_new();
@@ -1930,6 +1936,8 @@ setFatturato(prev => {
               <th style={{ ...css.th, cursor: "pointer" }} onClick={() => toggleSort("copie_lanciate")}>Copie Lanc.{sortIcon("copie_lanciate")}</th>
               <th style={css.th}>Val. Lancio</th>
               <th style={{ ...css.th, cursor: "pointer" }} onClick={() => toggleSort("data_vendita")}>Data Vendita{sortIcon("data_vendita")}</th>
+              <th style={css.th}>SV</th>
+              <th style={css.th}>RE</th>
             </tr>
           </thead>
           <tbody>
@@ -1969,6 +1977,8 @@ setFatturato(prev => {
                   </td>
                   <td style={{ ...css.td, textAlign: "right", whiteSpace: "nowrap" }}>{n.valore_lancio > 0 ? `€ ${n.valore_lancio.toLocaleString("it", { maximumFractionDigits: 0 })}` : "—"}</td>
                   <td style={{ ...css.td, whiteSpace: "nowrap" }}>{fmtDate(n.data_messa_in_vendita)}</td>
+                  <td style={{ ...css.td, color: T.textMid, fontSize: "11px" }}>{n.stato_vendita || "—"}</td>
+                  <td style={{ ...css.td, color: T.textMid, fontSize: "11px" }}>{n.risposta_editore || "—"}</td>
                 </tr>
               );
             })}
