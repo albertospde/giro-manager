@@ -1640,7 +1640,7 @@ if (payload.length < 3) {
           num_lancio: colMap.num_lancio !== undefined ? parseInt(r[colMap.num_lancio]) || null : null,
           copie_lanciate: colMap.copie !== undefined ? parseInt(String(r[colMap.copie]).replace(/\./g, "")) || 0 : 0,
           valore_lancio: colMap.valore !== undefined ? parseValoreLancio(r[colMap.valore]) : 0,
-          data_messa_in_vendita: dataObj ? dataObj.toISOString().split("T")[0] : null,
+          data_messa_in_vendita: dataObj ? `${dataObj.getFullYear()}-${String(dataObj.getMonth()+1).padStart(2,'0')}-${String(dataObj.getDate()).padStart(2,'0')}` : null,
           stato_vendita: colMap.stato_vendita !== undefined ? (String(r[colMap.stato_vendita] || "").trim().split(" ")[0] || null) : null,
           risposta_editore: colMap.risposta_editore !== undefined ? (String(r[colMap.risposta_editore] || "").trim().split(" ")[0] || null) : null,
           manuale: false,
