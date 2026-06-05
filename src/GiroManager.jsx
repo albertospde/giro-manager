@@ -1435,19 +1435,23 @@ setFatturato(prev => {
 
   // Fatturato anno corrente calcolato dai dati app (solo mesi fino al corrente)
   const meseOggi = new Date().getMonth() + 1;
-  const annoCorrentePerMese = useMemo(() => {
-    const perMese = {};
+  const valoriPerAnnoMese = useMemo(() => {
+    const map = {}; // { anno: { mese: valore } }
     novitaArricchite
       .filter(n => !filterAnno || getAnnoRecord(n) === filterAnno)
       .forEach(n => {
         if (!n.data_messa_in_vendita || !n.valore_lancio || n.valore_lancio === 0) return;
         const d = new Date(n.data_messa_in_vendita);
         if (isNaN(d)) return;
-        const m = d.getMonth() + 1;
-        perMese[m] = (perMese[m] || 0) + (n.valore_lancio || 0);
+        const anno = d.getFullYear();
+        const mese = d.getMonth() + 1;
+        if (!map[anno]) map[anno] = {};
+        map[anno][mese] = (map[anno][mese] || 0) + (n.valore_lancio || 0);
       });
-    return perMese;
+    return map;
   }, [novitaArricchite, filterAnno]);
+
+  const annoCorrentePerMese = useMemo(() => valoriPerAnnoMese[annoRif] || {}, [valoriPerAnnoMese, annoRif]);
 
   // Fatturato anno precedente (da DB, caricato dall'utente) — filtrato per mesi selezionati
   const annoPrecPerMese = useMemo(() => {
