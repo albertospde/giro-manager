@@ -1604,6 +1604,7 @@ if (payload.length < 3) {
         else if (hl.includes("risposta") && hl.includes("editore") || hl === "re") colMap.risposta_editore = i;
         else if (hl.includes("editore")) colMap.editore = i;
         else if (hl.includes("prezzo")) colMap.prezzo = i;
+        else if (hl === "mese" || (hl.includes("mese") && !hl.includes("data"))) colMap.mese = i;
         else if (hl.includes("data") && (hl.includes("pubbl") || hl.includes("vendita"))) colMap.data = i;
         else if (hl.includes("num") && hl.includes("lancio")) colMap.num_lancio = i;
         else if (hl.includes("copie") && hl.includes("lanciate")) colMap.copie = i;
@@ -1615,8 +1616,19 @@ if (payload.length < 3) {
       });
       if (colMap.ean === undefined) throw new Error("Colonna EAN non trovata");
       const payload = rows.map(r => {
-        const dataStr = colMap.data !== undefined ? r[colMap.data] : null;
-let dataObj = parseDataIt(dataStr);
+        let dataObj = null;
+if (colMap.mese !== undefined) {
+  const meseVal = String(r[colMap.mese] || "").trim().toLowerCase();
+  const meseNum = MESI_IT[meseVal] !== undefined ? MESI_IT[meseVal] + 1 : parseInt(meseVal) || null;
+  if (meseNum >= 1 && meseNum <= 12) dataObj = new Date(filterAnno || 2026, meseNum - 1, 1);
+} else {
+  const dataStr = colMap.data !== undefined ? r[colMap.data] : null;
+  dataObj = parseDataIt(dataStr);
+  if (!dataObj && dataStr) {
+    const m = String(dataStr).trim().match(/^(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{2,4})$/);
+    if (m) dataObj = new Date(Number(m[3].length === 2 ? "20"+m[3] : m[3]), Number(m[2])-1, Number(m[1]));
+  }
+}
 // Fallback: formato DD/MM/YYYY o DD-MM-YYYY
 if (!dataObj && dataStr) {
   const m = String(dataStr).trim().match(/^(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{2,4})$/);
