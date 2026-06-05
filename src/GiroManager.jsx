@@ -1197,6 +1197,51 @@ setFatturato(prev => {
       const payload = [];
       const found = {}; // dedup per mese
 
+// ── STRATEGIA 0: CSV per titolo con colonna data e fatturato ──────────────
+// Formato: header row → cerca colonne "data" e "fatturato"
+if (payload.length < 3) {
+  for (let ri = 0; ri < Math.min(rows.length, 10); ri++) {
+    const hrow = (rows[ri] || []).map(toStr);
+    const colD = hrow.findIndex(h =>
+      h.includes("data") || h.includes("pubblica") || h.includes("lancio") || h.includes("vendita")
+    );
+    const colF = hrow.findIndex(h =>
+      h.includes("fatturato") || h.includes("valore") || h.includes("importo")
+    );
+    if (colD >= 0 && colF >= 0) {
+      const aggMese = {}; // { mese: totale }
+      for (let i = ri + 1; i < rows.length; i++) {
+        const r = rows[i] || [];
+        const rawData = r[colD];
+        const rawVal = r[colF];
+        if (!rawData || rawVal == null) continue;
+
+        // Parse data: supporta Date JS (da XLSX cellDates:true), stringa DD/MM/YYYY, YYYY-MM-DD
+        let mese = null;
+        if (rawData instanceof Date && !isNaN(rawData)) {
+          mese = rawData.getMonth() + 1;
+        } else {
+          const s = String(rawData).trim();
+          const m1 = s.match(/^(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{2,4})$/); // DD/MM/YYYY
+          const m2 = s.match(/^(\d{4})[\/\-](\d{1,2})[\/\-](\d{1,2})$/);   // YYYY-MM-DD
+          if (m1) mese = parseInt(m1[2]);
+          else if (m2) mese = parseInt(m2[2]);
+        }
+
+        const val = toNum(rawVal);
+        if (mese >= 1 && mese <= 12 && val > 0) {
+          aggMese[mese] = (aggMese[mese] || 0) + val;
+        }
+      }
+      // Converti in payload
+      Object.entries(aggMese).forEach(([m, tot]) => {
+        payload.push({ anno: annoPrev, mese: parseInt(m), fatturato: tot });
+      });
+      if (payload.length >= 3) break;
+    }
+  }
+}
+      
       // ── STRATEGIA A: header row con "mese" + colonna valore ──────────────
       for (let ri = 0; ri < Math.min(rows.length, 10); ri++) {
         const hrow = (rows[ri] || []).map(toStr);
