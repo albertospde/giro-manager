@@ -1617,32 +1617,20 @@ if (payload.length < 3) {
       if (colMap.ean === undefined) throw new Error("Colonna EAN non trovata");
       const payload = rows.map(r => {
         let dataObj = null;
-if (colMap.mese !== undefined) {
-  const meseVal = String(r[colMap.mese] || "").trim().toLowerCase();
-  const meseNum = MESI_IT[meseVal] !== undefined ? MESI_IT[meseVal] + 1 : parseInt(meseVal) || null;
-  if (meseNum >= 1 && meseNum <= 12) dataObj = new Date(filterAnno || 2026, meseNum - 1, 1);
-} else {
-  let dataObj = null;
-if (colMap.mese !== undefined) {
-  const meseVal = String(r[colMap.mese] || "").trim().toLowerCase();
-  const meseNum = MESI_IT[meseVal] !== undefined ? MESI_IT[meseVal] + 1 : parseInt(meseVal) || null;
-  if (meseNum >= 1 && meseNum <= 12) dataObj = new Date(filterAnno || 2026, meseNum - 1, 1);
-} else {
-  if (!dataObj && dataStr) {
-    const m = String(dataStr).trim().match(/^(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{2,4})$/);
-    if (m) dataObj = new Date(Number(m[3].length === 2 ? "20"+m[3] : m[3]), Number(m[2])-1, Number(m[1]));
-  }
-}
-  if (!dataObj && dataStr) {
-    const m = String(dataStr).trim().match(/^(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{2,4})$/);
-    if (m) dataObj = new Date(Number(m[3].length === 2 ? "20"+m[3] : m[3]), Number(m[2])-1, Number(m[1]));
-  }
-}
-// Fallback: formato DD/MM/YYYY o DD-MM-YYYY
-if (!dataObj && dataStr) {
-  const m = String(dataStr).trim().match(/^(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{2,4})$/);
-  if (m) dataObj = new Date(Number(m[3].length === 2 ? "20" + m[3] : m[3]), Number(m[2]) - 1, Number(m[1]));
-}
+        if (colMap.mese !== undefined) {
+          const meseVal = String(r[colMap.mese] || "").trim().toLowerCase();
+          const meseNum = MESI_IT[meseVal] !== undefined ? MESI_IT[meseVal] + 1 : parseInt(meseVal) || null;
+          if (meseNum >= 1 && meseNum <= 12) dataObj = new Date(filterAnno || 2026, meseNum - 1, 1);
+        } else {
+          const dataStr = colMap.data !== undefined ? r[colMap.data] : null;
+          if (dataStr) {
+            dataObj = parseDataIt(dataStr);
+            if (!dataObj) {
+              const m = String(dataStr).trim().match(/^(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{2,4})$/);
+              if (m) dataObj = new Date(Number(m[3].length === 2 ? "20"+m[3] : m[3]), Number(m[2])-1, Number(m[1]));
+            }
+          }
+        }
         return {
           ean: String(r[colMap.ean] || "").trim(),
           titolo: r[colMap.titolo] || "",
