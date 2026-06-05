@@ -1073,7 +1073,10 @@ function fmtDate(d) {
 function parseValoreLancio(str) {
   if (typeof str === "number") return str;
   if (!str) return 0;
-  return parseFloat(String(str).replace(/[^\d,.-]/g, "").replace(".", "").replace(",", ".")) || 0;
+  // Formato italiano: 2.178.600 € oppure 2.178.600,50 €
+  // Rimuovi simbolo € e spazi, poi togli tutti i punti (migliaia), converti virgola in punto decimale
+  const s = String(str).replace(/[€\s]/g, "").replace(/\./g, "").replace(",", ".");
+  return parseFloat(s) || 0;
 }
 
 function parsePrezzo(str) {
@@ -1416,6 +1419,8 @@ setFatturato(prev => {
         cmp = da.localeCompare(db);
       }
       else if (sortKey === "copie_lanciate") cmp = (a.copie_lanciate || 0) - (b.copie_lanciate || 0);
+      else if (sortKey === "stato_vendita") cmp = (a.stato_vendita || "").localeCompare(b.stato_vendita || "");
+      else if (sortKey === "risposta_editore") cmp = (a.risposta_editore || "").localeCompare(b.risposta_editore || "");
       return sortDir === "asc" ? cmp : -cmp;
     });
   }, [novitaArricchite, filterAnno, filterEditore, filterNumLancio, filterCedole, filterGiri, filterMesi, filterDataVendita, filterCopieLanciate, search, sortKey, sortDir]);
@@ -1938,8 +1943,8 @@ setFatturato(prev => {
               <th style={{ ...css.th, cursor: "pointer" }} onClick={() => toggleSort("copie_lanciate")}>Copie Lanc.{sortIcon("copie_lanciate")}</th>
               <th style={css.th}>Val. Lancio</th>
               <th style={{ ...css.th, cursor: "pointer" }} onClick={() => toggleSort("data_vendita")}>Data Vendita{sortIcon("data_vendita")}</th>
-              <th style={css.th}>SV</th>
-              <th style={css.th}>RE</th>
+              <th style={{ ...css.th, cursor: "pointer" }} onClick={() => toggleSort("stato_vendita")}>SV{sortIcon("stato_vendita")}</th>
+              <th style={{ ...css.th, cursor: "pointer" }} onClick={() => toggleSort("risposta_editore")}>RE{sortIcon("risposta_editore")}</th>
             </tr>
           </thead>
           <tbody>
