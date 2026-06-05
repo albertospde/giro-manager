@@ -2075,16 +2075,13 @@ function ModuloLanciSettimanali({ token, titoli, prenotato, canali, ruolo, userA
     return { byEan, byEditore };
   }, [titoli]);
 
-  const getAccountForRow = (r) =>
-    accountMaps.byEan[r.ean] ||
-    accountMaps.byEditore[r.editore?.trim().toLowerCase()] ||
-    null;
-
   // Lista account presenti nel lancio corrente
   const accountsDisponibili = useMemo(() => {
     const anno = filterAnno || anniDisponibili[0];
     const rows = data.filter(r => r.anno_lancio === anno && (filterLancio.length === 0 || filterLancio.includes(r.num_lancio)));
-    return [...new Set(rows.map(r => getAccountForRow(r)).filter(Boolean))].sort();
+    return [...new Set(rows.map(r =>
+      accountMaps.byEan[r.ean] || accountMaps.byEditore[r.editore?.trim().toLowerCase()] || null
+    ).filter(Boolean))].sort();
   }, [data, filterAnno, filterLancio, anniDisponibili, accountMaps]);
 
   // Auto-selezione account per agente al cambio lancio
@@ -2134,7 +2131,7 @@ function ModuloLanciSettimanali({ token, titoli, prenotato, canali, ruolo, userA
           giorno_uscita: giornoUscita,
           is_override: isOverride,
           delta_portale: deltaPortale,
-          account_editore: getAccountForRow(r),
+          account_editore: accountMaps.byEan[r.ean] || accountMaps.byEditore[r.editore?.trim().toLowerCase()] || null,
           // Flag per sapere se i dati vengono dal DB o sono manuali/vuoti
           is_live_cedole: haLiveCedole,
           is_live_fg: haLiveFG,
@@ -2163,7 +2160,7 @@ function ModuloLanciSettimanali({ token, titoli, prenotato, canali, ruolo, userA
       });
     }
     return result;
-  }, [dataArricchita, search, sortKey, sortDir]);
+  }, [dataArricchita, search, sortKey, sortDir, filterAccount]);
 
   // KPI
   const kpi = useMemo(() => {
