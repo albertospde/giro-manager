@@ -1437,18 +1437,18 @@ setFatturato(prev => {
   const meseOggi = new Date().getMonth() + 1;
   const annoCorrentePerMese = useMemo(() => {
     const perMese = {};
-    // Usa tutti i titoli dell'anno selezionato, indipendentemente dagli altri filtri attivi
-    const base = novitaArricchite.filter(n => !filterAnno || getAnnoRecord(n) === filterAnno);
-    base.forEach(n => {
+    // Usa tutti i titoli con data_messa_in_vendita nell'anno di riferimento
+    novitaArricchite.forEach(n => {
       if (!n.data_messa_in_vendita || !n.valore_lancio || n.valore_lancio === 0) return;
       const d = new Date(n.data_messa_in_vendita);
       if (isNaN(d)) return;
-      const m = d.getMonth() + 1; // 1-12
-      if (m > meseOggi) return; // mesi futuri esclusi dal consuntivo
+      if (d.getFullYear() !== annoRif) return;
+      const m = d.getMonth() + 1;
+      if (m > meseOggi) return;
       perMese[m] = (perMese[m] || 0) + (n.valore_lancio || 0);
     });
     return perMese;
-  }, [novitaArricchite, filterAnno, meseOggi]);
+  }, [novitaArricchite, annoRif, meseOggi]);
 
   // Fatturato anno precedente (da DB, caricato dall'utente) — filtrato per mesi selezionati
   const annoPrecPerMese = useMemo(() => {
@@ -1553,6 +1553,7 @@ setFatturato(prev => {
         if (hl.includes("ean")) colMap.ean = i;
         else if (hl.includes("titolo")) colMap.titolo = i;
         else if (hl.includes("autore")) colMap.autore = i;
+        else if (hl.includes("risposta") && hl.includes("editore") || hl === "re") colMap.risposta_editore = i;
         else if (hl.includes("editore")) colMap.editore = i;
         else if (hl.includes("prezzo")) colMap.prezzo = i;
         else if (hl.includes("data") && (hl.includes("pubbl") || hl.includes("vendita"))) colMap.data = i;
@@ -1563,7 +1564,6 @@ setFatturato(prev => {
         else if (hl === "lancio") colMap.copie = i; // fallback vecchio formato
         else if (hl.includes("mov") || hl.includes("uscita")) colMap.copie = i;
         else if (hl.includes("stato") && hl.includes("vendita") || hl === "sv") colMap.stato_vendita = i;
-        else if (hl.includes("risposta") && hl.includes("editore") || hl === "re") colMap.risposta_editore = i;
       });
       if (colMap.ean === undefined) throw new Error("Colonna EAN non trovata");
       const payload = rows.map(r => {
