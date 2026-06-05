@@ -1622,8 +1622,19 @@ if (colMap.mese !== undefined) {
   const meseNum = MESI_IT[meseVal] !== undefined ? MESI_IT[meseVal] + 1 : parseInt(meseVal) || null;
   if (meseNum >= 1 && meseNum <= 12) dataObj = new Date(filterAnno || 2026, meseNum - 1, 1);
 } else {
+  let dataObj = null;
+if (colMap.mese !== undefined) {
+  const meseVal = String(r[colMap.mese] || "").trim().toLowerCase();
+  const meseNum = MESI_IT[meseVal] !== undefined ? MESI_IT[meseVal] + 1 : parseInt(meseVal) || null;
+  if (meseNum >= 1 && meseNum <= 12) dataObj = new Date(filterAnno || 2026, meseNum - 1, 1);
+} else {
   const dataStr = colMap.data !== undefined ? r[colMap.data] : null;
   dataObj = parseDataIt(dataStr);
+  if (!dataObj && dataStr) {
+    const m = String(dataStr).trim().match(/^(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{2,4})$/);
+    if (m) dataObj = new Date(Number(m[3].length === 2 ? "20"+m[3] : m[3]), Number(m[2])-1, Number(m[1]));
+  }
+}
   if (!dataObj && dataStr) {
     const m = String(dataStr).trim().match(/^(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{2,4})$/);
     if (m) dataObj = new Date(Number(m[3].length === 2 ? "20"+m[3] : m[3]), Number(m[2])-1, Number(m[1]));
