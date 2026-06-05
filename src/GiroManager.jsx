@@ -2062,21 +2062,30 @@ function ModuloLanciSettimanali({ token, titoli, prenotato, canali, ruolo, userA
   // Canale Amazon ID
   const amazonCodice = "AMAZON";
 
-  // Mappa editore → account_editore (da titoli)
-  const accountByEditore = useMemo(() => {
-    const map = {};
+  // Mappa EAN → account_editore e editore_nome → account_editore (da titoli)
+  const accountMaps = useMemo(() => {
+    const byEan = {};
+    const byEditore = {};
     titoli.forEach(t => {
-      if (t.editore_nome && t.account_editore) map[t.editore_nome] = t.account_editore;
+      if (t.account_editore) {
+        if (t.ean) byEan[t.ean] = t.account_editore;
+        if (t.editore_nome) byEditore[t.editore_nome.trim().toLowerCase()] = t.account_editore;
+      }
     });
-    return map;
+    return { byEan, byEditore };
   }, [titoli]);
+
+  const getAccountForRow = (r) =>
+    accountMaps.byEan[r.ean] ||
+    accountMaps.byEditore[r.editore?.trim().toLowerCase()] ||
+    null;
 
   // Lista account presenti nel lancio corrente
   const accountsDisponibili = useMemo(() => {
     const anno = filterAnno || anniDisponibili[0];
     const rows = data.filter(r => r.anno_lancio === anno && (filterLancio.length === 0 || filterLancio.includes(r.num_lancio)));
-    return [...new Set(rows.map(r => accountByEditore[r.editore]).filter(Boolean))].sort();
-  }, [data, filterAnno, filterLancio, anniDisponibili, accountByEditore]);
+    return [...new Set(rows.map(r => getAccountForRow(r)).filter(Boolean))].sort();
+  }, [data, filterAnno, filterLancio, anniDisponibili, accountMaps]);
 
   // Auto-selezione account per agente al cambio lancio
   useEffect(() => {
@@ -2112,7 +2121,7 @@ function ModuloLanciSettimanali({ token, titoli, prenotato, canali, ruolo, userA
         const giornoUscita = r.giorno_uscita_override || giornoCalcolato;
         const isOverride = !!r.giorno_uscita_override;
 
-        const deltaPortale = prenSenzaAmazon - (r.prenotato_trasmesso ?? r.prenotato_iscrizione ?? 0);
+        const deltaPortale = (r.prenotato_trasmesso ?? r.prenotato_iscrizione ?? 0) - prenSenzaAmazon;
 
         return {
           ...r,
@@ -2125,7 +2134,7 @@ function ModuloLanciSettimanali({ token, titoli, prenotato, canali, ruolo, userA
           giorno_uscita: giornoUscita,
           is_override: isOverride,
           delta_portale: deltaPortale,
-          account_editore: accountByEditore[r.editore] || null,
+          account_editore: getAccountForRow(r),
           // Flag per sapere se i dati vengono dal DB o sono manuali/vuoti
           is_live_cedole: haLiveCedole,
           is_live_fg: haLiveFG,
@@ -2135,7 +2144,7 @@ function ModuloLanciSettimanali({ token, titoli, prenotato, canali, ruolo, userA
           is_manual_amazon: !haLiveAmazon && r.pren_amazon_manual > 0,
         };
       });
-  }, [data, filterAnno, filterLancio, anniDisponibili, prenByEanCanale, cedoleByEan, accountByEditore]);
+  }, [data, filterAnno, filterLancio, anniDisponibili, prenByEanCanale, cedoleByEan, accountMaps]);
 
   // Filtro e sort
   const dataFiltrata = useMemo(() => {
