@@ -1437,8 +1437,8 @@ setFatturato(prev => {
   const meseOggi = new Date().getMonth() + 1;
   const annoCorrentePerMese = useMemo(() => {
     const perMese = {};
-    // Usa tutti i titoli con data_messa_in_vendita nell'anno di riferimento
-    novitaArricchite.forEach(n => {
+    // Usa direttamente novitaDB (tutti i record) per avere il totale completo
+    novitaDB.forEach(n => {
       if (!n.data_messa_in_vendita || !n.valore_lancio || n.valore_lancio === 0) return;
       const d = new Date(n.data_messa_in_vendita);
       if (isNaN(d)) return;
@@ -1448,7 +1448,7 @@ setFatturato(prev => {
       perMese[m] = (perMese[m] || 0) + (n.valore_lancio || 0);
     });
     return perMese;
-  }, [novitaArricchite, annoRif, meseOggi]);
+  }, [novitaDB, annoRif, meseOggi]);
 
   // Fatturato anno precedente (da DB, caricato dall'utente) — filtrato per mesi selezionati
   const annoPrecPerMese = useMemo(() => {
