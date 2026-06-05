@@ -1440,7 +1440,7 @@ setFatturato(prev => {
     // Usa tutti i titoli dell'anno selezionato, indipendentemente dagli altri filtri attivi
     const base = novitaArricchite.filter(n => !filterAnno || getAnnoRecord(n) === filterAnno);
     base.forEach(n => {
-      if (!n.data_messa_in_vendita || !n.copie_lanciate || n.copie_lanciate === 0) return;
+      if (!n.data_messa_in_vendita || !n.valore_lancio || n.valore_lancio === 0) return;
       const d = new Date(n.data_messa_in_vendita);
       if (isNaN(d)) return;
       const m = d.getMonth() + 1; // 1-12
@@ -1620,7 +1620,9 @@ setFatturato(prev => {
           const changed = row.num_lancio !== existing.num_lancio ||
             row.copie_lanciate !== existing.copie_lanciate ||
             Math.abs((row.valore_lancio || 0) - (existing.valore_lancio || 0)) > 0.01 ||
-            row.data_messa_in_vendita !== existing.data_messa_in_vendita;
+            row.data_messa_in_vendita !== existing.data_messa_in_vendita ||
+            row.stato_vendita !== existing.stato_vendita ||
+            row.risposta_editore !== existing.risposta_editore;
           if (changed) toUpdate.push(row);
           else skipped++;
         }
@@ -1660,6 +1662,8 @@ setFatturato(prev => {
             copie_lanciate: row.copie_lanciate,
             valore_lancio: row.valore_lancio,
             data_messa_in_vendita: row.data_messa_in_vendita,
+            stato_vendita: row.stato_vendita,
+            risposta_editore: row.risposta_editore,
           }),
         });
       }
