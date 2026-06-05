@@ -1995,7 +1995,7 @@ setFatturato(prev => {
 // MODULO LANCI SETTIMANALI
 // ────────────────────────────────────────────────────────────────
 
-function ModuloLanciSettimanali({ token, titoli, prenotato, canali }) {
+function ModuloLanciSettimanali({ token, titoli, prenotato, canali, ruolo, userAccount }) {
   const [data, setData] = useState([]);
   const [loading, setLoading] = useState(true);
   const [uploading, setUploading] = useState(false);
@@ -2003,6 +2003,7 @@ function ModuloLanciSettimanali({ token, titoli, prenotato, canali }) {
   const [toast, setToast] = useState(null);
   const [filterAnno, setFilterAnno] = useState(null);
   const [filterLancio, setFilterLancio] = useState([]);
+  const [filterAccount, setFilterAccount] = useState([]);
   const [search, setSearch] = useState("");
   const [sortKey, setSortKey] = useState(null);
   const [sortDir, setSortDir] = useState("desc");
@@ -2061,6 +2062,29 @@ function ModuloLanciSettimanali({ token, titoli, prenotato, canali }) {
   // Canale Amazon ID
   const amazonCodice = "AMAZON";
 
+  // Mappa editore → account_editore (da titoli)
+  const accountByEditore = useMemo(() => {
+    const map = {};
+    titoli.forEach(t => {
+      if (t.editore_nome && t.account_editore) map[t.editore_nome] = t.account_editore;
+    });
+    return map;
+  }, [titoli]);
+
+  // Lista account presenti nel lancio corrente
+  const accountsDisponibili = useMemo(() => {
+    const anno = filterAnno || anniDisponibili[0];
+    const rows = data.filter(r => r.anno_lancio === anno && (filterLancio.length === 0 || filterLancio.includes(r.num_lancio)));
+    return [...new Set(rows.map(r => accountByEditore[r.editore]).filter(Boolean))].sort();
+  }, [data, filterAnno, filterLancio, anniDisponibili, accountByEditore]);
+
+  // Auto-selezione account per agente al cambio lancio
+  useEffect(() => {
+    if (ruolo === "agente" && userAccount && accountsDisponibili.includes(userAccount)) {
+      setFilterAccount([userAccount]);
+    }
+  }, [ruolo, userAccount, accountsDisponibili]);
+
   // Arricchisci dati lancio con dati fine giro (live DB → fallback manuale)
   const dataArricchita = useMemo(() => {
     const anno = filterAnno || anniDisponibili[0];
@@ -2088,6 +2112,8 @@ function ModuloLanciSettimanali({ token, titoli, prenotato, canali }) {
         const giornoUscita = r.giorno_uscita_override || giornoCalcolato;
         const isOverride = !!r.giorno_uscita_override;
 
+        const deltaPortale = prenSenzaAmazon - (r.prenotato_trasmesso ?? r.prenotato_iscrizione ?? 0);
+
         return {
           ...r,
           cedole,
@@ -2098,6 +2124,8 @@ function ModuloLanciSettimanali({ token, titoli, prenotato, canali }) {
           giorno_calcolato: giornoCalcolato,
           giorno_uscita: giornoUscita,
           is_override: isOverride,
+          delta_portale: deltaPortale,
+          account_editore: accountByEditore[r.editore] || null,
           // Flag per sapere se i dati vengono dal DB o sono manuali/vuoti
           is_live_cedole: haLiveCedole,
           is_live_fg: haLiveFG,
@@ -2107,7 +2135,7 @@ function ModuloLanciSettimanali({ token, titoli, prenotato, canali }) {
           is_manual_amazon: !haLiveAmazon && r.pren_amazon_manual > 0,
         };
       });
-  }, [data, filterAnno, filterLancio, anniDisponibili, prenByEanCanale, cedoleByEan]);
+  }, [data, filterAnno, filterLancio, anniDisponibili, prenByEanCanale, cedoleByEan, accountByEditore]);
 
   // Filtro e sort
   const dataFiltrata = useMemo(() => {
@@ -2115,6 +2143,9 @@ function ModuloLanciSettimanali({ token, titoli, prenotato, canali }) {
     if (search) {
       const q = search.toLowerCase();
       result = result.filter(r => r.ean?.toLowerCase().includes(q) || r.titolo?.toLowerCase().includes(q) || r.autore?.toLowerCase().includes(q) || r.editore?.toLowerCase().includes(q));
+    }
+    if (filterAccount.length > 0) {
+      result = result.filter(r => filterAccount.includes(r.account_editore));
     }
     if (sortKey) {
       result = [...result].sort((a, b) => {
@@ -2275,11 +2306,11 @@ if (!r.ok) throw new Error(await r.text());
   // Export Excel
   const exportExcel = () => {
     const XLSX = window.XLSX;
-    const headers = ["EAN","COD.ED.","EDITORE","TITOLO","AUTORE","PREZZO","CEDOLE","LANCIATE","TRASMESSO","FINE GIRO","AMAZON","TEORICO","GIORNO USCITA"];
+    const headers = ["EAN","COD.ED.","EDITORE","ACCOUNT","TITOLO","AUTORE","PREZZO","CEDOLE","LANCIATE","TRASMESSO","FINE GIRO","AMAZON","FG NO AMAZON","TEORICO","Δ PORTALE","GIORNO USCITA"];
     const rows = dataFiltrata.map(r => [
-      r.ean, r.codice_editore, r.editore, r.titolo, r.autore, r.prezzo,
+      r.ean, r.codice_editore, r.editore, r.account_editore || "", r.titolo, r.autore, r.prezzo,
       r.cedole.join(", "), r.prenotato_iscrizione, r.prenotato_trasmesso ?? "",
-      r.pren_fine_giro, r.pren_amazon, r.teorico, r.giorno_uscita
+      r.pren_fine_giro, r.pren_amazon, r.pren_senza_amazon, r.teorico, r.delta_portale, r.giorno_uscita
     ]);
     // Riepilogo editori
     const rH = ["EDITORE","TITOLI","LANCIATE","TRASMESSE","FINE GIRO","AMAZON","VALORE"];
@@ -2319,6 +2350,7 @@ if (!r.ok) throw new Error(await r.text());
         </select>
         <SearchableMultiSelect values={filterLancio.map(String)} onChange={v => setFilterLancio(v.map(Number))} options={lanciPerAnno.map(String)} renderOption={v => `Lancio ${v}`} placeholder="Seleziona lancio" width={170} />
         <input style={{ ...css.input, width: 180 }} placeholder="Cerca EAN / titolo..." value={search} onChange={e => setSearch(e.target.value)} />
+        <SearchableMultiSelect values={filterAccount} onChange={setFilterAccount} options={accountsDisponibili} placeholder="Tutti gli account" width={160} />
         {/* Riepilogo giorni */}
         <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
           <span style={css.tag(T.accent)}>MAR {kpi.martedi}</span>
@@ -2397,6 +2429,7 @@ if (!r.ok) throw new Error(await r.text());
               <th style={{ ...css.th, cursor: "pointer" }} onClick={() => toggleSort("pren_fine_giro")}>Fine Giro{sortIcon("pren_fine_giro")}</th>
               <th style={{ ...css.th, cursor: "pointer", color: "#e8a838" }} onClick={() => toggleSort("pren_amazon")}>Amazon{sortIcon("pren_amazon")}</th>
               <th style={{ ...css.th, cursor: "pointer" }} onClick={() => toggleSort("teorico")}>Teorico{sortIcon("teorico")}</th>
+              <th style={{ ...css.th, cursor: "pointer" }} onClick={() => toggleSort("delta_portale")} title="Fine Giro (no Amazon) − Lanciate">Δ Portale{sortIcon("delta_portale")}</th>
               <th style={css.th}>Uscita</th>
             </tr>
           </thead>
@@ -2473,6 +2506,11 @@ if (!r.ok) throw new Error(await r.text());
                 <td style={{ ...css.td, fontWeight: "700", color: r.teorico >= 2000 ? T.green : T.text }}>
                   {r.teorico > 0 ? r.teorico.toLocaleString("it") : "—"}
                 </td>
+                <td style={{ ...css.td, fontWeight: "700", color: r.delta_portale > 0 ? T.green : r.delta_portale < 0 ? T.red : T.textMid, textAlign: "right" }}>
+                  {r.pren_senza_amazon > 0 || (r.prenotato_trasmesso ?? r.prenotato_iscrizione) > 0
+                    ? (r.delta_portale > 0 ? "+" : "") + r.delta_portale.toLocaleString("it")
+                    : "—"}
+                </td>
                 <td style={css.td}>
                   <select
                     value={r.giorno_uscita}
@@ -2538,6 +2576,7 @@ export default function App() {
   const [canali, setCanali] = useState([]);
   const [giriDB, setGiriDB] = useState([]);
   const [ruolo, setRuolo] = useState("admin");
+  const [userAccount, setUserAccount] = useState(null);
 
   useEffect(() => {
     if (!session) return;
@@ -2546,7 +2585,7 @@ export default function App() {
     sbFetch("prenotato?select=*&limit=100000", session.token).then(setPrenotato);
     sbFetch("spalmatura_obiettivo?select=*", session.token).then(setSpalmatura);
     sbFetch("canali?select=*&order=nome.asc", session.token).then(setCanali);
-    sbFetch(`user_profiles?id=eq.${session.user.id}&select=ruolo`, session.token).then(data => { if (Array.isArray(data) && data[0]) setRuolo(data[0].ruolo); });
+    sbFetch(`user_profiles?id=eq.${session.user.id}&select=ruolo,account_editore`, session.token).then(data => { if (Array.isArray(data) && data[0]) { setRuolo(data[0].ruolo); if (data[0].account_editore) setUserAccount(data[0].account_editore); } });
   }, [session]);
 
   useEffect(() => {
@@ -2635,7 +2674,7 @@ export default function App() {
           {/* MOD 4: Passato spalmatura a ModuloFineGiro */}
           {activeModule === "finegiro" && <ModuloFineGiro titoli={titoli} prenotato={prenotato} canali={canali} token={session.token} ruolo={ruolo} spalmatura={spalmatura} />}
           {activeModule === "avanzamento" && <ModuloAvanzamentoNovita titoli={titoli} prenotato={prenotato} canali={canali} token={session.token} ruolo={ruolo} />}
-          {activeModule === "lanci" && <ModuloLanciSettimanali token={session.token} titoli={titoli} prenotato={prenotato} canali={canali} />}
+          {activeModule === "lanci" && <ModuloLanciSettimanali token={session.token} titoli={titoli} prenotato={prenotato} canali={canali} ruolo={ruolo} userAccount={userAccount} />}
           {activeModule === "import" && <ModuloImport giriList={giriDB} token={session.token} />}
           {activeModule === "importobiettivi" && <ModuloImport giriList={giriDB} token={session.token} onlyObiettivi={true} />}
         </div>
