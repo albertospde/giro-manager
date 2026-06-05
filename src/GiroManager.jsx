@@ -1432,7 +1432,9 @@ setFatturato(prev => {
   const meseOggi = new Date().getMonth() + 1;
   const annoCorrentePerMese = useMemo(() => {
     const perMese = {};
-    novitaFiltrate.forEach(n => {
+    // Usa tutti i titoli dell'anno selezionato, indipendentemente dagli altri filtri attivi
+    const base = novitaArricchite.filter(n => !filterAnno || getAnnoRecord(n) === filterAnno);
+    base.forEach(n => {
       if (!n.data_messa_in_vendita || !n.copie_lanciate || n.copie_lanciate === 0) return;
       const d = new Date(n.data_messa_in_vendita);
       if (isNaN(d)) return;
@@ -1441,7 +1443,7 @@ setFatturato(prev => {
       perMese[m] = (perMese[m] || 0) + (n.valore_lancio || 0);
     });
     return perMese;
-  }, [novitaFiltrate, meseOggi]);
+  }, [novitaArricchite, filterAnno, meseOggi]);
 
   // Fatturato anno precedente (da DB, caricato dall'utente) — filtrato per mesi selezionati
   const annoPrecPerMese = useMemo(() => {
@@ -1572,8 +1574,8 @@ setFatturato(prev => {
           copie_lanciate: colMap.copie !== undefined ? parseInt(String(r[colMap.copie]).replace(/\./g, "")) || 0 : 0,
           valore_lancio: colMap.valore !== undefined ? parseValoreLancio(r[colMap.valore]) : 0,
           data_messa_in_vendita: dataObj ? dataObj.toISOString().split("T")[0] : null,
-          stato_vendita: colMap.stato_vendita !== undefined ? String(r[colMap.stato_vendita] || "").trim() || null : null,
-          risposta_editore: colMap.risposta_editore !== undefined ? String(r[colMap.risposta_editore] || "").trim() || null : null,
+          stato_vendita: colMap.stato_vendita !== undefined ? (String(r[colMap.stato_vendita] || "").trim().split(" ")[0] || null) : null,
+          risposta_editore: colMap.risposta_editore !== undefined ? (String(r[colMap.risposta_editore] || "").trim().split(" ")[0] || null) : null,
           manuale: false,
         };
       }).filter(r => r.ean.length >= 10);
@@ -1842,15 +1844,6 @@ setFatturato(prev => {
                   </tr>
                 </thead>
                 <tbody>
-                  {/* Riga anno precedente */}
-                  <tr>
-                    <td style={{ ...css.td, fontWeight: "700", color: T.textMid, whiteSpace: "nowrap" }}>{annoPrev}</td>
-                    {MESI_NOMI.map((_, i) => {
-                      const val = annoPrecPerMese[i + 1] || 0;
-                      return <td key={i} style={{ ...css.td, textAlign: "right", color: val > 0 ? T.textMid : T.textDim }}>{val > 0 ? `€ ${Math.round(val).toLocaleString("it")}` : "—"}</td>;
-                    })}
-                    <td style={{ ...css.td, textAlign: "right", fontWeight: "700", color: T.textMid }}>€ {kpi.totaleAnnoPrev.toLocaleString("it", { maximumFractionDigits: 0 })}</td>
-                  </tr>
                   {/* Riga anno corrente */}
                   <tr>
                     <td style={{ ...css.td, fontWeight: "700", color: T.accent, whiteSpace: "nowrap" }}>{annoRif}</td>
@@ -1863,6 +1856,15 @@ setFatturato(prev => {
                       </td>;
                     })}
                     <td style={{ ...css.td, textAlign: "right", fontWeight: "700", color: T.accent }}>€ {kpi.ytdCorrente.toLocaleString("it", { maximumFractionDigits: 0 })}</td>
+                  </tr>
+                  {/* Riga anno precedente */}
+                  <tr>
+                    <td style={{ ...css.td, fontWeight: "700", color: T.textMid, whiteSpace: "nowrap" }}>{annoPrev}</td>
+                    {MESI_NOMI.map((_, i) => {
+                      const val = annoPrecPerMese[i + 1] || 0;
+                      return <td key={i} style={{ ...css.td, textAlign: "right", color: val > 0 ? T.textMid : T.textDim }}>{val > 0 ? `€ ${Math.round(val).toLocaleString("it")}` : "—"}</td>;
+                    })}
+                    <td style={{ ...css.td, textAlign: "right", fontWeight: "700", color: T.textMid }}>€ {kpi.totaleAnnoPrev.toLocaleString("it", { maximumFractionDigits: 0 })}</td>
                   </tr>
                   {/* Riga differenza % */}
                   {kpi.haFatturatoPrec && (
