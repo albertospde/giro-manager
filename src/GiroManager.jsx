@@ -1665,25 +1665,6 @@ const style = document.createElement('style');
 style.textContent = `button:hover { filter: brightness(1.3); }`;
 document.head.appendChild(style);
 
-
-const MODULES = [
-  { id: "dashboard", label: "Dashboard", icon: "◈" },
-  { id: "cedola", label: "Giri e Cedole", icon: "≡" },
-  { id: "finegiro", label: "Fine Giro", icon: "⊞" },
-  { id: "avanzamento", label: "Avanzamento Novità", icon: "▣" },
-  { id: "lanci", label: "Lanci Settimanali", icon: "🚀" },
-];
-
-const MODULES_IMPORT = [
-  { id: "import", label: "Import Cedola", icon: "↑" },
-  { id: "prenotato", label: "Import Prenotato", icon: "↳" },
-  { id: "importobiettivi", label: "Import Obiettivi", icon: "◎" },
-];
-
-const style = document.createElement('style');
-style.textContent = `button:hover { filter: brightness(1.3); }`;
-document.head.appendChild(style);
-
 export default function App() {
   const [session, setSession] = useState(null);
   const [checkingAuth, setCheckingAuth] = useState(true);
