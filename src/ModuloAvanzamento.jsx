@@ -434,16 +434,25 @@ if (payload.length < 3) {
   }, [novitaArricchite]);
 
   // Filtri
-  // Helper: estrae anno da un record (giro_label o data_messa_in_vendita)
+  // Helper: estrae anno da un record
+  // - giro_label normale (es. "5 2026") -> 2026
+  // - giro_label "EXTRA": cerca anno nel nome cedola, poi data_messa_in_vendita, poi anno corrente
   const getAnnoRecord = (n) => {
-    if (n.giro_label) {
+    if (n.giro_label && n.giro_label !== "EXTRA") {
       const parts = n.giro_label.split(" ");
       const yr = Number(parts[parts.length - 1]);
       if (yr >= 2020) return yr;
     }
-    if (n.data_messa_in_vendita) {
-      const d = new Date(n.data_messa_in_vendita);
-      if (!isNaN(d)) return d.getFullYear();
+    if (n.giro_label === "EXTRA" || !n.giro_label) {
+      if (n.nome_cedola) {
+        const m = n.nome_cedola.match(/\b(20\d{2})\b/);
+        if (m) return Number(m[1]);
+      }
+      if (n.data_messa_in_vendita) {
+        const m = String(n.data_messa_in_vendita).match(/^(\d{4})/);
+        if (m) return Number(m[1]);
+      }
+      return new Date().getFullYear();
     }
     return null;
   };
