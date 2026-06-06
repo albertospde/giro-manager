@@ -83,23 +83,32 @@ function KpiCard({ label, value, sub, color = T.accent, onClick }) {
 }
 
 // ─── Parser CSV Tableau (UTF-16 LE, TSV) ──────────────────────────────────────
+// Struttura colonne del file reale:
+// 0: EAN13 anagrafica  1: Titolo  2: Autore  3: Editore  4: Prezzo attuale
+// 5: Num. Lancio  6: Mese di Data Pubblicaz. (testo)  7: Anno di Data Pubblicaz.
+// 8: Stato Vendita  9: Risposta Editore
+// 10: c.Q.tà Mov. Uscita (copie lanciate)  11: b.Fatturato (valore lancio)
+
+const MESI_IT = {
+  gennaio:1, febbraio:2, marzo:3, aprile:4, maggio:5, giugno:6,
+  luglio:7, agosto:8, settembre:9, ottobre:10, novembre:11, dicembre:12,
+};
 
 function parseTsvTableau(buffer) {
-  // Prova UTF-16 LE (BOM), fallback UTF-8
-  let text;
   const view = new Uint8Array(buffer);
-  if (view[0] === 0xFF && view[1] === 0xFE) {
-    text = new TextDecoder("utf-16le").decode(buffer);
-  } else {
-    text = new TextDecoder("utf-8").decode(buffer);
-  }
+  const text = (view[0] === 0xFF && view[1] === 0xFE)
+    ? new TextDecoder("utf-16le").decode(buffer)
+    : new TextDecoder("utf-8").decode(buffer);
+
   const lines = text.split(/\r?\n/).filter(l => l.trim() !== "");
   if (lines.length < 2) return [];
 
-  const headers = lines[0].split("\t").map(h => h.trim().toLowerCase());
+  // Normalizza header: rimuove BOM, lowercase, trim
+  const headers = lines[0].split("\t").map(h =>
+    h.replace(/[\uFEFF\uFFFE]/g, "").trim().toLowerCase()
+  );
 
-  // Rileva colonne per nome header
-  const idx = (names) => {
+  const idx = (...names) => {
     for (const n of names) {
       const i = headers.findIndex(h => h.includes(n.toLowerCase()));
       if (i >= 0) return i;
@@ -107,53 +116,58 @@ function parseTsvTableau(buffer) {
     return -1;
   };
 
-  const iEan          = idx(["ean"]);
-  const iTitolo       = idx(["titolo"]);
-  const iAutore       = idx(["autore"]);
-  const iEditore      = idx(["editore"]);
-  const iPrezzo       = idx(["prezzo"]);
-  const iNumLancio    = idx(["num", "lancio", "n. lancio", "n lancio"]);
-  const iCopie        = idx(["copie lanciate", "copie_lanciate", "copie"]);
-  const iValore       = idx(["valore lancio", "valore_lancio", "valore"]);
-  const iData         = idx(["data messa in vendita", "data_messa_in_vendita", "data vendita", "data"]);
+  const iEan     = idx("ean");
+  const iTitolo  = idx("titolo");
+  const iAutore  = idx("autore");
+  const iEditore = idx("editore");
+  const iPrezzo  = idx("prezzo");
+  const iLancio  = idx("num. lancio", "num lancio", "n. lancio");
+  const iMese    = idx("mese di data", "mese");
+  const iAnno    = idx("anno di data", "anno");
+  const iCopie   = idx("mov. uscita", "qtà mov", "copie");
+  const iValore  = idx("fatturato", "valore");
+  const iSV      = idx("stato vendita");
+  const iRE      = idx("risposta editore");
 
   const rows = [];
   for (let i = 1; i < lines.length; i++) {
-    const cols = lines[i].split("\t");
-    const ean = iEan >= 0 ? String(cols[iEan] ?? "").replace(/\D/g, "").slice(-13) : "";
+    const cols = lines[i].split("\t").map(c => c.trim());
+    const ean = String(cols[iEan] ?? "").replace(/\D/g, "");
     if (!ean || ean.length !== 13) continue;
 
-    // Parsing data: gestisce formati DD/MM/YYYY, YYYY-MM-DD, D/M/YYYY
+    // Data: ricostruita da mese testuale + anno numerico → YYYY-MM-01
     let dataMessaInVendita = null;
-    if (iData >= 0 && cols[iData]) {
-      const raw = String(cols[iData]).trim();
-      // Prova DD/MM/YYYY o D/M/YYYY
-      const dmY = raw.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/);
-      if (dmY) {
-        dataMessaInVendita = toDateStr(new Date(
-          parseInt(dmY[3]), parseInt(dmY[2]) - 1, parseInt(dmY[1])
-        ));
-      } else {
-        // Prova YYYY-MM-DD
-        const isoMatch = raw.match(/^(\d{4})-(\d{2})-(\d{2})/);
-        if (isoMatch) {
-          dataMessaInVendita = toDateStr(new Date(
-            parseInt(isoMatch[1]), parseInt(isoMatch[2]) - 1, parseInt(isoMatch[3])
-          ));
-        }
+    if (iMese >= 0 && iAnno >= 0) {
+      const meseStr = String(cols[iMese] ?? "").toLowerCase().trim();
+      const annoNum = parseInt(cols[iAnno] ?? "");
+      const meseNum = MESI_IT[meseStr];
+      if (meseNum && annoNum > 2000) {
+        dataMessaInVendita = `${annoNum}-${String(meseNum).padStart(2, "0")}-01`;
       }
     }
 
+    // Stato Vendita: estrae solo la parte testuale dopo il numero (es. "1 Normale" → "Normale")
+    const svRaw = iSV >= 0 ? String(cols[iSV] ?? "").trim() : "";
+    const svMatch = svRaw.match(/^\d+\s+(.+)/);
+    const statoVendita = svMatch ? svMatch[1].trim() : (svRaw || null);
+
+    // Risposta Editore: idem
+    const reRaw = iRE >= 0 ? String(cols[iRE] ?? "").trim() : "";
+    const reMatch = reRaw.match(/^\d+\s+(.+)/);
+    const rispostaEditore = reMatch ? reMatch[2 - 1].trim() : (reRaw || null);
+
     rows.push({
       ean,
-      titolo:               iTitolo  >= 0 ? String(cols[iTitolo]  ?? "").trim() : "",
-      autore:               iAutore  >= 0 ? String(cols[iAutore]  ?? "").trim() : "",
-      editore_nome:         iEditore >= 0 ? String(cols[iEditore] ?? "").trim() : "",
-      prezzo:               iPrezzo  >= 0 ? parseNum(cols[iPrezzo])  : 0,
-      num_lancio:           iNumLancio >= 0 ? parseInt(cols[iNumLancio]) || null : null,
-      copie_lanciate:       iCopie   >= 0 ? parseNum(cols[iCopie])   : 0,
-      valore_lancio:        iValore  >= 0 ? parseNum(cols[iValore])  : 0,
+      titolo:                iTitolo  >= 0 ? String(cols[iTitolo]  ?? "").trim() : "",
+      autore:                iAutore  >= 0 ? String(cols[iAutore]  ?? "").trim() : "",
+      editore_nome:          iEditore >= 0 ? String(cols[iEditore] ?? "").trim() : "",
+      prezzo:                iPrezzo  >= 0 ? parseNum(cols[iPrezzo]) : 0,
+      num_lancio:            iLancio  >= 0 ? parseInt(cols[iLancio]) || null : null,
+      copie_lanciate:        iCopie   >= 0 ? parseNum(cols[iCopie])  : 0,
+      valore_lancio:         iValore  >= 0 ? parseNum(cols[iValore]) : 0,
       data_messa_in_vendita: dataMessaInVendita,
+      stato_vendita:         statoVendita,
+      risposta_editore:      rispostaEditore,
     });
   }
   return rows;
