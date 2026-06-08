@@ -516,18 +516,24 @@ export default function ModuloAvanzamento({ titoli, prenotato, canali, token, ru
   }, [fatturato, annoPrev, filterMesi]);
 
   const kpi = useMemo(() => {
-    const totTitoli = novitaFiltrate.length;
-    const lanciati = novitaFiltrate.filter(n => n.copie_lanciate > 0 && !n.manuale);
+    // KPI calcolati sui titoli dell'anno proiezione selezionato (filterAnno)
+    // La tabella sotto mostra tutti, ma i KPI riflettono solo l'anno corrente/selezionato
+    const novitaAnno = filterAnno
+      ? novitaFiltrate.filter(n => getAnnoRecord(n) === filterAnno)
+      : novitaFiltrate;
+
+    const totTitoli = novitaAnno.length;
+    const lanciati = novitaAnno.filter(n => n.copie_lanciate > 0 && !n.manuale);
     const numLanciati = lanciati.length;
     const valoreLancio = lanciati.reduce((s, n) => s + (n.valore_lancio || 0), 0);
-    const sbloccati = novitaFiltrate.filter(n => n.copie_lanciate > 0 && n.manuale);
+    const sbloccati = novitaAnno.filter(n => n.copie_lanciate > 0 && n.manuale);
     const numSbloccati = sbloccati.length;
     const valoreSbloccato = sbloccati.reduce((s, n) => s + (n.valore_lancio || 0), 0);
     const totTrasmessi = numLanciati + numSbloccati;
     const pctAvanzamento = totTitoli > 0 ? Math.round(totTrasmessi / totTitoli * 100) : 0;
     const nonTrasmessi = totTitoli - totTrasmessi;
-    const valPrenotato = novitaFiltrate.reduce((s, n) => s + (n.prezzo || 0) * n.prenotato_giri, 0);
-    const nonLanciati = novitaFiltrate.filter(n => n.prenotato_giri > 0 && (!n.copie_lanciate || n.copie_lanciate === 0));
+    const valPrenotato = novitaAnno.reduce((s, n) => s + (n.prezzo || 0) * n.prenotato_giri, 0);
+    const nonLanciati = novitaAnno.filter(n => n.prenotato_giri > 0 && (!n.copie_lanciate || n.copie_lanciate === 0));
     const copieNonLanciate = nonLanciati.reduce((s, n) => s + n.prenotato_giri, 0);
     const valNonLanciato = nonLanciati.reduce((s, n) => s + (n.prezzo || 0) * n.prenotato_giri, 0);
     const oggi = new Date();
@@ -547,7 +553,7 @@ export default function ModuloAvanzamento({ titoli, prenotato, canali, token, ru
       copieNonLanciate, valNonLanciato, numNonLanciati: nonLanciati.length,
       ytdCorrente, totaleAnnoPrev, ytdPrev, trend, pipeline, proiezione, haFatturatoPrec, meseCorrente,
     };
-  }, [novitaFiltrate, annoCorrentePerMese, annoPrecPerMese]);
+  }, [novitaFiltrate, filterAnno, annoCorrentePerMese, annoPrecPerMese]);
 
   // ─────────────────────────────────────────────────────────────────
   // UPLOAD CSV — FIX mapping colonne con mese e anno separati
@@ -893,7 +899,7 @@ export default function ModuloAvanzamento({ titoli, prenotato, canali, token, ru
           </div>
         </div>
         <div style={{ display: "flex", gap: 12, flexWrap: "wrap" }}>
-          <KpiCard label="Titoli novità" value={kpi.totTitoli.toLocaleString("it")} color={T.text} sub={`${kpi.nonTrasmessi} da lanciare/sbloccare`} />
+          <KpiCard label={`Titoli novità ${filterAnno || ""}`} value={kpi.totTitoli.toLocaleString("it")} color={T.text} sub={`${kpi.nonTrasmessi} da lanciare/sbloccare`} />
           <KpiCard label="Valore prenotato" value={`€ ${kpi.valPrenotato.toLocaleString("it", { maximumFractionDigits: 0 })}`} color={T.green} />
           <KpiCard label="Valore lancio" value={`€ ${kpi.valoreLancio.toLocaleString("it", { maximumFractionDigits: 0 })}`} color={T.accent} sub={`${kpi.numLanciati} titoli lanciati`} />
           <KpiCard label="Valore SBL/Rifornimento" value={`€ ${kpi.valoreSbloccato.toLocaleString("it", { maximumFractionDigits: 0 })}`} color="#e8a838" sub={`${kpi.numSbloccati} titoli sbloccati`} />
