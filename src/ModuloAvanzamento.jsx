@@ -41,9 +41,6 @@ function KpiCard({ label, value, sub, color = T.accent }) {
   );
 }
 
-// FIX 5: EditModal ora riceve anche token e onSaveDB per salvare su Supabase
-
-
 function SearchableMultiSelect({ values, onChange, options, placeholder = "Tutti", width = 180, renderOption }) {
   const [open, setOpen] = useState(false);
   const [search, setSearch] = useState("");
@@ -83,8 +80,6 @@ function SearchableMultiSelect({ values, onChange, options, placeholder = "Tutti
   );
 }
 
-
-
 function parseDataIt(str) {
   if (!str) return null;
   const parts = String(str).trim().split(/\s+/);
@@ -105,9 +100,8 @@ function fmtDate(d) {
 function parseValoreLancio(str) {
   if (typeof str === "number") return str;
   if (!str) return 0;
-  // Formato italiano: 2.178.600 € oppure 2.178.600,50 €
-  // Rimuovi simbolo € e spazi, poi togli tutti i punti (migliaia), converti virgola in punto decimale
-  const s = String(str).replace(/[€\s]/g, "").replace(/\./g, "").replace(",", ".");
+  // Rimuovi simbolo € (anche \xac), spazi, poi togli tutti i punti (migliaia IT), converti virgola in punto decimale
+  const s = String(str).replace(/[€\xac\s]/g, "").replace(/\./g, "").replace(",", ".");
   return parseFloat(s) || 0;
 }
 
@@ -117,6 +111,14 @@ function parsePrezzo(str) {
   return parseFloat(String(str).replace(",", ".")) || 0;
 }
 
+// FIX: parse copie con separatore migliaia italiano (punti) e senza
+function parseCopie(str) {
+  if (typeof str === "number") return Math.round(str);
+  if (!str) return 0;
+  // Rimuovi punti (separatori migliaia IT) e spazi, poi parseInt
+  const s = String(str).replace(/\./g, "").replace(/\s/g, "").replace(",", ".");
+  return parseInt(s) || 0;
+}
 
 export default function ModuloAvanzamento({ titoli, prenotato, canali, token, ruolo }) {
   const [novitaDB, setNovitaDB] = useState([]);
@@ -127,9 +129,9 @@ export default function ModuloAvanzamento({ titoli, prenotato, canali, token, ru
   const [filterAnno, setFilterAnno] = useState(new Date().getFullYear());
   const [filterEditore, setFilterEditore] = useState("tutti");
   const [filterNumLancio, setFilterNumLancio] = useState([]);
-  const [filterCedole, setFilterCedole] = useState([]); // multi
-  const [filterGiri, setFilterGiri] = useState([]);     // multi
-  const [filterMesi, setFilterMesi] = useState([]);     // multi mesi (1-12)
+  const [filterCedole, setFilterCedole] = useState([]);
+  const [filterGiri, setFilterGiri] = useState([]);
+  const [filterMesi, setFilterMesi] = useState([]);
   const [search, setSearch] = useState("");
   const [sortKey, setSortKey] = useState("cedola");
   const [sortDir, setSortDir] = useState("asc");
@@ -149,7 +151,6 @@ export default function ModuloAvanzamento({ titoli, prenotato, canali, token, ru
 
   const showToast = (msg, type = "ok") => { setToast({ msg, type }); setTimeout(() => setToast(null), 3000); };
 
-  // Carica dati da Supabase
   const loadNovita = useCallback(async () => {
     if (!token) return;
     setLoading(true);
@@ -160,7 +161,6 @@ export default function ModuloAvanzamento({ titoli, prenotato, canali, token, ru
 
   useEffect(() => { loadNovita(); }, [loadNovita]);
 
-  // Fatturato mensile per proiezione (anno corrente + precedente)
   const annoRif = filterAnno || new Date().getFullYear();
   const annoPrev = annoRif - 1;
   const loadFatturato = useCallback(async () => {
@@ -170,20 +170,19 @@ export default function ModuloAvanzamento({ titoli, prenotato, canali, token, ru
   }, [token, annoRif, annoPrev]);
   useEffect(() => { loadFatturato(); }, [loadFatturato]);
 
-const saveFatturato = async (anno, mese, valore) => {
+  const saveFatturato = async (anno, mese, valore) => {
     await fetch(`${SUPABASE_URL}/rest/v1/fatturato_lanci_mensile?on_conflict=anno,mese`, {
       method: "POST",
       headers: { "apikey": SUPABASE_KEY, "Authorization": `Bearer ${token}`, "Content-Type": "application/json", "Prefer": "resolution=merge-duplicates" },
       body: JSON.stringify([{ anno, mese, fatturato: parseFloat(valore) || 0 }]),
     });
-setFatturato(prev => {
-  const existing = prev.find(f => Number(f.anno) === Number(anno) && Number(f.mese) === Number(mese));
-  if (existing) return prev.map(f => (Number(f.anno) === Number(anno) && Number(f.mese) === Number(mese)) ? { ...f, fatturato: parseFloat(valore) || 0 } : f);
-  return [...prev, { anno: Number(anno), mese: Number(mese), fatturato: parseFloat(valore) || 0 }].sort((a, b) => a.anno - b.anno || a.mese - b.mese);
-});
+    setFatturato(prev => {
+      const existing = prev.find(f => Number(f.anno) === Number(anno) && Number(f.mese) === Number(mese));
+      if (existing) return prev.map(f => (Number(f.anno) === Number(anno) && Number(f.mese) === Number(mese)) ? { ...f, fatturato: parseFloat(valore) || 0 } : f);
+      return [...prev, { anno: Number(anno), mese: Number(mese), fatturato: parseFloat(valore) || 0 }].sort((a, b) => a.anno - b.anno || a.mese - b.mese);
+    });
   };
 
-  // Upload fatturato anno precedente — parser universale
   const handleFatturatoUpload = async (e) => {
     const file = e.target.files?.[0];
     if (!file) return;
@@ -197,90 +196,71 @@ setFatturato(prev => {
 
       const MESI = { gen:1,gennaio:1,jan:1,january:1, feb:2,febbraio:2,february:2, mar:3,marzo:3,march:3, apr:4,aprile:4,april:4, mag:5,maggio:5,may:5, giu:6,giugno:6,jun:6,june:6, lug:7,luglio:7,jul:7,july:7, ago:8,agosto:8,aug:8,august:8, set:9,settembre:9,sep:9,september:9, ott:10,ottobre:10,oct:10,october:10, nov:11,novembre:11,november:11, dic:12,dicembre:12,dec:12,december:12 };
 
-      // Normalizza una cella a numero (supporta formato IT 1.234,56 e EN 1,234.56)
       const toNum = (v) => {
         if (v == null || v === "") return 0;
         if (typeof v === "number") return v;
         const s = String(v).trim().replace(/\s/g, "").replace(/[€$£\xac]/g, "");
         if (!s) return 0;
-        // Formato IT con punti come separatore migliaia (es. 3.228.648 o 3.228.648,50)
         if (/^\d{1,3}(\.\d{3})+(,\d+)?$/.test(s)) return parseFloat(s.replace(/\./g, "").replace(",", ".")) || 0;
-        // Formato EN con virgole come separatore migliaia (es. 3,228,648)
         if (/^\d{1,3}(,\d{3})+(\.\d+)?$/.test(s)) return parseFloat(s.replace(/,/g, "")) || 0;
-        // Virgola come decimale senza punti (es. 1234,56)
         if (s.includes(",") && !s.includes(".")) return parseFloat(s.replace(",", ".")) || 0;
         return parseFloat(s) || 0;
       };
 
-      // Normalizza stringa cella → stringa pulita lowercase
       const toStr = (v) => String(v == null ? "" : v).trim().toLowerCase().replace(/[^a-zàèéìòù0-9]/g, " ").trim();
 
-      // Cerca numero di mese in una stringa (accetta "gennaio", "gen", "1", "01", "gen 2024", ecc.)
       const getMese = (v) => {
         if (v == null) return null;
         const s = toStr(v);
-        // Nome mese
         for (const [key, num] of Object.entries(MESI)) { if (s === key || s.startsWith(key + " ") || s.endsWith(" " + key)) return num; }
-        // Numero puro 1-12
         const n = parseInt(s);
         if (!isNaN(n) && n >= 1 && n <= 12) return n;
         return null;
       };
 
       const payload = [];
-      const found = {}; // dedup per mese
+      const found = {};
 
-// ── STRATEGIA 0: CSV per titolo con colonna data e fatturato ──────────────
-// Formato: header row → cerca colonne "data" e "fatturato"
-if (payload.length < 3) {
-  for (let ri = 0; ri < Math.min(rows.length, 10); ri++) {
-    const hrow = (rows[ri] || []).map(toStr);
-    const colD = hrow.findIndex(h =>
-      h.includes("data") || h.includes("pubblica") || h.includes("lancio") || h.includes("vendita")
-    );
-    const colF = hrow.findIndex(h =>
-      h.includes("fatturato") || h.includes("valore") || h.includes("importo")
-    );
-    if (colD >= 0 && colF >= 0) {
-      const aggMese = {}; // { mese: totale }
-      for (let i = ri + 1; i < rows.length; i++) {
-        const r = rows[i] || [];
-        const rawData = r[colD];
-        const rawVal = r[colF];
-        if (!rawData || rawVal == null) continue;
-
-        // Parse data: supporta Date JS (da XLSX cellDates:true), stringa DD/MM/YYYY, YYYY-MM-DD
-        let mese = null;
-        if (rawData instanceof Date && !isNaN(rawData)) {
-          mese = rawData.getMonth() + 1;
-        } else {
-          const s = String(rawData).trim();
-          const m1 = s.match(/^(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{2,4})$/); // DD/MM/YYYY
-          const m2 = s.match(/^(\d{4})[\/\-](\d{1,2})[\/\-](\d{1,2})$/);   // YYYY-MM-DD
-          if (m1) mese = parseInt(m1[2]);
-          else if (m2) mese = parseInt(m2[2]);
-        }
-
-        const val = toNum(rawVal);
-        if (mese >= 1 && mese <= 12 && val > 0) {
-          aggMese[mese] = (aggMese[mese] || 0) + val;
+      if (payload.length < 3) {
+        for (let ri = 0; ri < Math.min(rows.length, 10); ri++) {
+          const hrow = (rows[ri] || []).map(toStr);
+          const colD = hrow.findIndex(h => h.includes("data") || h.includes("pubblica") || h.includes("lancio") || h.includes("vendita"));
+          const colF = hrow.findIndex(h => h.includes("fatturato") || h.includes("valore") || h.includes("importo"));
+          if (colD >= 0 && colF >= 0) {
+            const aggMese = {};
+            for (let i = ri + 1; i < rows.length; i++) {
+              const r = rows[i] || [];
+              const rawData = r[colD];
+              const rawVal = r[colF];
+              if (!rawData || rawVal == null) continue;
+              let mese = null;
+              if (rawData instanceof Date && !isNaN(rawData)) {
+                mese = rawData.getMonth() + 1;
+              } else {
+                const s = String(rawData).trim();
+                const m1 = s.match(/^(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{2,4})$/);
+                const m2 = s.match(/^(\d{4})[\/\-](\d{1,2})[\/\-](\d{1,2})$/);
+                if (m1) mese = parseInt(m1[2]);
+                else if (m2) mese = parseInt(m2[2]);
+              }
+              const val = toNum(rawVal);
+              if (mese >= 1 && mese <= 12 && val > 0) {
+                aggMese[mese] = (aggMese[mese] || 0) + val;
+              }
+            }
+            Object.entries(aggMese).forEach(([m, tot]) => {
+              payload.push({ anno: annoPrev, mese: parseInt(m), fatturato: tot });
+            });
+            if (payload.length >= 3) break;
+          }
         }
       }
-      // Converti in payload
-      Object.entries(aggMese).forEach(([m, tot]) => {
-        payload.push({ anno: annoPrev, mese: parseInt(m), fatturato: tot });
-      });
-      if (payload.length >= 3) break;
-    }
-  }
-}
-      
-      // ── STRATEGIA A: header row con "mese" + colonna valore ──────────────
+
       for (let ri = 0; ri < Math.min(rows.length, 10); ri++) {
         const hrow = (rows[ri] || []).map(toStr);
         const colM = hrow.findIndex(h => h === "mese" || h === "month" || h === "mese anno");
         const colV = hrow.findIndex(h => h.includes("fatturato") || h.includes("valore") || h.includes("importo") || h.includes("totale") || h.includes("revenue") || h.includes("ricavo"));
-        const colV2 = colM >= 0 && colV < 0 ? colM + 1 : colV; // fallback: cella subito a destra del mese
+        const colV2 = colM >= 0 && colV < 0 ? colM + 1 : colV;
         if (colM >= 0 && colV2 >= 0 && colV2 !== colM) {
           for (let i = ri + 1; i < rows.length; i++) {
             const r = rows[i] || [];
@@ -292,13 +272,11 @@ if (payload.length < 3) {
         }
       }
 
-      // ── STRATEGIA B: colonna A = nome mese, ricerca valore numerica in B/C/D ──
       if (payload.length < 3) {
         for (const row of rows) {
           if (!row) continue;
           const m = getMese(row[0]);
           if (!m || found[m]) continue;
-          // Cerca il primo valore numerico significativo (> 100) nelle colonne seguenti
           for (let ci = 1; ci < Math.min(row.length, 6); ci++) {
             const val = toNum(row[ci]);
             if (val > 100) { found[m] = true; payload.push({ anno: annoPrev, mese: m, fatturato: val }); break; }
@@ -306,7 +284,6 @@ if (payload.length < 3) {
         }
       }
 
-      // ── STRATEGIA C: riga con nomi mese in orizzontale, valori nella riga sotto ──
       if (payload.length < 3) {
         for (let ri = 0; ri < rows.length - 1; ri++) {
           const row = rows[ri] || [];
@@ -323,7 +300,6 @@ if (payload.length < 3) {
         }
       }
 
-      // ── STRATEGIA D: riga unica con ≥3 numeri significativi, assume mese 1..N ──
       if (payload.length < 3) {
         for (const row of rows) {
           if (!row) continue;
@@ -339,7 +315,6 @@ if (payload.length < 3) {
       }
 
       if (payload.length === 0) {
-        // Mostra un preview del contenuto per aiutare il debug
         const preview = rows.slice(0, 5).map(r => (r || []).slice(0, 6).map(c => String(c ?? "")).join(" | ")).join("\n");
         throw new Error(`Nessun dato trovato. Prime righe del file:\n${preview}`);
       }
@@ -362,33 +337,25 @@ if (payload.length < 3) {
     e.target.value = "";
   };
 
-  // Dati: SOLO titoli dai giri, arricchiti con dati lancio da titoli_novita (CSV)
   const novitaArricchite = useMemo(() => {
-    // Mappa prenotato per EAN
     const prenByEan = {};
     prenotato.forEach(p => {
       const t = titoli.find(t => t.id === p.titolo_id);
       if (!t || !t.ean) return;
       prenByEan[t.ean] = (prenByEan[t.ean] || 0) + p.quantita;
     });
-    // Mappa obiettivo per EAN
     const objByEan = {};
     titoli.forEach(t => {
       if (!t.ean) return;
       objByEan[t.ean] = (objByEan[t.ean] || 0) + (t.obiettivo_assegnato || 0);
     });
-    // Mappa titoli_novita per EAN (dati lancio dal CSV)
     const novitaByEan = {};
     novitaDB.forEach(n => { if (n.ean) novitaByEan[n.ean] = n; });
-
-    // Dedup titoli giri per EAN
     const titoliGiriByEan = {};
     titoli.forEach(t => {
       if (!t.ean || titoliGiriByEan[t.ean]) return;
       titoliGiriByEan[t.ean] = t;
     });
-
-    // Solo titoli dai giri
     return Object.values(titoliGiriByEan).map(t => {
       const nov = novitaByEan[t.ean];
       return {
@@ -401,7 +368,6 @@ if (payload.length < 3) {
         giro_label: t.giro_label || "",
         prenotato_giri: prenByEan[t.ean] || 0,
         obiettivo_giri: objByEan[t.ean] || 0,
-        // Dati lancio dal CSV (se match EAN)
         num_lancio: nov?.num_lancio || null,
         copie_lanciate: nov?.copie_lanciate || 0,
         valore_lancio: nov?.valore_lancio || 0,
@@ -414,17 +380,14 @@ if (payload.length < 3) {
     });
   }, [novitaDB, prenotato, titoli]);
 
-  // Estrai anni disponibili da giro_label e da data_messa_in_vendita
   const anniDisponibili = useMemo(() => {
     const s = new Set();
     novitaArricchite.forEach(n => {
-      // Anno dal giro_label (es. "1 2026" → 2026)
       if (n.giro_label) {
         const parts = n.giro_label.split(" ");
         const yr = Number(parts[parts.length - 1]);
         if (yr >= 2020) s.add(yr);
       }
-      // Anno dalla data di pubblicazione
       if (n.data_messa_in_vendita) {
         const d = new Date(n.data_messa_in_vendita);
         if (!isNaN(d)) s.add(d.getFullYear());
@@ -433,10 +396,6 @@ if (payload.length < 3) {
     return [...s].sort((a, b) => b - a);
   }, [novitaArricchite]);
 
-  // Filtri
-  // Helper: estrae anno da un record
-  // - giro_label normale (es. "5 2026") -> 2026
-  // - giro_label "EXTRA": cerca anno nel nome cedola, poi data_messa_in_vendita, poi anno corrente
   const getAnnoRecord = (n) => {
     if (n.giro_label && n.giro_label !== "EXTRA") {
       const parts = n.giro_label.split(" ");
@@ -495,7 +454,6 @@ if (payload.length < 3) {
         const q = search.toLowerCase();
         return n.ean?.toLowerCase().includes(q) || n.titolo?.toLowerCase().includes(q) || n.autore?.toLowerCase().includes(q) || n.editore?.toLowerCase().includes(q);
       });
-    // Sort
     return filtered.sort((a, b) => {
       let cmp = 0;
       if (sortKey === "cedola") cmp = (a.nome_cedola || "").localeCompare(b.nome_cedola || "");
@@ -518,18 +476,15 @@ if (payload.length < 3) {
   const cedoleList = useMemo(() => [...new Set(novitaArricchite.filter(n => (!filterAnno || getAnnoRecord(n) === filterAnno) && (filterGiri.length === 0 || filterGiri.includes(n.giro_label))).map(n => n.nome_cedola).filter(c => c && c !== "—"))].sort(), [novitaArricchite, filterAnno, filterGiri]);
   const giriList = useMemo(() => [...new Set(novitaArricchite.filter(n => !filterAnno || getAnnoRecord(n) === filterAnno).map(n => n.giro_label).filter(Boolean))].sort(), [novitaArricchite, filterAnno]);
 
-  // KPI Dashboard
   const MESI_NOMI = ["Gen","Feb","Mar","Apr","Mag","Giu","Lug","Ago","Set","Ott","Nov","Dic"];
 
-  // Fatturato anno corrente calcolato dai dati app (solo mesi fino al corrente)
   const meseOggi = new Date().getMonth() + 1;
   const valoriPerAnnoMese = useMemo(() => {
-    const map = {}; // { anno: { mese: valore } }
+    const map = {};
     novitaArricchite
       .filter(n => !filterAnno || getAnnoRecord(n) === filterAnno)
       .forEach(n => {
         if (!n.data_messa_in_vendita || !n.valore_lancio || n.valore_lancio === 0) return;
-        // FIX: parsing diretto da YYYY-MM-DD per evitare UTC vs CET timezone shift
         const match = String(n.data_messa_in_vendita).match(/^(\d{4})-(\d{2})/);
         if (!match) return;
         const anno = parseInt(match[1]);
@@ -542,7 +497,6 @@ if (payload.length < 3) {
 
   const annoCorrentePerMese = useMemo(() => valoriPerAnnoMese[annoRif] || {}, [valoriPerAnnoMese, annoRif]);
 
-  // Fatturato anno precedente (da DB, caricato dall'utente) — filtrato per mesi selezionati
   const annoPrecPerMese = useMemo(() => {
     const perMese = {};
     fatturato.filter(f => f.anno === annoPrev && (filterMesi.length === 0 || filterMesi.includes(f.mese))).forEach(f => { perMese[f.mese] = f.fatturato || 0; });
@@ -551,71 +505,48 @@ if (payload.length < 3) {
 
   const kpi = useMemo(() => {
     const totTitoli = novitaFiltrate.length;
-
-    // Lanciati: copie_lanciate > 0 e NON manuale
     const lanciati = novitaFiltrate.filter(n => n.copie_lanciate > 0 && !n.manuale);
     const numLanciati = lanciati.length;
     const valoreLancio = lanciati.reduce((s, n) => s + (n.valore_lancio || 0), 0);
-
-    // Sbloccati/Rifo: copie_lanciate > 0 e manuale = true
     const sbloccati = novitaFiltrate.filter(n => n.copie_lanciate > 0 && n.manuale);
     const numSbloccati = sbloccati.length;
     const valoreSbloccato = sbloccati.reduce((s, n) => s + (n.valore_lancio || 0), 0);
-
     const totTrasmessi = numLanciati + numSbloccati;
     const pctAvanzamento = totTitoli > 0 ? Math.round(totTrasmessi / totTitoli * 100) : 0;
     const nonTrasmessi = totTitoli - totTrasmessi;
-
-    // Valore prenotato
     const valPrenotato = novitaFiltrate.reduce((s, n) => s + (n.prezzo || 0) * n.prenotato_giri, 0);
-
-    // Prenotato non ancora lanciato
     const nonLanciati = novitaFiltrate.filter(n => n.prenotato_giri > 0 && (!n.copie_lanciate || n.copie_lanciate === 0));
     const copieNonLanciate = nonLanciati.reduce((s, n) => s + n.prenotato_giri, 0);
     const valNonLanciato = nonLanciati.reduce((s, n) => s + (n.prezzo || 0) * n.prenotato_giri, 0);
-
-    // Proiezione basata su anno precedente
     const oggi = new Date();
     const meseCorrente = oggi.getMonth() + 1;
-
-    // YTD anno corrente (dai dati app)
     const ytdCorrente = Object.values(annoCorrentePerMese).reduce((s, v) => s + v, 0);
-    // Totale anno precedente
     const totaleAnnoPrev = Object.values(annoPrecPerMese).reduce((s, v) => s + v, 0);
-    // YTD anno precedente (stessi mesi)
     const ytdPrev = Object.entries(annoPrecPerMese).filter(([m]) => Number(m) <= meseCorrente).reduce((s, [, v]) => s + v, 0);
-    // Mesi futuri anno precedente (dopo mese corrente)
     const futuriPrev = Object.entries(annoPrecPerMese).filter(([m]) => Number(m) > meseCorrente).reduce((s, [, v]) => s + v, 0);
-    // Trend: crescita anno corrente vs anno precedente allo stesso punto
     const trend = ytdPrev > 0 ? ytdCorrente / ytdPrev : 1;
-    // Pipeline (prenotato non lanciato)
     const pipeline = valNonLanciato;
-    // Proiezione = YTD corrente + pipeline + (mesi futuri anno prec × trend)
     const proiezione = ytdCorrente + pipeline + (futuriPrev * trend);
-
     const haFatturatoPrec = totaleAnnoPrev > 0;
-
     return {
-      totTitoli, nonTrasmessi,
-      valPrenotato,
-      numLanciati, valoreLancio,
-      numSbloccati, valoreSbloccato,
+      totTitoli, nonTrasmessi, valPrenotato,
+      numLanciati, valoreLancio, numSbloccati, valoreSbloccato,
       totTrasmessi, pctAvanzamento,
       copieNonLanciate, valNonLanciato, numNonLanciati: nonLanciati.length,
       ytdCorrente, totaleAnnoPrev, ytdPrev, trend, pipeline, proiezione, haFatturatoPrec, meseCorrente,
     };
   }, [novitaFiltrate, annoCorrentePerMese, annoPrecPerMese]);
 
-  // Upload CSV
+  // ─────────────────────────────────────────────────────────────────
+  // UPLOAD CSV — FIX mapping colonne con mese e anno separati
+  // ─────────────────────────────────────────────────────────────────
   const handleCSVUpload = async (e) => {
     const file = e.target.files?.[0];
     if (!file) return;
     setUploading(true);
     try {
-      // Leggi file come ArrayBuffer per gestire sia UTF-8 che UTF-16
       const buf = await file.arrayBuffer();
       const bytes = new Uint8Array(buf);
-      // Detect UTF-16 LE BOM (FF FE) o UTF-16 BE BOM (FE FF)
       let text;
       if ((bytes[0] === 0xFF && bytes[1] === 0xFE) || (bytes[0] === 0xFE && bytes[1] === 0xFF)) {
         const decoder = new TextDecoder(bytes[0] === 0xFF ? "utf-16le" : "utf-16be");
@@ -623,97 +554,128 @@ if (payload.length < 3) {
       } else {
         text = new TextDecoder("utf-8").decode(buf);
       }
-      // Rimuovi BOM e null bytes residui
       text = text.replace(/^\ufeff/, "").replace(/\0/g, "");
-      // Prova parsing UTF-16 (tab-separated) poi UTF-8 (separatore ; o ,)
-      let rows = [];
-      let headers = [];
-      // Detect separator e parse
+
       const lines = text.split(/\r?\n/).filter(l => l.trim());
       if (lines.length === 0) throw new Error("File vuoto");
-      // Tab-separated
+
       const sep = lines[0].includes("\t") ? "\t" : lines[0].includes(";") ? ";" : ",";
-      headers = lines[0].split(sep).map(h => h.trim().replace(/^[\ufeff\ufffe"]+|["]+$/g, ""));
+      const headers = lines[0].split(sep).map(h => h.trim().replace(/^[\ufeff\ufffe"]+|["]+$/g, ""));
+
+      const rows = [];
       for (let i = 1; i < lines.length; i++) {
         const vals = lines[i].split(sep).map(v => v.trim().replace(/^"|"$/g, ""));
         if (vals.length >= headers.length - 1) rows.push(vals);
       }
-      // Mappa colonne con nomi flessibili
+
+      // ── MAPPING COLONNE (FIX: gestione "Mese di Data Pubblicaz." e "Anno di Data Pubblicaz.") ──
       const colMap = {};
       headers.forEach((h, i) => {
         const hl = h.toLowerCase().trim();
         if (hl.includes("ean")) colMap.ean = i;
-        else if (hl.includes("titolo")) colMap.titolo = i;
+        else if (hl === "titolo" || (hl.includes("titolo") && !hl.includes("sub"))) colMap.titolo = i;
         else if (hl.includes("autore")) colMap.autore = i;
-        else if (hl.includes("risposta") && hl.includes("editore") || hl === "re") colMap.risposta_editore = i;
-        else if (hl.includes("editore")) colMap.editore = i;
+        else if (hl.includes("risposta") && hl.includes("editore")) colMap.risposta_editore = i;
+        else if (hl.includes("editore") && !hl.includes("risposta")) colMap.editore = i;
         else if (hl.includes("prezzo")) colMap.prezzo = i;
-        else if (hl === "mese" || (hl.includes("mese") && !hl.includes("data"))) colMap.mese = i;
-        else if (hl.includes("data") && (hl.includes("pubbl") || hl.includes("vendita"))) colMap.data = i;
         else if (hl.includes("num") && hl.includes("lancio")) colMap.num_lancio = i;
+        // FIX: "Mese di Data Pubblicaz." → colMap.mese (contiene "mese", anche se contiene "data")
+        else if (hl.includes("mese") && (hl.includes("pubbl") || hl.includes("data") || hl.includes("vendita"))) colMap.mese = i;
+        else if (hl === "mese" || hl === "month") colMap.mese = i;
+        // FIX: "Anno di Data Pubblicaz." → colMap.anno
+        else if (hl.includes("anno") && (hl.includes("pubbl") || hl.includes("data") || hl.includes("vendita"))) colMap.anno = i;
+        else if (hl === "anno" || hl === "year") colMap.anno = i;
+        // Data completa (es. "Data Vendita": DD/MM/YYYY)
+        else if (hl.includes("data") && (hl.includes("pubbl") || hl.includes("vendita")) && !hl.includes("mese") && !hl.includes("anno")) colMap.data = i;
         else if (hl.includes("copie") && hl.includes("lanciate")) colMap.copie = i;
         else if (hl.includes("valore") && hl.includes("lancio")) colMap.valore = i;
         else if (hl.includes("fatturato")) colMap.valore = i;
-        else if (hl === "lancio") colMap.copie = i; // fallback vecchio formato
+        else if (hl === "lancio") colMap.copie = i;
+        // FIX: "c.Qtà Mov. Uscita" → copie (separatore migliaia IT gestito da parseCopie)
         else if (hl.includes("mov") || hl.includes("uscita")) colMap.copie = i;
-        else if (hl.includes("stato") && hl.includes("vendita") || hl === "sv") colMap.stato_vendita = i;
+        else if (hl.includes("stato") && hl.includes("vendita")) colMap.stato_vendita = i;
       });
-      if (colMap.ean === undefined) throw new Error("Colonna EAN non trovata");
+
+      if (colMap.ean === undefined) throw new Error(`Colonna EAN non trovata. Headers: ${headers.join(" | ")}`);
+
       const payload = rows.map(r => {
         let dataObj = null;
+
+        // ── CASO 1: mese + anno separati (formato Tableau/Messaggerie) ──
         if (colMap.mese !== undefined) {
           const meseVal = String(r[colMap.mese] || "").trim().toLowerCase();
           const meseNum = MESI_IT[meseVal] !== undefined ? MESI_IT[meseVal] + 1 : parseInt(meseVal) || null;
-          if (meseNum >= 1 && meseNum <= 12) dataObj = new Date(filterAnno || 2026, meseNum - 1, 1);
-        } else {
-          const dataStr = colMap.data !== undefined ? r[colMap.data] : null;
+          // FIX: leggi anno dalla colonna dedicata, oppure fallback a filterAnno
+          const annoVal = colMap.anno !== undefined
+            ? parseInt(String(r[colMap.anno] || "").trim()) || (filterAnno || new Date().getFullYear())
+            : (filterAnno || new Date().getFullYear());
+          if (meseNum >= 1 && meseNum <= 12) {
+            // Costruzione timezone-safe (no toISOString)
+            dataObj = { year: annoVal, month: meseNum };
+          }
+        }
+
+        // ── CASO 2: data completa in una colonna ──
+        if (!dataObj && colMap.data !== undefined) {
+          const dataStr = r[colMap.data];
           if (dataStr) {
-            dataObj = parseDataIt(dataStr);
-            if (!dataObj) {
+            const parsed = parseDataIt(dataStr);
+            if (parsed) {
+              dataObj = { year: parsed.getFullYear(), month: parsed.getMonth() + 1 };
+            } else {
               const m = String(dataStr).trim().match(/^(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{2,4})$/);
-              if (m) dataObj = new Date(Number(m[3].length === 2 ? "20"+m[3] : m[3]), Number(m[2])-1, Number(m[1]));
+              if (m) dataObj = { year: Number(m[3].length === 2 ? "20" + m[3] : m[3]), month: Number(m[2]) };
+              const m2 = String(dataStr).trim().match(/^(\d{4})[\/\-](\d{1,2})[\/\-](\d{1,2})$/);
+              if (m2) dataObj = { year: Number(m2[1]), month: Number(m2[2]) };
             }
           }
         }
+
+        // Formato stringa YYYY-MM-01 timezone-safe
+        const dataStr = dataObj
+          ? `${dataObj.year}-${String(dataObj.month).padStart(2, "0")}-01`
+          : null;
+
+        // FIX: usa parseCopie per gestire separatori migliaia IT (es. "115.482" → 115482)
+        const copie = colMap.copie !== undefined ? parseCopie(r[colMap.copie]) : 0;
+        const valore = colMap.valore !== undefined ? parseValoreLancio(r[colMap.valore]) : 0;
+
         return {
           ean: String(r[colMap.ean] || "").trim(),
           titolo: r[colMap.titolo] || "",
           autore: r[colMap.autore] || "",
           editore: r[colMap.editore] || "",
           prezzo: parsePrezzo(r[colMap.prezzo]),
-          num_lancio: colMap.num_lancio !== undefined ? parseInt(r[colMap.num_lancio]) || null : null,
-          copie_lanciate: colMap.copie !== undefined ? parseInt(String(r[colMap.copie]).replace(/\./g, "")) || 0 : 0,
-          valore_lancio: colMap.valore !== undefined ? parseValoreLancio(r[colMap.valore]) : 0,
-          data_messa_in_vendita: dataObj ? `${dataObj.getFullYear()}-${String(dataObj.getMonth()+1).padStart(2,'0')}-01` : null,
+          num_lancio: colMap.num_lancio !== undefined ? parseInt(String(r[colMap.num_lancio]).replace(/^0+/, "") || "0") || null : null,
+          copie_lanciate: copie,
+          valore_lancio: valore,
+          data_messa_in_vendita: dataStr,
           stato_vendita: colMap.stato_vendita !== undefined ? (String(r[colMap.stato_vendita] || "").trim().split(" ")[0] || null) : null,
           risposta_editore: colMap.risposta_editore !== undefined ? (String(r[colMap.risposta_editore] || "").trim().split(" ")[0] || null) : null,
           manuale: false,
         };
       }).filter(r => r.ean.length >= 10);
 
-      // Deduplica per EAN: se ci sono righe duplicate, tiene quella con più dati (copie_lanciate > 0 o valore_lancio > 0)
+      // Deduplica per EAN
       const byEan = {};
       payload.forEach(r => {
         const existing = byEan[r.ean];
         if (!existing) { byEan[r.ean] = r; return; }
-        // Tieni la riga con più info (copie o valore non zero)
         if ((r.copie_lanciate || 0) > (existing.copie_lanciate || 0) || (r.valore_lancio || 0) > (existing.valore_lancio || 0)) {
           byEan[r.ean] = { ...existing, ...r };
         }
       });
       const deduplicated = Object.values(byEan);
 
-      // Filtra: solo EAN che esistono nei giri
       const eanGiri = new Set(titoli.map(t => t.ean).filter(Boolean));
       const soloGiri = deduplicated.filter(r => eanGiri.has(r.ean));
       const ignorati = deduplicated.length - soloGiri.length;
 
-      // Confronta con dati già in titoli_novita
       const existingByEan = {};
       novitaDB.forEach(n => { if (n.ean) existingByEan[n.ean] = n; });
 
-      const toInsert = []; // EAN dei giri non ancora in titoli_novita → INSERT
-      const toUpdate = []; // EAN dei giri già in titoli_novita con dati diversi e non manuali → UPDATE
+      const toInsert = [];
+      const toUpdate = [];
       let skipped = 0;
 
       soloGiri.forEach(row => {
@@ -734,17 +696,11 @@ if (payload.length < 3) {
         }
       });
 
-      // INSERT nuovi in batch
       for (let i = 0; i < toInsert.length; i += 500) {
         const batch = toInsert.slice(i, i + 500);
         const r = await fetch(`${SUPABASE_URL}/rest/v1/titoli_novita`, {
           method: "POST",
-          headers: {
-            "apikey": SUPABASE_KEY,
-            "Authorization": `Bearer ${token}`,
-            "Content-Type": "application/json",
-            "Prefer": "return=minimal",
-          },
+          headers: { "apikey": SUPABASE_KEY, "Authorization": `Bearer ${token}`, "Content-Type": "application/json", "Prefer": "return=minimal" },
           body: JSON.stringify(batch),
         });
         if (!r.ok) {
@@ -753,16 +709,10 @@ if (payload.length < 3) {
         }
       }
 
-      // UPDATE esistenti (PATCH per EAN, solo campi lancio)
       for (const row of toUpdate) {
         await fetch(`${SUPABASE_URL}/rest/v1/titoli_novita?ean=eq.${encodeURIComponent(row.ean)}`, {
           method: "PATCH",
-          headers: {
-            "apikey": SUPABASE_KEY,
-            "Authorization": `Bearer ${token}`,
-            "Content-Type": "application/json",
-            "Prefer": "return=minimal",
-          },
+          headers: { "apikey": SUPABASE_KEY, "Authorization": `Bearer ${token}`, "Content-Type": "application/json", "Prefer": "return=minimal" },
           body: JSON.stringify({
             num_lancio: row.num_lancio,
             copie_lanciate: row.copie_lanciate,
@@ -783,7 +733,6 @@ if (payload.length < 3) {
     e.target.value = "";
   };
 
-  // Salva manuale
   const saveManual = async () => {
     if (!manualForm.ean || manualForm.ean.length < 10) { showToast("EAN non valido", "err"); return; }
     const payload = {
@@ -800,10 +749,7 @@ if (payload.length < 3) {
     };
     const r = await fetch(`${SUPABASE_URL}/rest/v1/titoli_novita`, {
       method: "POST",
-      headers: {
-        "apikey": SUPABASE_KEY, "Authorization": `Bearer ${token}`,
-        "Content-Type": "application/json", "Prefer": "resolution=merge-duplicates",
-      },
+      headers: { "apikey": SUPABASE_KEY, "Authorization": `Bearer ${token}`, "Content-Type": "application/json", "Prefer": "resolution=merge-duplicates" },
       body: JSON.stringify([payload]),
     });
     if (r.ok) {
@@ -814,12 +760,10 @@ if (payload.length < 3) {
     } else { showToast("Errore salvataggio", "err"); }
   };
 
-  // Salva modifica inline copie_lanciate su titoli_novita
   const saveInlineEdit = async (ean, value) => {
     const qta = parseInt(value) || 0;
     const nov = novitaDB.find(n => n.ean === ean);
     const prezzo = nov?.prezzo || novitaArricchite.find(n => n.ean === ean)?.prezzo || 0;
-    // Se il record non esiste in titoli_novita, fai INSERT (upsert)
     const titGiro = titoli.find(t => t.ean === ean);
     const payload = {
       ean,
@@ -843,7 +787,6 @@ if (payload.length < 3) {
     setEditingEan(null);
   };
 
-  // Export Excel
   const exportExcel = () => {
     const XLSX = window.XLSX;
     const headers = ["CEDOLA","EAN","TITOLO","AUTORE","EDITORE","PREZZO","PRENOTATO TOTALE","N. LANCIO","COPIE LANCIATE","VALORE LANCIO","DATA MESSA IN VENDITA","SV","RE"];
@@ -942,13 +885,13 @@ if (payload.length < 3) {
             </div>
           </div>
         </div>
+
         {/* SEZIONE PROIEZIONE ESPANDIBILE */}
         {showProiezione && (
           <div style={{ marginTop: 14, padding: 16, background: T.bg, border: `1px solid ${T.border}`, borderRadius: 6 }}>
             <div style={{ color: T.purple, fontSize: "11px", fontWeight: "700", letterSpacing: "0.08em", textTransform: "uppercase", marginBottom: 12 }}>
               Confronto {annoPrev} vs {annoRif} — Proiezione
             </div>
-            {/* Tabella confronto mensile */}
             <div style={{ overflowX: "auto", marginBottom: 14 }}>
               <table style={{ ...css.table, fontSize: "11px" }}>
                 <thead>
@@ -959,7 +902,6 @@ if (payload.length < 3) {
                   </tr>
                 </thead>
                 <tbody>
-                  {/* Riga anno corrente */}
                   <tr>
                     <td style={{ ...css.td, fontWeight: "700", color: T.accent, whiteSpace: "nowrap" }}>{annoRif}</td>
                     {MESI_NOMI.map((_, i) => {
@@ -972,7 +914,6 @@ if (payload.length < 3) {
                     })}
                     <td style={{ ...css.td, textAlign: "right", fontWeight: "700", color: T.accent }}>€ {kpi.ytdCorrente.toLocaleString("it", { maximumFractionDigits: 0 })}</td>
                   </tr>
-                  {/* Riga anno precedente */}
                   <tr>
                     <td style={{ ...css.td, fontWeight: "700", color: T.textMid, whiteSpace: "nowrap" }}>{annoPrev}</td>
                     {MESI_NOMI.map((_, i) => {
@@ -981,7 +922,6 @@ if (payload.length < 3) {
                     })}
                     <td style={{ ...css.td, textAlign: "right", fontWeight: "700", color: T.textMid }}>€ {kpi.totaleAnnoPrev.toLocaleString("it", { maximumFractionDigits: 0 })}</td>
                   </tr>
-                  {/* Riga differenza % */}
                   {kpi.haFatturatoPrec && (
                     <tr>
                       <td style={{ ...css.td, fontWeight: "600", color: T.textDim, fontSize: "10px" }}>Δ%</td>
@@ -1001,7 +941,6 @@ if (payload.length < 3) {
                 </tbody>
               </table>
             </div>
-            {/* Riepilogo proiezione */}
             <div style={{ display: "flex", gap: 16, fontSize: "11px", color: T.textMid, flexWrap: "wrap", padding: "12px 0", borderTop: `1px solid ${T.border}` }}>
               <div>
                 <div style={{ fontSize: "9px", textTransform: "uppercase", letterSpacing: "0.06em", marginBottom: 3 }}>YTD {annoRif}</div>
