@@ -83,11 +83,19 @@ function SearchableMultiSelect({ values, onChange, options, placeholder = "Tutti
 function parseDataIt(str) {
   if (!str) return null;
   const parts = String(str).trim().split(/\s+/);
-  if (parts.length !== 3) return null;
-  const [giorno, mese, anno] = parts;
+  if (parts.length < 2) return null;
+  // Formato "giorno mese anno" (es. "2 gennaio 2026") oppure "giorno mese" (senza anno)
+  let giorno, mese, anno;
+  if (parts.length === 3) {
+    [giorno, mese, anno] = parts;
+  } else if (parts.length === 2) {
+    [mese, anno] = parts; giorno = "1";
+  } else return null;
   const m = MESI_IT[mese?.toLowerCase()];
   if (m === undefined) return null;
-  return new Date(Number(anno), m, Number(giorno));
+  const y = parseInt(anno);
+  if (isNaN(y)) return null;
+  return new Date(y, m, parseInt(giorno) || 1);
 }
 
 function fmtDate(d) {
@@ -383,16 +391,19 @@ export default function ModuloAvanzamento({ titoli, prenotato, canali, token, ru
   const anniDisponibili = useMemo(() => {
     const s = new Set();
     novitaArricchite.forEach(n => {
+      // Anno dalla data di messa in vendita (fonte primaria per la proiezione)
+      if (n.data_messa_in_vendita) {
+        const match = String(n.data_messa_in_vendita).match(/^(\d{4})/);
+        if (match) s.add(Number(match[1]));
+      }
+      // Anno dal giro_label come fallback
       if (n.giro_label) {
-        const parts = n.giro_label.split(" ");
-        const yr = Number(parts[parts.length - 1]);
+        const yr = Number(n.giro_label.split(" ").pop());
         if (yr >= 2020) s.add(yr);
       }
-      if (n.data_messa_in_vendita) {
-        const d = new Date(n.data_messa_in_vendita);
-        if (!isNaN(d)) s.add(d.getFullYear());
-      }
     });
+    // Aggiungi sempre anno corrente
+    s.add(new Date().getFullYear());
     return [...s].sort((a, b) => b - a);
   }, [novitaArricchite]);
 
@@ -419,8 +430,9 @@ export default function ModuloAvanzamento({ titoli, prenotato, canali, token, ru
   const novitaFiltrate = useMemo(() => {
     const filtered = novitaArricchite
       .filter(n => {
-        if (!filterAnno) return true;
-        return getAnnoRecord(n) === filterAnno;
+        // Nessun filtro anno sulla tabella: mostra tutti i titoli dei giri
+        // Il filtro anno agisce solo sulla proiezione (valoriPerAnnoMese)
+        return true;
       })
       .filter(n => filterEditore === "tutti" || n.editore === filterEditore)
       .filter(n => filterNumLancio.length === 0 || filterNumLancio.includes(String(n.num_lancio)))
@@ -471,10 +483,10 @@ export default function ModuloAvanzamento({ titoli, prenotato, canali, token, ru
     });
   }, [novitaArricchite, filterAnno, filterEditore, filterNumLancio, filterCedole, filterGiri, filterMesi, filterDataVendita, filterCopieLanciate, search, sortKey, sortDir]);
 
-  const editoriList = useMemo(() => [...new Set(novitaArricchite.filter(n => !filterAnno || getAnnoRecord(n) === filterAnno).map(n => n.editore).filter(Boolean))].sort(), [novitaArricchite, filterAnno]);
-  const numLanciList = useMemo(() => [...new Set(novitaArricchite.filter(n => !filterAnno || getAnnoRecord(n) === filterAnno).map(n => n.num_lancio).filter(Boolean))].sort((a, b) => Number(a) - Number(b)), [novitaArricchite, filterAnno]);
-  const cedoleList = useMemo(() => [...new Set(novitaArricchite.filter(n => (!filterAnno || getAnnoRecord(n) === filterAnno) && (filterGiri.length === 0 || filterGiri.includes(n.giro_label))).map(n => n.nome_cedola).filter(c => c && c !== "—"))].sort(), [novitaArricchite, filterAnno, filterGiri]);
-  const giriList = useMemo(() => [...new Set(novitaArricchite.filter(n => !filterAnno || getAnnoRecord(n) === filterAnno).map(n => n.giro_label).filter(Boolean))].sort(), [novitaArricchite, filterAnno]);
+  const editoriList = useMemo(() => [...new Set(novitaArricchite.map(n => n.editore).filter(Boolean))].sort(), [novitaArricchite]);
+  const numLanciList = useMemo(() => [...new Set(novitaArricchite.map(n => n.num_lancio).filter(Boolean))].sort((a, b) => Number(a) - Number(b)), [novitaArricchite]);
+  const cedoleList = useMemo(() => [...new Set(novitaArricchite.filter(n => filterGiri.length === 0 || filterGiri.includes(n.giro_label)).map(n => n.nome_cedola).filter(c => c && c !== "—"))].sort(), [novitaArricchite, filterGiri]);
+  const giriList = useMemo(() => [...new Set(novitaArricchite.map(n => n.giro_label).filter(Boolean))].sort(), [novitaArricchite]);
 
   const MESI_NOMI = ["Gen","Feb","Mar","Apr","Mag","Giu","Lug","Ago","Set","Ott","Nov","Dic"];
 
@@ -579,11 +591,13 @@ export default function ModuloAvanzamento({ titoli, prenotato, canali, token, ru
         else if (hl.includes("editore") && !hl.includes("risposta")) colMap.editore = i;
         else if (hl.includes("prezzo")) colMap.prezzo = i;
         else if (hl.includes("num") && hl.includes("lancio")) colMap.num_lancio = i;
-        // FIX: "Mese di Data Pubblicaz." → colMap.mese (contiene "mese", anche se contiene "data")
-        else if (hl.includes("mese") && (hl.includes("pubbl") || hl.includes("data") || hl.includes("vendita") || hl.includes("riferimento"))) colMap.mese = i;
+        // "Mese, giorno, anno di Data di riferimento" → data completa (formato "2 gennaio 2026")
+        else if (hl.includes("giorno") && hl.includes("anno")) colMap.data = i;
+        // "Mese di Data Pubblicaz." → colMap.mese
+        else if (hl.includes("mese") && (hl.includes("pubbl") || hl.includes("data") || hl.includes("vendita") || hl.includes("riferimento")) && !hl.includes("giorno")) colMap.mese = i;
         else if (hl === "mese" || hl === "month") colMap.mese = i;
-        // FIX: "Anno di Data Pubblicaz." / "Anno di Data di riferimento" → colMap.anno
-        else if (hl.includes("anno") && (hl.includes("pubbl") || hl.includes("data") || hl.includes("vendita") || hl.includes("riferimento"))) colMap.anno = i;
+        // "Anno di Data Pubblicaz." / "Anno di Data di riferimento" → colMap.anno
+        else if (hl.includes("anno") && (hl.includes("pubbl") || hl.includes("data") || hl.includes("vendita") || hl.includes("riferimento")) && !hl.includes("giorno")) colMap.anno = i;
         else if (hl === "anno" || hl === "year") colMap.anno = i;
         // Data completa (es. "Data Vendita": DD/MM/YYYY)
         else if (hl.includes("data") && (hl.includes("pubbl") || hl.includes("vendita")) && !hl.includes("mese") && !hl.includes("anno")) colMap.data = i;
@@ -656,20 +670,29 @@ export default function ModuloAvanzamento({ titoli, prenotato, canali, token, ru
         };
       }).filter(r => r.ean.length >= 10);
 
-      // Deduplica per EAN
+      // Aggrega per EAN: somma copie + valore, prende la data minima (prima messa in vendita)
       const byEan = {};
       payload.forEach(r => {
         const existing = byEan[r.ean];
-        if (!existing) { byEan[r.ean] = r; return; }
-        if ((r.copie_lanciate || 0) > (existing.copie_lanciate || 0) || (r.valore_lancio || 0) > (existing.valore_lancio || 0)) {
-          byEan[r.ean] = { ...existing, ...r };
+        if (!existing) { byEan[r.ean] = { ...r }; return; }
+        // Somma copie e valore
+        byEan[r.ean].copie_lanciate = (existing.copie_lanciate || 0) + (r.copie_lanciate || 0);
+        byEan[r.ean].valore_lancio = (existing.valore_lancio || 0) + (r.valore_lancio || 0);
+        // Data minima (prima messa in vendita)
+        if (r.data_messa_in_vendita && (!existing.data_messa_in_vendita || r.data_messa_in_vendita < existing.data_messa_in_vendita)) {
+          byEan[r.ean].data_messa_in_vendita = r.data_messa_in_vendita;
         }
+        // Prendi num_lancio, stato_vendita, risposta_editore dal primo record non nullo
+        if (!existing.num_lancio && r.num_lancio) byEan[r.ean].num_lancio = r.num_lancio;
+        if (!existing.stato_vendita && r.stato_vendita) byEan[r.ean].stato_vendita = r.stato_vendita;
+        if (!existing.risposta_editore && r.risposta_editore) byEan[r.ean].risposta_editore = r.risposta_editore;
       });
       const deduplicated = Object.values(byEan);
 
       const eanGiri = new Set(titoli.map(t => t.ean).filter(Boolean));
       const soloGiri = deduplicated.filter(r => eanGiri.has(r.ean));
-      const ignorati = deduplicated.length - soloGiri.length;
+      // EAN nel CSV ma NON nei giri → report
+      const nonNeiGiri = deduplicated.filter(r => !eanGiri.has(r.ean));
 
       const existingByEan = {};
       novitaDB.forEach(n => { if (n.ean) existingByEan[n.ean] = n; });
@@ -724,8 +747,20 @@ export default function ModuloAvanzamento({ titoli, prenotato, canali, token, ru
         });
       }
 
-      showToast(`${toInsert.length} nuovi · ${toUpdate.length} aggiornati · ${skipped} invariati${ignorati > 0 ? ` · ${ignorati} non nei giri` : ""}`);
+      const msg = `${toInsert.length} nuovi · ${toUpdate.length} aggiornati · ${skipped} invariati${nonNeiGiri.length > 0 ? ` · ${nonNeiGiri.length} EAN non trovati nei giri` : ""}`;
+      showToast(msg);
       await loadNovita();
+
+      // Report EAN non trovati → download Excel automatico
+      if (nonNeiGiri.length > 0) {
+        const XLSX = window.XLSX;
+        const headers = ["EAN", "Num. Lancio", "Data Vendita", "Copie", "Valore €"];
+        const rows = nonNeiGiri.map(r => [r.ean, r.num_lancio || "", r.data_messa_in_vendita || "", r.copie_lanciate || 0, r.valore_lancio || 0]);
+        const ws = XLSX.utils.aoa_to_sheet([headers, ...rows]);
+        const wb = XLSX.utils.book_new();
+        XLSX.utils.book_append_sheet(wb, ws, "EAN non trovati");
+        XLSX.writeFile(wb, `EAN_non_trovati_${new Date().toISOString().slice(0,10)}.xlsx`);
+      }
     } catch (err) {
       showToast(err.message, "err");
     }
@@ -808,8 +843,8 @@ export default function ModuloAvanzamento({ titoli, prenotato, canali, token, ru
       {/* DASHBOARD KPI */}
       <div style={{ padding: "16px 20px", borderBottom: `1px solid ${T.border}` }}>
         <div style={{ display: "flex", gap: 10, alignItems: "center", marginBottom: 14, flexWrap: "wrap" }}>
-          <select style={{ ...css.input, fontSize: "14px", fontWeight: "600", color: T.accent }} value={filterAnno || ""} onChange={e => { setFilterAnno(e.target.value ? Number(e.target.value) : null); setFilterEditore("tutti"); setFilterNumLancio([]); setFilterCedole([]); setFilterGiri([]); setFilterMesi([]); }}>
-            <option value="">Tutti gli anni</option>
+          <select style={{ ...css.input, fontSize: "14px", fontWeight: "600", color: T.accent }} value={filterAnno || ""} onChange={e => setFilterAnno(e.target.value ? Number(e.target.value) : null)} title="Anno proiezione">
+            <option value="">— Anno proiezione —</option>
             {anniDisponibili.map(a => <option key={a} value={a}>{a}</option>)}
           </select>
           <SearchableMultiSelect values={filterEditore === "tutti" ? [] : [filterEditore]} onChange={v => setFilterEditore(v.length > 0 ? v[0] : "tutti")} options={editoriList} placeholder="Tutti gli editori" width={190} />
