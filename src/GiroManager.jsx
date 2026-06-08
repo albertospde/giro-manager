@@ -247,12 +247,22 @@ function EditModal({ titolo, onSave, onClose, token }) {
 }
 
 function ModuloDashboard({ titoli, prenotato, canali, spalmatura, ruolo }) {
-  const giriLabel = useMemo(() => {
-    return [...new Set(titoli.map(t => t.giro_label).filter(Boolean))].sort((a, b) => {
-      const [na, ya] = a.split(" "); const [nb, yb] = b.split(" ");
-      return Number(yb || 0) - Number(ya || 0) || Number(nb || 0) - Number(na || 0);
-    });
+  const anniDisp = useMemo(() => {
+    const s = new Set();
+    titoli.forEach(t => { if (t.giro_label) { const yr = Number(t.giro_label.split(" ")[1]); if (yr >= 2020) s.add(yr); } });
+    return [...s].sort((a, b) => b - a);
   }, [titoli]);
+  const annoCorrente = new Date().getFullYear();
+  const [filterAnno, setFilterAnno] = useState([annoCorrente]);
+
+  const giriLabel = useMemo(() => {
+    return [...new Set(titoli.map(t => t.giro_label).filter(Boolean))]
+      .filter(g => filterAnno.length === 0 || filterAnno.includes(Number(g.split(" ")[1])))
+      .sort((a, b) => {
+        const [na, ya] = a.split(" "); const [nb, yb] = b.split(" ");
+        return Number(yb || 0) - Number(ya || 0) || Number(nb || 0) - Number(na || 0);
+      });
+  }, [titoli, filterAnno]);
 
   const [giriSel, setGiriSel] = useState([]);
   useEffect(() => { if (giriLabel.length > 0 && giriSel.length === 0) setGiriSel([giriLabel[0]]); }, [giriLabel]);
@@ -305,7 +315,8 @@ function ModuloDashboard({ titoli, prenotato, canali, spalmatura, ruolo }) {
   return (
     <div style={{ flex: 1, overflowY: "auto", padding: 20 }}>
       <div style={{ display: "flex", gap: 12, alignItems: "center", marginBottom: 20 }}>
-        <SearchableMultiSelect values={giriSel} onChange={setGiriSel} options={giriLabel} placeholder="Seleziona giro" width={180} />
+        <SearchableMultiSelect values={filterAnno.map(String)} onChange={v => { setFilterAnno(v.map(Number)); setGiriSel([]); }} options={anniDisp.map(String)} renderOption={v => v} placeholder="Anno" width={120} />
+        <SearchableMultiSelect values={giriSel} onChange={setGiriSel} options={giriLabel} renderOption={g => `Giro ${g}`} placeholder="Seleziona giro" width={180} />
         <span style={{ color: T.textMid, fontSize: "12px" }}>{kpiGiro.count} titoli · € {kpiGiro.valObj.toLocaleString("it", { maximumFractionDigits: 0 })} valore obiettivo</span>
       </div>
       <div style={{ display: "flex", gap: 12, marginBottom: 24, flexWrap: "wrap" }}>
@@ -577,8 +588,17 @@ function ModuloCedola({ titoli, giriList, onUpdateTitolo, spalmatura, prenotato,
     setSavingTitolo(false);
   };
 
-  const giriLabel = useMemo(() => [...new Set(titoli.map(t => t.giro_label).filter(Boolean))].sort((a, b) => { const [na, ya] = a.split(" "); const [nb, yb] = b.split(" "); return Number(yb) - Number(ya) || Number(nb) - Number(na); }), [titoli]);
-  const cedole = useMemo(() => { const t = giroLabelSel.length === 0 ? titoli : titoli.filter(t => giroLabelSel.includes(t.giro_label)); return [...new Set(t.map(t => t.n_cedola).filter(Boolean))].sort(); }, [titoli, giroLabelSel]);
+  const anniDispCedola = useMemo(() => {
+    const s = new Set();
+    titoli.forEach(t => { if (t.giro_label) { const yr = Number(t.giro_label.split(" ")[1]); if (yr >= 2020) s.add(yr); } });
+    return [...s].sort((a, b) => b - a);
+  }, [titoli]);
+  const [filterAnnoCedola, setFilterAnnoCedola] = useState([new Date().getFullYear()]);
+
+  const giriLabel = useMemo(() => [...new Set(titoli.map(t => t.giro_label).filter(Boolean))]
+    .filter(g => filterAnnoCedola.length === 0 || filterAnnoCedola.includes(Number(g.split(" ")[1])))
+    .sort((a, b) => { const [na, ya] = a.split(" "); const [nb, yb] = b.split(" "); return Number(yb) - Number(ya) || Number(nb) - Number(na); }), [titoli, filterAnnoCedola]);
+  const cedole = useMemo(() => { const t = giroLabelSel.length === 0 ? titoli.filter(t => filterAnnoCedola.length === 0 || filterAnnoCedola.includes(Number((t.giro_label||"").split(" ")[1]))) : titoli.filter(t => giroLabelSel.includes(t.giro_label)); return [...new Set(t.map(t => t.n_cedola).filter(Boolean))].sort(); }, [titoli, giroLabelSel, filterAnnoCedola]);
   const accounts = useMemo(() => { const t = giroSel.length === 0 ? (giroLabelSel.length === 0 ? titoli : titoli.filter(t => giroLabelSel.includes(t.giro_label))) : titoli.filter(t => giroSel.includes(t.n_cedola)); return [...new Set(t.map(t => t.account_editore).filter(Boolean))].sort(); }, [titoli, giroLabelSel, giroSel]);
   const editori = useMemo(() => { const t = giroSel.length === 0 ? (giroLabelSel.length === 0 ? titoli : titoli.filter(t => giroLabelSel.includes(t.giro_label))) : titoli.filter(t => giroSel.includes(t.n_cedola)); return [...new Set(t.map(t => t.editore_nome).filter(Boolean))].sort(); }, [titoli, giroLabelSel, giroSel]);
 
@@ -707,7 +727,8 @@ function ModuloCedola({ titoli, giriList, onUpdateTitolo, spalmatura, prenotato,
         </div>
       )}
       <div style={{ padding: "12px 20px", borderBottom: `1px solid ${T.border}`, display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap" }}>
-        <SearchableMultiSelect values={giroLabelSel} onChange={v => { setGiroLabelSel(v); setGiroSel([]); setFilterEditori([]); }} options={giriLabel} placeholder="Tutti i giri" width={170} />
+        <SearchableMultiSelect values={filterAnnoCedola.map(String)} onChange={v => { setFilterAnnoCedola(v.map(Number)); setGiroLabelSel([]); setGiroSel([]); setFilterEditori([]); }} options={anniDispCedola.map(String)} renderOption={v => v} placeholder="Anno" width={110} />
+        <SearchableMultiSelect values={giroLabelSel} onChange={v => { setGiroLabelSel(v); setGiroSel([]); setFilterEditori([]); }} options={giriLabel} renderOption={g => `Giro ${g}`} placeholder="Tutti i giri" width={170} />
         <SearchableMultiSelect values={giroSel} onChange={v => { setGiroSel(v); setFilterEditori([]); }} options={cedole} placeholder="Tutte le cedole" width={160} />
         <SearchableMultiSelect values={filterEditori} onChange={setFilterEditori} options={editori} placeholder="Tutti gli editori" width={190} />
         <SearchableMultiSelect values={filterAccount} onChange={setFilterAccount} options={accounts} placeholder="Tutti gli account" width={160} />
@@ -763,7 +784,16 @@ function ModuloCedola({ titoli, giriList, onUpdateTitolo, spalmatura, prenotato,
 }
 
 function ModuloFineGiro({ titoli, prenotato, canali, token, ruolo, spalmatura }) {
-  const giriLabel = useMemo(() => [...new Set(titoli.filter(t => t.giro_label !== "EXTRA").map(t => t.giro_label).filter(Boolean))].sort((a, b) => {
+  const anniDispFineGiro = useMemo(() => {
+    const s = new Set();
+    titoli.forEach(t => { if (t.giro_label && t.giro_label !== "EXTRA") { const yr = Number(t.giro_label.split(" ")[1]); if (yr >= 2020) s.add(yr); } });
+    return [...s].sort((a, b) => b - a);
+  }, [titoli]);
+  const [filterAnnoFineGiro, setFilterAnnoFineGiro] = useState([new Date().getFullYear()]);
+
+  const giriLabel = useMemo(() => [...new Set(titoli.filter(t => t.giro_label !== "EXTRA").map(t => t.giro_label).filter(Boolean))]
+    .filter(g => filterAnnoFineGiro.length === 0 || filterAnnoFineGiro.includes(Number(g.split(" ")[1])))
+    .sort((a, b) => {
     const [na, ya] = a.split(" "); const [nb, yb] = b.split(" ");
     return Number(yb || 0) - Number(ya || 0) || Number(nb || 0) - Number(na || 0);
   }), [titoli]);
@@ -1025,6 +1055,9 @@ function ModuloFineGiro({ titoli, prenotato, canali, token, ruolo, spalmatura })
       <div style={{ flex: 1, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 24 }}>
         <div style={{ color: T.textMid, fontSize: "14px" }}>Seleziona un giro o una cedola extra</div>
         <div style={{ display: "flex", gap: 12, flexWrap: "wrap", justifyContent: "center" }}>
+          <div style={{ marginBottom: 16, display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
+            <SearchableMultiSelect values={filterAnnoFineGiro.map(String)} onChange={v => { setFilterAnnoFineGiro(v.map(Number)); }} options={anniDispFineGiro.map(String)} renderOption={v => v} placeholder="Anno" width={110} />
+          </div>
           {giriLabel.map(g => <button key={g} style={{ ...css.btn("accent"), padding: "10px 20px", fontSize: "13px" }} onClick={() => setGiroLabelSel([g])}>Giro {g}</button>)}
           {cedoleExtra.map(c => <button key={c} style={{ ...css.btn(), padding: "10px 20px", fontSize: "13px", borderColor: T.accent, color: T.accent }} onClick={() => setExtraSel([c])}>{c}</button>)}
         </div>
@@ -1036,6 +1069,7 @@ function ModuloFineGiro({ titoli, prenotato, canali, token, ruolo, spalmatura })
     <div style={{ display: "flex", flexDirection: "column", height: "100%", overflow: "hidden" }}>
       {/* Toolbar filtri */}
       <div style={{ padding: "12px 20px", borderBottom: `1px solid ${T.border}`, display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap" }}>
+        <SearchableMultiSelect values={filterAnnoFineGiro.map(String)} onChange={v => { setFilterAnnoFineGiro(v.map(Number)); setGiroLabelSel([]); setExtraSel([]); setCedolaSel([]); setFilterEditori([]); setFilterAccount([]); setFilterCanale([]); setSearch(""); setClienteSel(null); setSoloPrenotati(false); }} options={anniDispFineGiro.map(String)} renderOption={v => v} placeholder="Anno" width={110} />
         <SearchableMultiSelect values={giroLabelSel} onChange={v => { setGiroLabelSel(v); setExtraSel([]); setCedolaSel([]); setFilterEditori([]); setFilterAccount([]); setFilterCanale([]); setSearch(""); setClienteSel(null); setSoloPrenotati(false); }} options={giriLabel} placeholder="— Giro —" width={160} renderOption={g => `Giro ${g}`} />
         {cedoleExtra.length > 0 && (
           <SearchableMultiSelect values={extraSel} onChange={v => { setExtraSel(v); setGiroLabelSel([]); setCedolaSel([]); setFilterEditori([]); setFilterAccount([]); setFilterCanale([]); setSearch(""); setClienteSel(null); setSoloPrenotati(false); }} options={cedoleExtra} placeholder="Cedole Extra" width={170} />
