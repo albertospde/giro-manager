@@ -629,6 +629,13 @@ function ModuloFineGiro({ titoli, prenotato, canali, token, ruolo, spalmatura })
   const [auroraEdit, setAuroraEdit] = useState({});
   const [auroraEditing, setAuroraEditing] = useState(null);
 
+  // Auto-seleziona il giro più recente all'avvio (giriLabel è ordinato DESC → [0] è il più recente)
+  useEffect(() => {
+    if (giriLabel.length > 0 && !giroLabelSel && !extraSel) {
+      setGiroLabelSel(giriLabel[0]);
+    }
+  }, [giriLabel]);
+
   const resetFiltri = () => { setGiroLabelSel(null); setExtraSel(null); setCedolaSel([]); setFilterEditori([]); setFilterAccount([]); setFilterCanale([]); setSearch(""); setClienteSel(null); setSoloPrenotati(false); };
 
   useEffect(() => {
@@ -871,7 +878,7 @@ function ModuloFineGiro({ titoli, prenotato, canali, token, ruolo, spalmatura })
     <div style={{ display: "flex", flexDirection: "column", height: "100%", overflow: "hidden" }}>
       {/* Toolbar filtri */}
       <div style={{ padding: "12px 20px", borderBottom: `1px solid ${T.border}`, display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap" }}>
-        <select style={css.input} value={giroLabelSel || ""} onChange={e => { setGiroLabelSel(e.target.value || null); setExtraSel(null); setCedolaSel("tutti"); setFilterEditore("tutti"); setFilterAccount("tutti"); setFilterCanale("tutti"); }}>
+        <select style={css.input} value={giroLabelSel || ""} onChange={e => { setGiroLabelSel(e.target.value || null); setExtraSel(null); setCedolaSel([]); setFilterEditori([]); setFilterAccount([]); setFilterCanale([]); setSearch(""); setClienteSel(null); setSoloPrenotati(false); }}>
           <option value="">— Giro —</option>
           {giriLabel.map(g => <option key={g} value={g}>Giro {g}</option>)}
         </select>
