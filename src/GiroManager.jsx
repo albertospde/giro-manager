@@ -612,7 +612,7 @@ function ModuloFineGiro({ titoli, prenotato, canali, token, ruolo, spalmatura })
 
   const cedoleExtra = useMemo(() => [...new Set(titoli.filter(t => t.giro_label === "EXTRA").map(t => t.n_cedola).filter(Boolean))].sort(), [titoli]);
 
-  const [giroLabelSel, setGiroLabelSel] = useState(null);
+  const [giroLabelSel, setGiroLabelSel] = useState([]);
   const [extraSel, setExtraSel] = useState([]);
   const [cedolaSel, setCedolaSel] = useState([]);
   const [filterEditori, setFilterEditori] = useState([]);
@@ -631,12 +631,12 @@ function ModuloFineGiro({ titoli, prenotato, canali, token, ruolo, spalmatura })
 
   // Auto-seleziona il giro più recente all'avvio (giriLabel è ordinato DESC → [0] è il più recente)
   useEffect(() => {
-    if (giriLabel.length > 0 && !giroLabelSel && extraSel.length === 0) {
-      setGiroLabelSel(giriLabel[0]);
+    if (giriLabel.length > 0 && giroLabelSel.length === 0 && extraSel.length === 0) {
+      setGiroLabelSel([giriLabel[0]]);
     }
   }, [giriLabel]);
 
-  const resetFiltri = () => { setGiroLabelSel(null); setExtraSel([]); setCedolaSel([]); setFilterEditori([]); setFilterAccount([]); setFilterCanale([]); setSearch(""); setClienteSel(null); setSoloPrenotati(false); };
+  const resetFiltri = () => { setGiroLabelSel([]); setExtraSel([]); setCedolaSel([]); setFilterEditori([]); setFilterAccount([]); setFilterCanale([]); setSearch(""); setClienteSel(null); setSoloPrenotati(false); };
 
   useEffect(() => {
     if (!token) return;
@@ -681,14 +681,14 @@ function ModuloFineGiro({ titoli, prenotato, canali, token, ruolo, spalmatura })
     setAuroraEditing(null);
   };
 
-  const cedole = useMemo(() => { if (!giroLabelSel) return []; return [...new Set(titoli.filter(t => t.giro_label === giroLabelSel).map(t => t.n_cedola).filter(Boolean))].sort(); }, [titoli, giroLabelSel]);
-  const editori = useMemo(() => { const t = giroLabelSel ? titoli.filter(t => t.giro_label === giroLabelSel) : extraSel.length > 0 ? titoli.filter(t => t.giro_label === "EXTRA" && extraSel.includes(t.n_cedola)) : []; return [...new Set(t.map(t => t.editore_nome).filter(Boolean))].sort(); }, [titoli, giroLabelSel, extraSel]);
-  const accounts = useMemo(() => { const t = giroLabelSel ? titoli.filter(t => t.giro_label === giroLabelSel) : extraSel.length > 0 ? titoli.filter(t => t.giro_label === "EXTRA" && extraSel.includes(t.n_cedola)) : []; return [...new Set(t.map(t => t.account_editore).filter(Boolean))].sort(); }, [titoli, giroLabelSel, extraSel]);
+  const cedole = useMemo(() => { if (giroLabelSel.length === 0) return []; return [...new Set(titoli.filter(t => giroLabelSel.includes(t.giro_label)).map(t => t.n_cedola).filter(Boolean))].sort(); }, [titoli, giroLabelSel]);
+  const editori = useMemo(() => { const t = giroLabelSel.length > 0 ? titoli.filter(t => giroLabelSel.includes(t.giro_label)) : extraSel.length > 0 ? titoli.filter(t => t.giro_label === "EXTRA" && extraSel.includes(t.n_cedola)) : []; return [...new Set(t.map(t => t.editore_nome).filter(Boolean))].sort(); }, [titoli, giroLabelSel, extraSel]);
+  const accounts = useMemo(() => { const t = giroLabelSel.length > 0 ? titoli.filter(t => giroLabelSel.includes(t.giro_label)) : extraSel.length > 0 ? titoli.filter(t => t.giro_label === "EXTRA" && extraSel.includes(t.n_cedola)) : []; return [...new Set(t.map(t => t.account_editore).filter(Boolean))].sort(); }, [titoli, giroLabelSel, extraSel]);
 
   const titoliSel = useMemo(() => {
-    if (!giroLabelSel && extraSel.length === 0) return [];
+    if (giroLabelSel.length === 0 && extraSel.length === 0) return [];
     return titoli
-      .filter(t => extraSel.length > 0 ? (t.giro_label === "EXTRA" && extraSel.includes(t.n_cedola)) : (t.giro_label === giroLabelSel))
+      .filter(t => extraSel.length > 0 ? (t.giro_label === "EXTRA" && extraSel.includes(t.n_cedola)) : giroLabelSel.includes(t.giro_label))
       .filter(t => cedolaSel.length === 0 || cedolaSel.includes(t.n_cedola))
       .filter(t => filterEditori.length === 0 || filterEditori.includes(t.editore_nome))
       .filter(t => filterAccount.length === 0 || filterAccount.includes(t.account_editore))
@@ -859,15 +859,15 @@ function ModuloFineGiro({ titoli, prenotato, canali, token, ruolo, spalmatura })
     const wb = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(wb, ws, "FINE GIRO");
     XLSX.utils.book_append_sheet(wb, wsRiepilogo, "RIEPILOGO");
-    XLSX.writeFile(wb, `FINE_GIRO_${giroLabelSel || (extraSel.length > 0 ? extraSel.join("-") : "EXPORT")}.xlsx`);
+    XLSX.writeFile(wb, `FINE_GIRO_${giroLabelSel.length > 0 ? giroLabelSel.join("-") : extraSel.length > 0 ? extraSel.join("-") : "EXPORT"}.xlsx`);
   };
 
-  if (!giroLabelSel && extraSel.length === 0) {
+  if (giroLabelSel.length === 0 && extraSel.length === 0) {
     return (
       <div style={{ flex: 1, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 24 }}>
         <div style={{ color: T.textMid, fontSize: "14px" }}>Seleziona un giro o una cedola extra</div>
         <div style={{ display: "flex", gap: 12, flexWrap: "wrap", justifyContent: "center" }}>
-          {giriLabel.map(g => <button key={g} style={{ ...css.btn("accent"), padding: "10px 20px", fontSize: "13px" }} onClick={() => setGiroLabelSel(g)}>Giro {g}</button>)}
+          {giriLabel.map(g => <button key={g} style={{ ...css.btn("accent"), padding: "10px 20px", fontSize: "13px" }} onClick={() => setGiroLabelSel([g])}>Giro {g}</button>)}
           {cedoleExtra.map(c => <button key={c} style={{ ...css.btn(), padding: "10px 20px", fontSize: "13px", borderColor: T.accent, color: T.accent }} onClick={() => setExtraSel([c])}>{c}</button>)}
         </div>
       </div>
@@ -878,14 +878,11 @@ function ModuloFineGiro({ titoli, prenotato, canali, token, ruolo, spalmatura })
     <div style={{ display: "flex", flexDirection: "column", height: "100%", overflow: "hidden" }}>
       {/* Toolbar filtri */}
       <div style={{ padding: "12px 20px", borderBottom: `1px solid ${T.border}`, display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap" }}>
-        <select style={css.input} value={giroLabelSel || ""} onChange={e => { setGiroLabelSel(e.target.value || null); setExtraSel(null); setCedolaSel([]); setFilterEditori([]); setFilterAccount([]); setFilterCanale([]); setSearch(""); setClienteSel(null); setSoloPrenotati(false); }}>
-          <option value="">— Giro —</option>
-          {giriLabel.map(g => <option key={g} value={g}>Giro {g}</option>)}
-        </select>
+        <SearchableMultiSelect values={giroLabelSel} onChange={v => { setGiroLabelSel(v); setExtraSel([]); setCedolaSel([]); setFilterEditori([]); setFilterAccount([]); setFilterCanale([]); setSearch(""); setClienteSel(null); setSoloPrenotati(false); }} options={giriLabel} placeholder="— Giro —" width={160} renderOption={g => `Giro ${g}`} />
         {cedoleExtra.length > 0 && (
-          <SearchableMultiSelect values={extraSel} onChange={v => { setExtraSel(v); setGiroLabelSel(null); setCedolaSel([]); setFilterEditori([]); setFilterAccount([]); setFilterCanale([]); setSearch(""); setClienteSel(null); setSoloPrenotati(false); }} options={cedoleExtra} placeholder="Cedole Extra" width={170} />
+          <SearchableMultiSelect values={extraSel} onChange={v => { setExtraSel(v); setGiroLabelSel([]); setCedolaSel([]); setFilterEditori([]); setFilterAccount([]); setFilterCanale([]); setSearch(""); setClienteSel(null); setSoloPrenotati(false); }} options={cedoleExtra} placeholder="Cedole Extra" width={170} />
         )}
-        {giroLabelSel && (
+        {giroLabelSel.length > 0 && (
           <SearchableMultiSelect values={cedolaSel} onChange={setCedolaSel} options={cedole} placeholder="Tutte le cedole" width={160} />
         )}
         <SearchableMultiSelect values={filterEditori} onChange={setFilterEditori} options={editori} placeholder="Tutti gli editori" width={190} />
