@@ -580,10 +580,10 @@ export default function ModuloAvanzamento({ titoli, prenotato, canali, token, ru
         else if (hl.includes("prezzo")) colMap.prezzo = i;
         else if (hl.includes("num") && hl.includes("lancio")) colMap.num_lancio = i;
         // FIX: "Mese di Data Pubblicaz." → colMap.mese (contiene "mese", anche se contiene "data")
-        else if (hl.includes("mese") && (hl.includes("pubbl") || hl.includes("data") || hl.includes("vendita"))) colMap.mese = i;
+        else if (hl.includes("mese") && (hl.includes("pubbl") || hl.includes("data") || hl.includes("vendita") || hl.includes("riferimento"))) colMap.mese = i;
         else if (hl === "mese" || hl === "month") colMap.mese = i;
-        // FIX: "Anno di Data Pubblicaz." → colMap.anno
-        else if (hl.includes("anno") && (hl.includes("pubbl") || hl.includes("data") || hl.includes("vendita"))) colMap.anno = i;
+        // FIX: "Anno di Data Pubblicaz." / "Anno di Data di riferimento" → colMap.anno
+        else if (hl.includes("anno") && (hl.includes("pubbl") || hl.includes("data") || hl.includes("vendita") || hl.includes("riferimento"))) colMap.anno = i;
         else if (hl === "anno" || hl === "year") colMap.anno = i;
         // Data completa (es. "Data Vendita": DD/MM/YYYY)
         else if (hl.includes("data") && (hl.includes("pubbl") || hl.includes("vendita")) && !hl.includes("mese") && !hl.includes("anno")) colMap.data = i;
