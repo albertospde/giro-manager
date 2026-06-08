@@ -480,20 +480,20 @@ export default function ModuloAvanzamento({ titoli, prenotato, canali, token, ru
 
   const meseOggi = new Date().getMonth() + 1;
   const valoriPerAnnoMese = useMemo(() => {
+    // IMPORTANTE: aggrega per anno/mese di data_messa_in_vendita, NON per anno del giro.
+    // Un titolo della cedola 2025 lanciato nel 2026 va in 2026, non in 2025.
     const map = {};
-    novitaArricchite
-      .filter(n => !filterAnno || getAnnoRecord(n) === filterAnno)
-      .forEach(n => {
-        if (!n.data_messa_in_vendita || !n.valore_lancio || n.valore_lancio === 0) return;
-        const match = String(n.data_messa_in_vendita).match(/^(\d{4})-(\d{2})/);
-        if (!match) return;
-        const anno = parseInt(match[1]);
-        const mese = parseInt(match[2]);
-        if (!map[anno]) map[anno] = {};
-        map[anno][mese] = (map[anno][mese] || 0) + (n.valore_lancio || 0);
-      });
+    novitaArricchite.forEach(n => {
+      if (!n.data_messa_in_vendita || !n.valore_lancio || n.valore_lancio === 0) return;
+      const match = String(n.data_messa_in_vendita).match(/^(\d{4})-(\d{2})/);
+      if (!match) return;
+      const anno = parseInt(match[1]);
+      const mese = parseInt(match[2]);
+      if (!map[anno]) map[anno] = {};
+      map[anno][mese] = (map[anno][mese] || 0) + (n.valore_lancio || 0);
+    });
     return map;
-  }, [novitaArricchite, filterAnno]);
+  }, [novitaArricchite]);
 
   const annoCorrentePerMese = useMemo(() => valoriPerAnnoMese[annoRif] || {}, [valoriPerAnnoMese, annoRif]);
 
