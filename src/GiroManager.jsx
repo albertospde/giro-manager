@@ -492,7 +492,7 @@ function SearchableMultiSelect({ values, onChange, options, placeholder = "Tutti
   );
 }
 
-function ModuloCedola({ titoli, giriList, onUpdateTitolo, spalmatura, prenotato, ruolo, token }) {
+function ModuloCedola({ titoli, giriList, onUpdateTitolo, spalmatura, prenotato, ruolo, token, onTitoliChange }) {
   const [giroLabelSel, setGiroLabelSel] = useState([]);
   const [giroSel, setGiroSel] = useState([]);
   const [search, setSearch] = useState("");
@@ -501,6 +501,81 @@ function ModuloCedola({ titoli, giriList, onUpdateTitolo, spalmatura, prenotato,
   const [filterAccount, setFilterAccount] = useState([]);
   const [editingId, setEditingId] = useState(null);
   const [sortKey, setSortKey] = useState("n_cedola");
+  const [showNuovoGiro, setShowNuovoGiro] = useState(false);
+  const [showNuovoTitolo, setShowNuovoTitolo] = useState(false);
+  const [toastCedola, setToastCedola] = useState(null);
+  const showToastCedola = (msg, type = "ok") => { setToastCedola({ msg, type }); setTimeout(() => setToastCedola(null), 3000); };
+
+  // Form nuovo giro
+  const emptyGiro = { numero: "", anno: new Date().getFullYear(), descrizione: "" };
+  const [formGiro, setFormGiro] = useState(emptyGiro);
+  const [savingGiro, setSavingGiro] = useState(false);
+
+  const saveNuovoGiro = async () => {
+    if (!formGiro.numero || !formGiro.anno) { showToastCedola("Numero e anno obbligatori", "err"); return; }
+    setSavingGiro(true);
+    const r = await fetch(`${SUPABASE_URL}/rest/v1/giri`, {
+      method: "POST",
+      headers: { "apikey": SUPABASE_KEY, "Authorization": `Bearer ${token}`, "Content-Type": "application/json", "Prefer": "return=minimal" },
+      body: JSON.stringify([{ numero: parseInt(formGiro.numero), anno: parseInt(formGiro.anno), descrizione: formGiro.descrizione || null }]),
+    });
+    if (r.ok) {
+      showToastCedola(`Giro ${formGiro.numero} ${formGiro.anno} creato`);
+      setShowNuovoGiro(false);
+      setFormGiro(emptyGiro);
+      if (onTitoliChange) onTitoliChange();
+    } else {
+      const err = await r.text();
+      showToastCedola(`Errore: ${err}`, "err");
+    }
+    setSavingGiro(false);
+  };
+
+  // Form nuovo titolo manuale
+  const emptyTitolo = { ean: "", titolo: "", autore: "", editore_nome: "", codice_editore: "", prezzo: "", uscita: "", formato: "Cover", n_cedola: "", giro_label: "", obiettivo_assegnato: "", account_editore: "", note_comunicazione: "", note: "" };
+  const [formTitolo, setFormTitolo] = useState(emptyTitolo);
+  const [savingTitolo, setSavingTitolo] = useState(false);
+  const giriLabelAll = useMemo(() => [...new Set(titoli.map(t => t.giro_label).filter(Boolean))].sort((a, b) => { const [na, ya] = a.split(" "); const [nb, yb] = b.split(" "); return Number(yb) - Number(ya) || Number(nb) - Number(na); }), [titoli]);
+
+  const saveNuovoTitolo = async () => {
+    if (!formTitolo.ean || !formTitolo.titolo || !formTitolo.n_cedola || !formTitolo.giro_label) {
+      showToastCedola("EAN, titolo, cedola e giro sono obbligatori", "err"); return;
+    }
+    setSavingTitolo(true);
+    const payload = {
+      ean: formTitolo.ean.trim(),
+      titolo: formTitolo.titolo,
+      autore: formTitolo.autore || null,
+      editore_nome: formTitolo.editore_nome || null,
+      codice_editore: formTitolo.codice_editore || null,
+      prezzo: parseFloat(String(formTitolo.prezzo).replace(",", ".")) || null,
+      uscita: formTitolo.uscita || null,
+      formato: formTitolo.formato || "Cover",
+      n_cedola: formTitolo.n_cedola,
+      giro_label: formTitolo.giro_label,
+      obiettivo_assegnato: parseInt(formTitolo.obiettivo_assegnato) || null,
+      account_editore: formTitolo.account_editore || null,
+      note_comunicazione: formTitolo.note_comunicazione || null,
+      note: formTitolo.note || null,
+    };
+    const r = await fetch(`${SUPABASE_URL}/rest/v1/titoli`, {
+      method: "POST",
+      headers: { "apikey": SUPABASE_KEY, "Authorization": `Bearer ${token}`, "Content-Type": "application/json", "Prefer": "return=representation" },
+      body: JSON.stringify([payload]),
+    });
+    if (r.ok) {
+      const data = await r.json();
+      showToastCedola(`"${formTitolo.titolo}" aggiunto`);
+      setShowNuovoTitolo(false);
+      setFormTitolo(emptyTitolo);
+      if (onTitoliChange) onTitoliChange();
+      if (data?.[0]) onUpdateTitolo(data[0]);
+    } else {
+      const err = await r.text();
+      showToastCedola(`Errore: ${err}`, "err");
+    }
+    setSavingTitolo(false);
+  };
 
   const giriLabel = useMemo(() => [...new Set(titoli.map(t => t.giro_label).filter(Boolean))].sort((a, b) => { const [na, ya] = a.split(" "); const [nb, yb] = b.split(" "); return Number(yb) - Number(ya) || Number(nb) - Number(na); }), [titoli]);
   const cedole = useMemo(() => { const t = giroLabelSel.length === 0 ? titoli : titoli.filter(t => giroLabelSel.includes(t.giro_label)); return [...new Set(t.map(t => t.n_cedola).filter(Boolean))].sort(); }, [titoli, giroLabelSel]);
@@ -550,8 +625,87 @@ function ModuloCedola({ titoli, giriList, onUpdateTitolo, spalmatura, prenotato,
 
   return (
     <div style={{ display: "flex", flexDirection: "column", height: "100%", overflow: "hidden" }}>
-      {/* FIX 5: Passato token alla EditModal */}
       {editingTitolo && <EditModal titolo={editingTitolo} onSave={onUpdateTitolo} onClose={() => setEditingId(null)} token={token} />}
+
+      {/* MODAL NUOVO GIRO */}
+      {showNuovoGiro && (
+        <div style={{ position: "fixed", inset: 0, background: "#000a", zIndex: 200, display: "flex", alignItems: "center", justifyContent: "center" }} onClick={() => setShowNuovoGiro(false)}>
+          <div style={{ background: T.surface, border: `1px solid ${T.borderHi}`, borderRadius: 6, padding: 28, width: 380 }} onClick={e => e.stopPropagation()}>
+            <div style={{ color: T.accent, fontWeight: "700", fontSize: "13px", marginBottom: 20 }}>NUOVO GIRO</div>
+            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12, marginBottom: 12 }}>
+              <div>
+                <label style={{ color: T.textMid, fontSize: "10px", textTransform: "uppercase", letterSpacing: "0.08em", display: "block", marginBottom: 4 }}>Numero *</label>
+                <input style={{ ...css.input, width: "100%", boxSizing: "border-box" }} type="number" value={formGiro.numero} onChange={e => setFormGiro(f => ({ ...f, numero: e.target.value }))} placeholder="es. 1" />
+              </div>
+              <div>
+                <label style={{ color: T.textMid, fontSize: "10px", textTransform: "uppercase", letterSpacing: "0.08em", display: "block", marginBottom: 4 }}>Anno *</label>
+                <input style={{ ...css.input, width: "100%", boxSizing: "border-box" }} type="number" value={formGiro.anno} onChange={e => setFormGiro(f => ({ ...f, anno: e.target.value }))} />
+              </div>
+            </div>
+            <div style={{ marginBottom: 20 }}>
+              <label style={{ color: T.textMid, fontSize: "10px", textTransform: "uppercase", letterSpacing: "0.08em", display: "block", marginBottom: 4 }}>Descrizione</label>
+              <input style={{ ...css.input, width: "100%", boxSizing: "border-box" }} value={formGiro.descrizione} onChange={e => setFormGiro(f => ({ ...f, descrizione: e.target.value }))} placeholder="opzionale" />
+            </div>
+            <div style={{ display: "flex", justifyContent: "flex-end", gap: 8 }}>
+              <button style={css.btn()} onClick={() => setShowNuovoGiro(false)}>Annulla</button>
+              <button style={css.btn("accent")} onClick={saveNuovoGiro} disabled={savingGiro}>{savingGiro ? "Salvataggio..." : "Crea Giro"}</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* MODAL NUOVO TITOLO */}
+      {showNuovoTitolo && (
+        <div style={{ position: "fixed", inset: 0, background: "#000a", zIndex: 200, display: "flex", alignItems: "center", justifyContent: "center" }} onClick={() => setShowNuovoTitolo(false)}>
+          <div style={{ background: T.surface, border: `1px solid ${T.borderHi}`, borderRadius: 6, padding: 28, width: 640, maxHeight: "85vh", overflowY: "auto" }} onClick={e => e.stopPropagation()}>
+            <div style={{ color: T.accent, fontWeight: "700", fontSize: "13px", marginBottom: 20 }}>NUOVO TITOLO</div>
+            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
+              {[
+                ["ean", "EAN *", "full"], ["titolo", "Titolo *", "full"],
+                ["autore", "Autore"], ["editore_nome", "Editore *"],
+                ["codice_editore", "Cod. Editore"], ["prezzo", "Prezzo"],
+                ["uscita", "Uscita (es. 15/04/2026)"], ["formato", "Formato"],
+                ["account_editore", "Account editore"], ["obiettivo_assegnato", "Obiettivo assegnato"],
+              ].map(([k, label, span]) => (
+                <div key={k} style={span === "full" ? { gridColumn: "1/-1" } : {}}>
+                  <label style={{ color: T.textMid, fontSize: "10px", textTransform: "uppercase", letterSpacing: "0.08em", display: "block", marginBottom: 4 }}>{label}</label>
+                  <input style={{ ...css.input, width: "100%", boxSizing: "border-box" }} value={formTitolo[k]} onChange={e => setFormTitolo(f => ({ ...f, [k]: e.target.value }))} />
+                </div>
+              ))}
+              <div>
+                <label style={{ color: T.textMid, fontSize: "10px", textTransform: "uppercase", letterSpacing: "0.08em", display: "block", marginBottom: 4 }}>Giro *</label>
+                <select style={{ ...css.input, width: "100%", boxSizing: "border-box" }} value={formTitolo.giro_label} onChange={e => setFormTitolo(f => ({ ...f, giro_label: e.target.value }))}>
+                  <option value="">— Seleziona —</option>
+                  {giriLabelAll.map(g => <option key={g} value={g}>Giro {g}</option>)}
+                </select>
+              </div>
+              <div>
+                <label style={{ color: T.textMid, fontSize: "10px", textTransform: "uppercase", letterSpacing: "0.08em", display: "block", marginBottom: 4 }}>N° Cedola *</label>
+                <input style={{ ...css.input, width: "100%", boxSizing: "border-box" }} value={formTitolo.n_cedola} onChange={e => setFormTitolo(f => ({ ...f, n_cedola: e.target.value }))} placeholder="es. 1A 2026" />
+              </div>
+            </div>
+            <div style={{ marginTop: 12 }}>
+              <label style={{ color: T.textMid, fontSize: "10px", textTransform: "uppercase", letterSpacing: "0.08em", display: "block", marginBottom: 4 }}>Note comunicazione</label>
+              <textarea style={{ ...css.input, width: "100%", boxSizing: "border-box", height: 50, resize: "vertical" }} value={formTitolo.note_comunicazione} onChange={e => setFormTitolo(f => ({ ...f, note_comunicazione: e.target.value }))} />
+            </div>
+            <div style={{ marginTop: 10 }}>
+              <label style={{ color: T.textMid, fontSize: "10px", textTransform: "uppercase", letterSpacing: "0.08em", display: "block", marginBottom: 4 }}>Note interne</label>
+              <textarea style={{ ...css.input, width: "100%", boxSizing: "border-box", height: 50, resize: "vertical" }} value={formTitolo.note} onChange={e => setFormTitolo(f => ({ ...f, note: e.target.value }))} />
+            </div>
+            <div style={{ display: "flex", justifyContent: "flex-end", gap: 8, marginTop: 20 }}>
+              <button style={css.btn()} onClick={() => setShowNuovoTitolo(false)}>Annulla</button>
+              <button style={css.btn("accent")} onClick={saveNuovoTitolo} disabled={savingTitolo}>{savingTitolo ? "Salvataggio..." : "Aggiungi Titolo"}</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* TOAST LOCALE */}
+      {toastCedola && (
+        <div style={{ position: "fixed", bottom: 24, left: "50%", transform: "translateX(-50%)", background: toastCedola.type === "err" ? "#4a1a2a" : "#1a3a2a", border: `1px solid ${toastCedola.type === "err" ? T.red : T.green}`, color: toastCedola.type === "err" ? T.red : T.green, borderRadius: 6, padding: "8px 20px", fontSize: "12px", zIndex: 999, boxShadow: "0 4px 20px #0008" }}>
+          {toastCedola.msg}
+        </div>
+      )}
       <div style={{ padding: "12px 20px", borderBottom: `1px solid ${T.border}`, display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap" }}>
         <SearchableMultiSelect values={giroLabelSel} onChange={v => { setGiroLabelSel(v); setGiroSel([]); setFilterEditori([]); }} options={giriLabel} placeholder="Tutti i giri" width={170} />
         <SearchableMultiSelect values={giroSel} onChange={v => { setGiroSel(v); setFilterEditori([]); }} options={cedole} placeholder="Tutte le cedole" width={160} />
@@ -564,6 +718,10 @@ function ModuloCedola({ titoli, giriList, onUpdateTitolo, spalmatura, prenotato,
           </button>
         ))}
         <div style={{ marginLeft: "auto", color: T.textMid, fontSize: "11px" }}><span style={{ color: T.text }}>{filtered.length}</span> titoli</div>
+        {ruolo !== "agente" && <>
+          <button style={{ ...css.btn(), borderColor: T.green, color: T.green }} onClick={() => setShowNuovoGiro(true)}>+ Giro</button>
+          <button style={{ ...css.btn(), borderColor: T.green, color: T.green }} onClick={() => setShowNuovoTitolo(true)}>+ Titolo</button>
+        </>}
         <button style={css.btn("accent")} onClick={exportAgenti}>↓ Download Agenti</button>
         {ruolo !== "agente" && <button style={css.btn("accent")} onClick={exportDirezionale}>↓ Download Direzionali</button>}
       </div>
@@ -1769,7 +1927,7 @@ export default function App() {
           {/* MOD 3: Passato spalmatura alla Dashboard */}
           {activeModule === "dashboard" && <ModuloDashboard titoli={titoli} prenotato={prenotato} canali={canali} spalmatura={spalmatura} ruolo={ruolo} />}
           {/* FIX 5: Passato token a ModuloCedola */}
-          {activeModule === "cedola" && <ModuloCedola titoli={titoli} giriList={giriDB} onUpdateTitolo={updateTitolo} spalmatura={spalmatura} prenotato={prenotato} ruolo={ruolo} token={session.token} />}
+          {activeModule === "cedola" && <ModuloCedola titoli={titoli} giriList={giriDB} onUpdateTitolo={t => { updateTitolo(t); setTitoli(prev => prev.some(x => x.id === t.id) ? prev.map(x => x.id === t.id ? t : x) : [...prev, t]); }} spalmatura={spalmatura} prenotato={prenotato} ruolo={ruolo} token={session.token} onTitoliChange={refreshDati} />}
           {activeModule === "prenotato" && <ModuloPrenotato token={session.token} titoli={titoli} onImportDone={() => sbFetch("prenotato?select=*&limit=100000", session.token).then(setPrenotato)} />}
           {/* MOD 4: Passato spalmatura a ModuloFineGiro */}
           {activeModule === "finegiro" && <ModuloFineGiro titoli={titoli} prenotato={prenotato} canali={canali} token={session.token} ruolo={ruolo} spalmatura={spalmatura} />}
