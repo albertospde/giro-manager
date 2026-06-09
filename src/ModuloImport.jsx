@@ -30,113 +30,42 @@ const COL_MAP = {
 
 const REQUIRED = ["giro_label", "ean", "titolo", "editore_nome", "prezzo", "formato"];
 
-// Mappa colonne XL obiettivi → canale_codice DB
-const CANALI_MAP = {
-  3:  "INDIPENDENTI_ALTRE_CATENE",
-  4:  "FELTRINELLI",
-  5:  "GIUNTI",
-  6:  "MONDADORI",
-  7:  "UBIK",
-  8:  "AMAZON",
-  9:  "IBS",
-  10: "ALTRI_ONLINE",
-  11: "FASTBOOK",
-  12: "GROSSISTI",
-  13: "CENTROLIBRI",
-  14: "GDO",
-};
+// ─── Import Anagrafica Clienti ───────────────────────────────────────────────
 
-// Verifica se l'utente loggato è admin leggendo user_profiles
-async function checkIsAdmin(token) {
-  const res = await fetch(`${SUPABASE_URL}/rest/v1/user_profiles?select=ruolo&limit=1`, {
-    headers: {
-      "apikey": SUPABASE_KEY,
-      "Authorization": `Bearer ${token}`,
-    },
-  });
-  if (res.ok) {
-    const data = await res.json();
-    return data?.[0]?.ruolo === "admin";
-  }
-  return false;
-}
-
-// ─── Componente Import Obiettivi ──────────────────────────────────────────────
-function ImportObiettiviSection({ token }) {
-  const [adminVerified, setAdminVerified] = useState(false);
-  const [checking, setChecking] = useState(false);
-  const [adminError, setAdminError] = useState(null);
-
-  const [file, setFile] = useState(null);
-  const [preview, setPreview] = useState([]); // [{editore, formato, canale, val}]
-  const [parseError, setParseError] = useState(null);
+function ImportClienti({ token }) {
   const [step, setStep] = useState("upload"); // upload | preview | result
+  const [rows, setRows] = useState([]);
   const [importing, setImporting] = useState(false);
-  const [result, setResult] = useState(null);
-  const [progress, setProgress] = useState(0);
-
-  // Verifica admin al click
-  const handleVerifyAdmin = async () => {
-    setChecking(true);
-    setAdminError(null);
-    try {
-      const ok = await checkIsAdmin(token);
-      if (ok) {
-        setAdminVerified(true);
-      } else {
-        setAdminError("Accesso negato: utente non admin.");
-      }
-    } catch (e) {
-      setAdminError("Errore verifica: " + e.message);
-    }
-    setChecking(false);
-  };
+  const [done, setDone] = useState(null);
 
   const handleFile = useCallback((e) => {
     const f = e.target.files[0];
     if (!f) return;
-    setFile(f);
-    setParseError(null);
 
     const reader = new FileReader();
     reader.onload = (evt) => {
       try {
-        const XLSX = window.XLSX;
-        const wb = XLSX.read(evt.target.result, { type: "array" });
-        const ws = wb.Sheets[wb.SheetNames[0]];
-        if (!ws) { setParseError("Foglio non trovato nel file."); return; }
+        // Il CSV è UTF-16 LE (BOM \xFF\xFE), tab-separato
+        const buffer = evt.target.result;
+        const decoder = new TextDecoder("utf-16le");
+        const text = decoder.decode(buffer).replace(/^\uFEFF/, ""); // rimuovi BOM
+        const lines = text.split(/\r?\n/).filter(l => l.trim() !== "");
 
-        const data = XLSX.utils.sheet_to_json(ws, { header: 1, defval: "" });
-        // Riga 0: header gruppo, Riga 1: header colonne, Dati da riga 2
-        const rows = data.slice(2).filter(r => r[0] && String(r[0]).trim() !== "");
-
+        // Riga 0 = header ("Dest. Merci (cod.)\tRegione"), saltiamo
         const parsed = [];
-        rows.forEach((row) => {
-          const editore = String(row[0]).trim().toUpperCase();
-          const formato = String(row[1]).trim();
-          if (!editore || !formato || editore === "EDITORE") return;
-
-          Object.entries(CANALI_MAP).forEach(([colIdx, canale]) => {
-            const raw = row[parseInt(colIdx)];
-            const val = parseFloat(raw);
-            parsed.push({
-              editore,
-              formato,
-              canale,
-              val: isNaN(val) ? 0 : Math.round(val * 10000) / 10000,
-            });
-          });
-        });
-
-        if (parsed.length === 0) {
-          setParseError("Nessun dato trovato. Verifica il formato del file.");
-          return;
+        for (let i = 1; i < lines.length; i++) {
+          const cols = lines[i].split("\t");
+          const codice = cols[0]?.trim();
+          const regione = cols[1]?.trim();
+          if (codice && regione) {
+            parsed.push({ codice_cliente: codice, regione });
+          }
         }
 
-        setPreview(parsed);
+        setRows(parsed);
         setStep("preview");
       } catch (err) {
-        setParseError("Errore lettura file: " + err.message);
+        alert("Errore lettura file: " + err.message);
       }
     };
     reader.readAsArrayBuffer(f);
@@ -144,251 +73,160 @@ function ImportObiettiviSection({ token }) {
 
   const handleImport = async () => {
     setImporting(true);
-    setProgress(0);
-    let ok = 0, err = 0;
-
-    // Upsert a batch di 100
-    const BATCH = 100;
-    const total = preview.length;
-
-    for (let i = 0; i < total; i += BATCH) {
-      const batch = preview.slice(i, i + BATCH).map(r => ({
-        editore_nome: r.editore,
-        formato: r.formato,
-        canale_codice: r.canale,
-        percentuale: r.val,
-      }));
-
-      const res = await fetch(
-        `${SUPABASE_URL}/rest/v1/spalmatura_obiettivo`,
-        {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-            "apikey": SUPABASE_KEY,
-            "Authorization": `Bearer ${token}`,
-            "Prefer": "resolution=merge-duplicates",
-          },
-          body: JSON.stringify(batch),
+    // Upsert in batch da 500 righe
+    const BATCH = 500;
+    let ok = 0;
+    try {
+      for (let i = 0; i < rows.length; i += BATCH) {
+        const batch = rows.slice(i, i + BATCH);
+        const res = await fetch(
+          `${SUPABASE_URL}/rest/v1/clienti?on_conflict=codice_cliente`,
+          {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+              "apikey": SUPABASE_KEY,
+              "Authorization": `Bearer ${token}`,
+              "Prefer": "resolution=merge-duplicates",
+            },
+            body: JSON.stringify(batch),
+          }
+        );
+        if (!res.ok) {
+          const err = await res.json();
+          throw new Error(JSON.stringify(err));
         }
-      );
-
-      if (res.ok || res.status === 201) {
         ok += batch.length;
-      } else {
-        err += batch.length;
       }
-
-      setProgress(Math.round(((i + BATCH) / total) * 100));
+      setDone({ ok });
+      setStep("result");
+    } catch (e) {
+      alert("Errore import clienti: " + e.message);
     }
-
-    setResult({ ok, err, total });
-    setStep("result");
     setImporting(false);
   };
 
-  const reset = () => {
-    setFile(null);
-    setPreview([]);
-    setParseError(null);
-    setStep("upload");
-    setResult(null);
-    setProgress(0);
-  };
-
-  // Raggruppa preview per editore/formato per mostrare tabella leggibile
-  const previewGrouped = preview.reduce((acc, r) => {
-    const key = `${r.editore}||${r.formato}`;
-    if (!acc[key]) acc[key] = { editore: r.editore, formato: r.formato, canali: {} };
-    acc[key].canali[r.canale] = r.val;
-    return acc;
-  }, {});
-  const previewRows = Object.values(previewGrouped);
-  const canaliCols = Object.values(CANALI_MAP);
+  const reset = () => { setRows([]); setDone(null); setStep("upload"); };
 
   return (
-    <div style={{ marginTop: 40, borderTop: `1px solid ${T.border}`, paddingTop: 32 }}>
-      {/* Header sezione */}
+    <div style={{ marginTop: 40 }}>
+      {/* Separatore con titolo sezione */}
       <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 20 }}>
-        <div style={{ width: 3, height: 20, background: T.accent, borderRadius: 2 }} />
-        <span style={{ color: T.text, fontWeight: "600", fontSize: "13px", letterSpacing: "0.05em" }}>
-          IMPORT OBIETTIVI
+        <div style={{ height: 1, flex: 1, background: T.border }} />
+        <span style={{ color: T.textMid, fontSize: "11px", textTransform: "uppercase", letterSpacing: "0.1em" }}>
+          Import Anagrafica Clienti
         </span>
-        <span style={{ color: T.textDim, fontSize: "11px" }}>spalmatura_obiettivo</span>
-        <span style={{
-          marginLeft: "auto",
-          background: T.red + "22",
-          color: T.red,
-          border: `1px solid ${T.red}44`,
-          borderRadius: 3,
-          padding: "2px 8px",
-          fontSize: "10px",
-          letterSpacing: "0.1em",
-          fontWeight: "700",
-        }}>
-          ADMIN
-        </span>
+        <div style={{ height: 1, flex: 1, background: T.border }} />
       </div>
 
-      {/* Blocco verifica admin */}
-      {!adminVerified ? (
-        <div style={{ maxWidth: 420, background: T.surface, border: `1px solid ${T.border}`, borderRadius: 6, padding: 24 }}>
-          <div style={{ color: T.textMid, fontSize: "12px", marginBottom: 16 }}>
-            Questa funzione è riservata agli amministratori.<br />
-            Clicca per verificare il tuo accesso.
+      <div style={{ color: T.textMid, fontSize: "11px", marginBottom: 16 }}>
+        Carica il CSV <code style={{ color: T.accent }}>CLIENTE_REGIONE_SUPABASE.csv</code> esportato dal gestionale.
+        Il file deve essere <strong style={{ color: T.text }}>UTF-16 LE, tab-separato</strong> con colonne{" "}
+        <em>Dest. Merci (cod.)</em> e <em>Regione</em>. L'operazione è sicura: i clienti esistenti vengono aggiornati, quelli nuovi aggiunti.
+      </div>
+
+      {/* Step indicator */}
+      <div style={{ display: "flex", gap: 8, marginBottom: 20, alignItems: "center" }}>
+        {["upload", "preview", "result"].map((s, i) => (
+          <div key={s} style={{ display: "flex", alignItems: "center", gap: 8 }}>
+            <div style={{ width: 22, height: 22, borderRadius: "50%", background: step === s ? T.accent : T.borderHi, color: step === s ? "#000" : T.textMid, display: "flex", alignItems: "center", justifyContent: "center", fontSize: "10px", fontWeight: "700" }}>{i + 1}</div>
+            <span style={{ color: step === s ? T.accent : T.textMid, fontSize: "11px", textTransform: "uppercase", letterSpacing: "0.08em" }}>
+              {s === "upload" ? "Carica file" : s === "preview" ? "Verifica" : "Completato"}
+            </span>
+            {i < 2 && <span style={{ color: T.textDim }}>›</span>}
           </div>
-          <button
-            style={css.btn("accent")}
-            onClick={handleVerifyAdmin}
-            disabled={checking}
-          >
-            {checking ? "Verifica in corso..." : "Verifica accesso admin"}
-          </button>
-          {adminError && (
-            <div style={{ color: T.red, fontSize: "11px", marginTop: 10 }}>{adminError}</div>
-          )}
+        ))}
+      </div>
+
+      {/* STEP 1: UPLOAD */}
+      {step === "upload" && (
+        <div style={{ maxWidth: 500 }}>
+          <div style={{ border: `2px dashed ${T.borderHi}`, borderRadius: 6, padding: 32, textAlign: "center" }}>
+            <div style={{ fontSize: "28px", marginBottom: 10 }}>👥</div>
+            <div style={{ color: T.text, marginBottom: 6 }}>Carica il file clienti/regioni</div>
+            <div style={{ color: T.textMid, fontSize: "11px", marginBottom: 18 }}>
+              File .csv UTF-16 LE — esportato da Mago/gestionale
+            </div>
+            <input type="file" accept=".csv,.txt" onChange={handleFile} style={{ display: "none" }} id="file-input-clienti" />
+            <label htmlFor="file-input-clienti" style={{ ...css.btn("accent"), cursor: "pointer", padding: "8px 20px" }}>
+              Scegli file .csv
+            </label>
+          </div>
         </div>
-      ) : (
-        <>
-          {/* Step indicator */}
-          <div style={{ display: "flex", gap: 8, marginBottom: 20, alignItems: "center" }}>
-            {["upload", "preview", "result"].map((s, i) => (
-              <div key={s} style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                <div style={{
-                  width: 22, height: 22, borderRadius: "50%",
-                  background: step === s ? T.accent : T.borderHi,
-                  color: step === s ? "#000" : T.textMid,
-                  display: "flex", alignItems: "center", justifyContent: "center",
-                  fontSize: "10px", fontWeight: "700"
-                }}>{i + 1}</div>
-                <span style={{ color: step === s ? T.accent : T.textMid, fontSize: "11px", textTransform: "uppercase", letterSpacing: "0.08em" }}>
-                  {s === "upload" ? "Carica file" : s === "preview" ? "Anteprima" : "Completato"}
-                </span>
-                {i < 2 && <span style={{ color: T.textDim }}>›</span>}
-              </div>
-            ))}
+      )}
+
+      {/* STEP 2: PREVIEW */}
+      {step === "preview" && (
+        <div>
+          <div style={{ display: "flex", gap: 12, marginBottom: 16, alignItems: "center" }}>
+            <div style={{ background: T.surface, border: `1px solid ${T.border}`, borderRadius: 4, padding: "10px 16px" }}>
+              <span style={{ color: T.textMid, fontSize: "11px" }}>Clienti letti: </span>
+              <span style={{ color: T.text, fontWeight: "700" }}>{rows.length}</span>
+            </div>
+            <div style={{ marginLeft: "auto", display: "flex", gap: 8 }}>
+              <button style={css.btn()} onClick={reset}>← Ricarica</button>
+              <button style={css.btn("accent")} onClick={handleImport} disabled={importing}>
+                {importing ? "Import in corso..." : `Importa ${rows.length} clienti`}
+              </button>
+            </div>
           </div>
 
-          {/* STEP 1: UPLOAD */}
-          {step === "upload" && (
-            <div style={{ maxWidth: 480 }}>
-              <div style={{ border: `2px dashed ${T.borderHi}`, borderRadius: 6, padding: 36, textAlign: "center" }}>
-                <div style={{ fontSize: "28px", marginBottom: 10 }}>📊</div>
-                <div style={{ color: T.text, marginBottom: 6, fontSize: "13px" }}>
-                  Carica <strong>obiettivi_per_spalmatura.xlsx</strong>
-                </div>
-                <div style={{ color: T.textMid, fontSize: "11px", marginBottom: 18 }}>
-                  Tutti i valori esistenti verranno sovrascritti
-                </div>
-                <input type="file" accept=".xlsx" onChange={handleFile} style={{ display: "none" }} id="obj-file-input" />
-                <label htmlFor="obj-file-input" style={{ ...css.btn("accent"), cursor: "pointer", padding: "8px 20px" }}>
-                  Scegli file .xlsx
-                </label>
+          {/* Anteprima prime 10 righe */}
+          <div style={{ overflowX: "auto" }}>
+            <table style={{ width: "100%", borderCollapse: "collapse" }}>
+              <thead>
+                <tr>
+                  {["Codice Cliente", "Regione"].map(h => <th key={h} style={css.th}>{h}</th>)}
+                </tr>
+              </thead>
+              <tbody>
+                {rows.slice(0, 10).map((r, i) => (
+                  <tr key={i} style={{ background: i % 2 === 0 ? "transparent" : T.surface + "66" }}>
+                    <td style={{ ...css.td, fontFamily: "monospace", fontSize: "11px", color: T.textMid }}>{r.codice_cliente}</td>
+                    <td style={{ ...css.td, color: T.accent }}>{r.regione}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+            {rows.length > 10 && (
+              <div style={{ color: T.textDim, fontSize: "11px", padding: "8px 12px" }}>
+                … e altri {rows.length - 10} clienti
               </div>
-              {parseError && (
-                <div style={{ color: T.red, fontSize: "11px", marginTop: 10 }}>{parseError}</div>
-              )}
-            </div>
-          )}
+            )}
+          </div>
+        </div>
+      )}
 
-          {/* STEP 2: PREVIEW */}
-          {step === "preview" && (
-            <div>
-              <div style={{ display: "flex", gap: 12, marginBottom: 14, alignItems: "center" }}>
-                <div style={{ background: T.surface, border: `1px solid ${T.border}`, borderRadius: 4, padding: "8px 14px" }}>
-                  <span style={{ color: T.textMid, fontSize: "11px" }}>Editore/formato: </span>
-                  <span style={{ color: T.text, fontWeight: "700" }}>{previewRows.length}</span>
-                </div>
-                <div style={{ background: T.surface, border: `1px solid ${T.border}`, borderRadius: 4, padding: "8px 14px" }}>
-                  <span style={{ color: T.textMid, fontSize: "11px" }}>Righe upsert: </span>
-                  <span style={{ color: T.accent, fontWeight: "700" }}>{preview.length}</span>
-                </div>
-                <div style={{ marginLeft: "auto", display: "flex", gap: 8 }}>
-                  <button style={css.btn()} onClick={reset}>← Ricarica</button>
-                  <button style={css.btn("accent")} onClick={handleImport} disabled={importing}>
-                    {importing ? `Import... ${progress}%` : `Aggiorna ${previewRows.length} editori`}
-                  </button>
-                </div>
-              </div>
-
-              {importing && (
-                <div style={{ marginBottom: 14 }}>
-                  <div style={{ height: 4, background: T.border, borderRadius: 2, overflow: "hidden" }}>
-                    <div style={{ height: "100%", width: `${progress}%`, background: T.accent, transition: "width 0.3s" }} />
-                  </div>
-                </div>
-              )}
-
-              <div style={{ overflowX: "auto", maxHeight: 400, overflowY: "auto" }}>
-                <table style={{ width: "100%", borderCollapse: "collapse", fontSize: "11px" }}>
-                  <thead style={{ position: "sticky", top: 0, zIndex: 1 }}>
-                    <tr>
-                      <th style={{ ...css.th, minWidth: 180 }}>Editore</th>
-                      <th style={css.th}>Formato</th>
-                      {canaliCols.map(c => (
-                        <th key={c} style={{ ...css.th, minWidth: 70, fontSize: "10px" }}>
-                          {c.replace("INDIPENDENTI_ALTRE_CATENE", "INDIPEN.").replace("ALTRI_ONLINE", "ALTRI ON.").replace("CENTROLIBRI", "CENTRO.").replace("GROSSISTI", "GROSS.")}
-                        </th>
-                      ))}
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {previewRows.map((r, i) => (
-                      <tr key={i} style={{ background: i % 2 === 0 ? "transparent" : T.surface + "55" }}>
-                        <td style={{ ...css.td, color: T.accent, fontWeight: "600" }}>{r.editore}</td>
-                        <td style={{ ...css.td, color: T.textMid }}>{r.formato}</td>
-                        {canaliCols.map(c => (
-                          <td key={c} style={{ ...css.td, textAlign: "right", color: r.canali[c] > 0 ? T.text : T.textDim }}>
-                            {r.canali[c] > 0 ? `${(r.canali[c] * 100).toFixed(1)}%` : "—"}
-                          </td>
-                        ))}
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            </div>
-          )}
-
-          {/* STEP 3: RESULT */}
-          {step === "result" && result && (
-            <div style={{ textAlign: "center", padding: 48 }}>
-              <div style={{ fontSize: "40px", marginBottom: 14 }}>{result.err === 0 ? "✅" : "⚠️"}</div>
-              <div style={{ color: result.err === 0 ? T.green : T.accent, fontSize: "18px", fontWeight: "700", marginBottom: 8 }}>
-                {result.err === 0 ? "Import completato" : "Import con errori"}
-              </div>
-              <div style={{ color: T.textMid, marginBottom: 6, fontSize: "12px" }}>
-                {result.ok} righe aggiornate correttamente
-              </div>
-              {result.err > 0 && (
-                <div style={{ color: T.red, fontSize: "12px", marginBottom: 6 }}>
-                  {result.err} righe non importate
-                </div>
-              )}
-              <button style={{ ...css.btn("accent"), marginTop: 24 }} onClick={reset}>Nuovo import</button>
-            </div>
-          )}
-        </>
+      {/* STEP 3: RESULT */}
+      {step === "result" && done && (
+        <div style={{ textAlign: "center", padding: 40 }}>
+          <div style={{ fontSize: "40px", marginBottom: 12 }}>✅</div>
+          <div style={{ color: T.green, fontSize: "18px", fontWeight: "700", marginBottom: 8 }}>Import completato</div>
+          <div style={{ color: T.textMid, marginBottom: 24 }}>{done.ok} clienti importati/aggiornati</div>
+          <button style={css.btn("accent")} onClick={reset}>Nuovo import</button>
+        </div>
       )}
     </div>
   );
 }
 
-// ─── Componente principale ────────────────────────────────────────────────────
-export default function ModuloImport({ giriList, token, onImportDone, onlyObiettivi = false }) {
+// ─── Componente principale ───────────────────────────────────────────────────
+
+export default function ModuloImport({ giriList, token, onImportDone }) {
   const [giroSel, setGiroSel] = useState(giriList[0]?.id ?? null);
   const [file, setFile] = useState(null);
   const [rows, setRows] = useState([]);
   const [errors, setErrors] = useState([]);
   const [importing, setImporting] = useState(false);
   const [done, setDone] = useState(null);
-  const [step, setStep] = useState("upload");
+  const [step, setStep] = useState("upload"); // upload | preview | result
 
   const handleFile = useCallback((e) => {
     const f = e.target.files[0];
     if (!f) return;
     setFile(f);
 
+    // Usa SheetJS (caricato via CDN in index.html)
     const reader = new FileReader();
     reader.onload = (evt) => {
       try {
@@ -397,7 +235,9 @@ export default function ModuloImport({ giriList, token, onImportDone, onlyObiett
         const ws = wb.Sheets["CEDOLA"];
         if (!ws) { alert("Foglio 'CEDOLA' non trovato. Stai usando il template corretto?"); return; }
         const data = XLSX.utils.sheet_to_json(ws, { header: 1, defval: "" });
+        // Skip righe 0-2 (titolo, legenda, note), header riga 3, dati da riga 4
         const dataRows = data.slice(4).filter(r => r.some(v => v !== ""));
+        console.log("Prima riga dati:", dataRows[0]);
 
         const parsed = [];
         const errs = [];
@@ -412,11 +252,12 @@ export default function ModuloImport({ giriList, token, onImportDone, onlyObiett
             if (field === "n_cedola" || field === "giro_label") val = val ? String(val) : null;
             obj[field] = val === "" ? null : val;
           });
-          obj.giro_id = null;
+          obj.giro_id = null; // assegnato all'import
 
+          // Validazione
           const rowErrs = [];
           REQUIRED.forEach(f => { if (!obj[f]) rowErrs.push(f); });
-          if (obj.ean && String(obj.ean).replace(/\D/g, "").length !== 13) rowErrs.push("EAN non valido");
+          if (obj.ean && String(obj.ean).replace(/\D/g,"").length !== 13) rowErrs.push("EAN non valido");
           if (rowErrs.length) errs.push({ row: idx + 5, fields: rowErrs });
 
           parsed.push(obj);
@@ -464,12 +305,11 @@ export default function ModuloImport({ giriList, token, onImportDone, onlyObiett
 
   return (
     <div style={{ flex: 1, overflowY: "auto", padding: 24 }}>
-      {!onlyObiettivi && (<>
-      {/* Step indicator cedola */}
+      {/* Step indicator */}
       <div style={{ display: "flex", gap: 8, marginBottom: 24, alignItems: "center" }}>
-        {["upload", "preview", "result"].map((s, i) => (
+        {["upload","preview","result"].map((s, i) => (
           <div key={s} style={{ display: "flex", alignItems: "center", gap: 8 }}>
-            <div style={{ width: 24, height: 24, borderRadius: "50%", background: step === s ? T.accent : T.borderHi, color: step === s ? "#000" : T.textMid, display: "flex", alignItems: "center", justifyContent: "center", fontSize: "11px", fontWeight: "700" }}>{i + 1}</div>
+            <div style={{ width: 24, height: 24, borderRadius: "50%", background: step === s ? T.accent : T.borderHi, color: step === s ? "#000" : T.textMid, display: "flex", alignItems: "center", justifyContent: "center", fontSize: "11px", fontWeight: "700" }}>{i+1}</div>
             <span style={{ color: step === s ? T.accent : T.textMid, fontSize: "11px", textTransform: "uppercase", letterSpacing: "0.08em" }}>{s === "upload" ? "Carica file" : s === "preview" ? "Verifica" : "Completato"}</span>
             {i < 2 && <span style={{ color: T.textDim }}>›</span>}
           </div>
@@ -479,7 +319,7 @@ export default function ModuloImport({ giriList, token, onImportDone, onlyObiett
       {/* STEP 1: UPLOAD */}
       {step === "upload" && (
         <div style={{ maxWidth: 500 }}>
-          <div style={{ border: `2px dashed ${T.borderHi}`, borderRadius: 6, padding: 40, textAlign: "center", marginBottom: 20 }}>
+              <div style={{ border: `2px dashed ${T.borderHi}`, borderRadius: 6, padding: 40, textAlign: "center", marginBottom: 20 }}>
             <div style={{ fontSize: "32px", marginBottom: 12 }}>📂</div>
             <div style={{ color: T.text, marginBottom: 8 }}>Carica il template compilato</div>
             <div style={{ color: T.textMid, fontSize: "11px", marginBottom: 20 }}>Solo file .xlsx — usa il template ufficiale</div>
@@ -523,7 +363,7 @@ export default function ModuloImport({ giriList, token, onImportDone, onlyObiett
             <table style={{ width: "100%", borderCollapse: "collapse" }}>
               <thead>
                 <tr>
-                  {["#", "EAN", "Titolo", "Autore", "Editore", "Prezzo", "Uscita", "Formato", "Obj", "▲", "★"].map(h => <th key={h} style={css.th}>{h}</th>)}
+                  {["#","EAN","Titolo","Autore","Editore","Prezzo","Uscita","Formato","Obj","▲","★"].map(h => <th key={h} style={css.th}>{h}</th>)}
                 </tr>
               </thead>
               <tbody>
@@ -561,9 +401,8 @@ export default function ModuloImport({ giriList, token, onImportDone, onlyObiett
         </div>
       )}
 
-      </>)}
-      {/* ── IMPORT OBIETTIVI (solo admin) ── */}
-      <ImportObiettiviSection token={token} />
+      {/* ── Import Anagrafica Clienti ── */}
+      <ImportClienti token={token} />
     </div>
   );
 }
