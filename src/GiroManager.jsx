@@ -816,6 +816,8 @@ function ModuloFineGiro({ titoli, prenotato, canali, token, ruolo, spalmatura })
   const [prenotatoCliente, setPrenotatoCliente] = useState([]);
   const [auroraEdit, setAuroraEdit] = useState({});
   const [auroraEditing, setAuroraEditing] = useState(null);
+  const [clienteRegioneMap, setClienteRegioneMap] = useState({});
+  const [filterRegioni, setFilterRegioni] = useState([]);
 
   // Auto-seleziona il giro più recente all'avvio (giriLabel è ordinato DESC → [0] è il più recente)
   useEffect(() => {
@@ -824,7 +826,7 @@ function ModuloFineGiro({ titoli, prenotato, canali, token, ruolo, spalmatura })
     }
   }, [giriLabel]);
 
-  const resetFiltri = () => { setGiroLabelSel([]); setExtraSel([]); setCedolaSel([]); setFilterEditori([]); setFilterAccount([]); setFilterCanale([]); setSearch(""); setClienteSel(null); setSoloPrenotati(false); };
+  const resetFiltri = () => { setGiroLabelSel([]); setExtraSel([]); setCedolaSel([]); setFilterEditori([]); setFilterAccount([]); setFilterCanale([]); setFilterRegioni([]); setSearch(""); setClienteSel(null); setSoloPrenotati(false); };
 
   useEffect(() => {
     if (!token) return;
@@ -835,6 +837,18 @@ function ModuloFineGiro({ titoli, prenotato, canali, token, ruolo, spalmatura })
       const map = {};
       data.forEach(r => { map[r.codice_cliente] = r.nome_cliente; });
       setClientiList(Object.entries(map).map(([cod, nome]) => ({ cod, nome })).sort((a, b) => a.nome.localeCompare(b.nome)));
+    });
+  }, [token]);
+
+  useEffect(() => {
+    if (!token) return;
+    fetch(`${SUPABASE_URL}/rest/v1/clienti?select=codice_cliente,regione&limit=100000`, {
+      headers: { "apikey": SUPABASE_KEY, "Authorization": `Bearer ${token}`, "Range": "0-499999" }
+    }).then(r => r.json()).then(data => {
+      if (!Array.isArray(data)) return;
+      const map = {};
+      data.forEach(r => { map[r.codice_cliente] = r.regione; });
+      setClienteRegioneMap(map);
     });
   }, [token]);
 
@@ -872,6 +886,10 @@ function ModuloFineGiro({ titoli, prenotato, canali, token, ruolo, spalmatura })
   const cedole = useMemo(() => { if (giroLabelSel.length === 0) return []; return [...new Set(titoli.filter(t => giroLabelSel.includes(t.giro_label)).map(t => t.n_cedola).filter(Boolean))].sort(); }, [titoli, giroLabelSel]);
   const editori = useMemo(() => { const t = giroLabelSel.length > 0 ? titoli.filter(t => giroLabelSel.includes(t.giro_label)) : extraSel.length > 0 ? titoli.filter(t => t.giro_label === "EXTRA" && extraSel.includes(t.n_cedola)) : []; return [...new Set(t.map(t => t.editore_nome).filter(Boolean))].sort(); }, [titoli, giroLabelSel, extraSel]);
   const accounts = useMemo(() => { const t = giroLabelSel.length > 0 ? titoli.filter(t => giroLabelSel.includes(t.giro_label)) : extraSel.length > 0 ? titoli.filter(t => t.giro_label === "EXTRA" && extraSel.includes(t.n_cedola)) : []; return [...new Set(t.map(t => t.account_editore).filter(Boolean))].sort(); }, [titoli, giroLabelSel, extraSel]);
+
+  const regioniDisponibili = useMemo(() => {
+    return [...new Set(Object.values(clienteRegioneMap))].filter(Boolean).sort();
+  }, [clienteRegioneMap]);
 
   const titoliSel = useMemo(() => {
     if (giroLabelSel.length === 0 && extraSel.length === 0) return [];
@@ -967,6 +985,10 @@ function ModuloFineGiro({ titoli, prenotato, canali, token, ruolo, spalmatura })
     }
     if (soloPrenotati && clienteSel) {
       result = result.filter(({ totPren }) => totPren > 0);
+    }
+    if (filterRegioni.length > 0 && clienteSel) {
+      const regioneCliente = clienteRegioneMap[clienteSel];
+      if (!regioneCliente || !filterRegioni.includes(regioneCliente)) return [];
     }
     if (sortPren) {
       result = [...result].sort((a, b) => sortPren === "asc" ? a.totPren - b.totPren : b.totPren - a.totPren);
@@ -1080,6 +1102,7 @@ function ModuloFineGiro({ titoli, prenotato, canali, token, ruolo, spalmatura })
         <SearchableMultiSelect values={filterEditori} onChange={setFilterEditori} options={editori} placeholder="Tutti gli editori" width={190} />
         <SearchableMultiSelect values={filterAccount} onChange={setFilterAccount} options={accounts} placeholder="Tutti gli account" width={160} />
         <SearchableMultiSelect values={filterCanale} onChange={setFilterCanale} options={canali.filter(c => c.codice !== "AURORA" && c.codice !== "GDO").map(c => c.codice)} renderOption={cod => { const c = canali.find(x => x.codice === cod); return c?.nome || cod; }} placeholder="Tutti i canali" width={170} />
+        <SearchableMultiSelect values={filterRegioni} onChange={setFilterRegioni} options={regioniDisponibili} placeholder="Tutte le regioni" width={170} />
         <input style={{ ...css.input, width: 160 }} placeholder="Cerca EAN / titolo..." value={search} onChange={e => setSearch(e.target.value)} />
         {(filterCanale.length > 0 || clienteSel) && (
           <label style={{ display: "flex", alignItems: "center", gap: 5, cursor: "pointer", fontSize: "11px", color: soloPrenotati ? T.accent : T.textMid, userSelect: "none" }}>
@@ -1104,7 +1127,7 @@ function ModuloFineGiro({ titoli, prenotato, canali, token, ruolo, spalmatura })
                   <div key={c.cod} style={{ padding: "6px 12px", cursor: "pointer", fontSize: "12px", color: clienteSel === c.cod ? T.accent : T.text, background: clienteSel === c.cod ? T.accent + "18" : "transparent", borderBottom: `1px solid ${T.border}22` }}
                     onClick={() => { setClienteSel(c.cod); setClienteDropdownOpen(false); setClienteSearch(""); }}>
                     <div style={{ fontWeight: "600" }}>{c.nome}</div>
-                    <div style={{ fontSize: "10px", color: T.textMid }}>{c.cod}</div>
+                    <div style={{ fontSize: "10px", color: T.textMid }}>{c.cod}{clienteRegioneMap[c.cod] ? ` · ${clienteRegioneMap[c.cod]}` : ""}</div>
                   </div>
                 ))}
               </div>
