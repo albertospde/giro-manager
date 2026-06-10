@@ -630,7 +630,6 @@ function ModuloCedola({ titoli, giriList, onUpdateTitolo, spalmatura, prenotato,
   };
 
   const exportDirezionale = () => {
-    const pwd = prompt("Password direzionale:"); if (pwd !== "nuovaluce") { alert("Password errata."); return; }
     const XLSX = window.XLSX;
     const canaliDir = [{ codice: 'FELTRINELLI', label: 'Feltrinelli' },{ codice: 'GIUNTI', label: 'Giunti' },{ codice: 'MONDADORI', label: 'Mondadori' },{ codice: 'UBIK', label: 'Ubik' },{ codice: 'INDIPENDENTI_ALTRE_CATENE', label: 'Indip. & Altre Catene' },{ codice: 'AMAZON', label: 'Amazon' },{ codice: 'IBS', label: 'IBS' },{ codice: 'ALTRI_ONLINE', label: 'Altri Online' },{ codice: 'FASTBOOK', label: 'Fastbook' },{ codice: 'GROSSISTI', label: 'Grossisti' },{ codice: 'CENTROLIBRI', label: 'Centrolibri' },{ codice: 'GDO', label: 'GDO' }];
     const headersCedola = ["N° CEDOLA","EAN","TITOLO","AUTORE","COD.EDITORE","EDITORE","PREZZO","OBJ TOTALE","NOTE","EAN GEM 1","TITOLO GEM 1","EAN GEM 2","TITOLO GEM 2","EAN GEM 3","TITOLO GEM 3"];
@@ -745,6 +744,7 @@ function ModuloCedola({ titoli, giriList, onUpdateTitolo, spalmatura, prenotato,
         </>}
         <button style={css.btn("accent")} onClick={exportAgenti}>↓ Download Agenti</button>
         {ruolo !== "agente" && <button style={css.btn("accent")} onClick={exportDirezionale}>↓ Download Direzionali</button>}
+        <a href="https://lafeltrinelli.sharepoint.com/:f:/s/PDE/IgD7OJj1nZrhTKrDAVfuqOc3AQQaTrH4gMuXZT7Ob6Fbm2w?e=mEDMdm" target="_blank" rel="noopener noreferrer" style={{ ...css.btn(), borderColor: "#9c6fcf", color: "#9c6fcf", textDecoration: "none" }}>📄 PDF & Materiali</a>
       </div>
       <div style={{ flex: 1, overflowY: "auto" }}>
         <table style={css.table}>
