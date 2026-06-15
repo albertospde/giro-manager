@@ -1602,11 +1602,11 @@ if (!r.ok) throw new Error(await r.text());
   // Export Excel
   const exportExcel = () => {
     const XLSX = window.XLSX;
-    const headers = ["N. LANCIO","EAN","COD.ED.","EDITORE","ACCOUNT","TITOLO","AUTORE","PREZZO","CEDOLE","LANCIATE","TRASMESSO","FINE GIRO","AMAZON","FG NO AMAZON","TEORICO","Δ PORTALE","GIORNO USCITA"];
+    const headers = ["N. LANCIO","EAN","COD.ED.","EDITORE","ACCOUNT","TITOLO","AUTORE","PREZZO","CEDOLE","LANCIATE","FINE GIRO","TRASMESSE A MELI","PROPOSTA AMAZON","TRASMESSO TOTALE TEORICO","DIFF. FG VS TRASMESSO","GIORNO USCITA"];
     const rows = dataFiltrata.map(r => [
       r.num_lancio, r.ean, r.codice_editore, r.editore, r.account_editore || "", r.titolo, r.autore, r.prezzo,
-      r.cedole.join(", "), r.prenotato_iscrizione, r.prenotato_trasmesso ?? "",
-      r.pren_fine_giro, r.pren_amazon, r.pren_senza_amazon, r.teorico, r.delta_portale, r.giorno_uscita
+      r.cedole.join(", "), r.prenotato_iscrizione,
+      r.pren_fine_giro, r.pren_senza_amazon, r.pren_amazon, r.teorico, r.delta_portale, r.giorno_uscita
     ]);
     // Riepilogo editori
     const rH = ["EDITORE","TITOLI","LANCIATE","TRASMESSE","FINE GIRO","AMAZON","VALORE"];
@@ -1657,14 +1657,10 @@ if (!r.ok) throw new Error(await r.text());
         </div>
         <div style={{ marginLeft: "auto", display: "flex", gap: 8 }}>
           <label style={{ ...css.btn("accent"), cursor: "pointer", display: "inline-flex", alignItems: "center", gap: 4 }}>
-            {uploading && uploadMode === "iscrizione" ? "..." : "↑ Lancio"}
+            {uploading && uploadMode === "iscrizione" ? "..." : "Upload File Lancio"}
             <input type="file" accept=".xlsx,.xls,.csv" style={{ display: "none" }} onChange={(e) => handleUpload(e, "iscrizione")} disabled={uploading} />
           </label>
-          <label style={{ ...css.btn(), cursor: "pointer", display: "inline-flex", alignItems: "center", gap: 4, borderColor: T.green, color: T.green }}>
-            {uploading && uploadMode === "trasmesso" ? "..." : "↑ Trasmesso"}
-            <input type="file" accept=".xlsx,.xls,.csv" style={{ display: "none" }} onChange={(e) => handleUpload(e, "trasmesso")} disabled={uploading} />
-          </label>
-          <button style={css.btn()} onClick={exportExcel}>↓ Excel</button>
+          <button style={css.btn()} onClick={exportExcel}>Download Excel</button>
         </div>
       </div>
 
@@ -1673,18 +1669,7 @@ if (!r.ok) throw new Error(await r.text());
         <div style={{ display: "flex", gap: 12, flexWrap: "wrap", marginBottom: 16 }}>
           <KpiCard label="Titoli al lancio" value={kpi.tot} color={T.text} />
           <KpiCard label="Copie lanciate" value={kpi.copieLanciate.toLocaleString("it")} color={T.accent} sub={`€ ${kpi.valoreLanciate.toLocaleString("it", { maximumFractionDigits: 0 })}`} />
-          {kpi.haTrasmesso && (
-            <>
-              <KpiCard label="Copie trasmesse" value={kpi.copieTrasmesse.toLocaleString("it")} color={T.green} sub={`€ ${kpi.valoreTrasmesso.toLocaleString("it", { maximumFractionDigits: 0 })}`} />
-              <div style={{ background: T.surface, border: `1px solid ${T.border}`, borderRadius: 4, padding: "16px 20px", minWidth: 180 }}>
-                <div style={{ color: T.textMid, fontSize: "10px", letterSpacing: "0.1em", textTransform: "uppercase", marginBottom: 8 }}>Copertura trasmesso</div>
-                <div style={{ color: kpi.pctTrasmesso >= 90 ? T.green : kpi.pctTrasmesso >= 70 ? T.accent : T.red, fontSize: "28px", fontWeight: "700", lineHeight: 1, marginBottom: 8 }}>{kpi.pctTrasmesso}%</div>
-                <div style={{ height: 6, background: T.borderHi, borderRadius: 3, overflow: "hidden" }}>
-                  <div style={{ width: `${Math.min(kpi.pctTrasmesso, 100)}%`, height: "100%", background: kpi.pctTrasmesso >= 90 ? T.green : kpi.pctTrasmesso >= 70 ? T.accent : T.red }} />
-                </div>
-              </div>
-            </>
-          )}
+
           <KpiCard label="Fine Giro" value={kpi.totFineGiro.toLocaleString("it")} color={T.purple} sub={`€ ${kpi.valoreFineGiro.toLocaleString("it", { maximumFractionDigits: 0 })}`} />
           <KpiCard label="Amazon" value={kpi.totAmazon.toLocaleString("it")} color="#e8a838" sub={`€ ${kpi.valoreAmazon.toLocaleString("it", { maximumFractionDigits: 0 })}`} />
           <KpiCard label="Teorico totale" value={kpi.totTeorico.toLocaleString("it")} color={T.text} sub={`€ ${kpi.valoreTeorico.toLocaleString("it", { maximumFractionDigits: 0 })}`} />
@@ -1724,11 +1709,11 @@ if (!r.ok) throw new Error(await r.text());
               <th style={css.th}>€</th>
               <th style={css.th}>Cedole</th>
               <th style={{ ...css.th, cursor: "pointer" }} onClick={() => toggleSort("prenotato_iscrizione")}>Lanciate{sortIcon("prenotato_iscrizione")}</th>
-              {kpi.haTrasmesso && <th style={{ ...css.th, cursor: "pointer" }} onClick={() => toggleSort("prenotato_trasmesso")}>Trasm.{sortIcon("prenotato_trasmesso")}</th>}
               <th style={{ ...css.th, cursor: "pointer" }} onClick={() => toggleSort("pren_fine_giro")}>Fine Giro{sortIcon("pren_fine_giro")}</th>
-              <th style={{ ...css.th, cursor: "pointer", color: "#e8a838" }} onClick={() => toggleSort("pren_amazon")}>Amazon{sortIcon("pren_amazon")}</th>
-              <th style={{ ...css.th, cursor: "pointer" }} onClick={() => toggleSort("teorico")}>Teorico{sortIcon("teorico")}</th>
-              <th style={{ ...css.th, cursor: "pointer" }} onClick={() => toggleSort("delta_portale")} title="Fine Giro (no Amazon) − Lanciate">Δ Portale{sortIcon("delta_portale")}</th>
+              <th style={{ ...css.th, cursor: "pointer" }} onClick={() => toggleSort("pren_senza_amazon")}>Trasmesse a Meli{sortIcon("pren_senza_amazon")}</th>
+              <th style={{ ...css.th, cursor: "pointer", color: "#e8a838" }} onClick={() => toggleSort("pren_amazon")}>Proposta Amazon{sortIcon("pren_amazon")}</th>
+              <th style={{ ...css.th, cursor: "pointer" }} onClick={() => toggleSort("teorico")}>Trasmesso Totale Teorico{sortIcon("teorico")}</th>
+              <th style={{ ...css.th, cursor: "pointer" }} onClick={() => toggleSort("delta_portale")} title="Fine Giro (no Amazon) − Lanciate">Diff. FG Vs Trasmesso{sortIcon("delta_portale")}</th>
               <th style={css.th}>Uscita</th>
             </tr>
           </thead>
@@ -1761,11 +1746,6 @@ if (!r.ok) throw new Error(await r.text());
                   )}
                 </td>
                 <td style={{ ...css.td, fontWeight: "600" }}>{(r.prenotato_iscrizione || 0).toLocaleString("it")}</td>
-                {kpi.haTrasmesso && (
-                  <td style={{ ...css.td, color: r.prenotato_trasmesso > 0 ? T.green : T.textDim, fontWeight: "600" }}>
-                    {r.prenotato_trasmesso != null ? r.prenotato_trasmesso.toLocaleString("it") : "—"}
-                  </td>
-                )}
                 <td style={{ ...css.td, fontWeight: "600" }}>
                   {r.is_live_fg ? (
                     <span style={{ color: T.purple }}>{r.pren_fine_giro.toLocaleString("it")}</span>
@@ -1783,6 +1763,9 @@ if (!r.ok) throw new Error(await r.text());
                       <span style={{ color: T.accent, fontSize: "10px" }}>✎</span>
                     </div>
                   )}
+                </td>
+                <td style={{ ...css.td, fontWeight: "600" }}>
+                  {r.pren_senza_amazon > 0 ? r.pren_senza_amazon.toLocaleString("it") : "—"}
                 </td>
                 <td style={{ ...css.td, fontWeight: "600" }}>
                   {r.is_live_amazon ? (
@@ -1806,7 +1789,7 @@ if (!r.ok) throw new Error(await r.text());
                   {r.teorico > 0 ? r.teorico.toLocaleString("it") : "—"}
                 </td>
                 <td style={{ ...css.td, fontWeight: "700", color: r.delta_portale > 0 ? T.green : r.delta_portale < 0 ? T.red : T.textMid, textAlign: "right" }}>
-                  {r.pren_senza_amazon > 0 || (r.prenotato_trasmesso ?? r.prenotato_iscrizione) > 0
+                  {r.pren_senza_amazon > 0 || r.prenotato_iscrizione > 0
                     ? (r.delta_portale > 0 ? "+" : "") + r.delta_portale.toLocaleString("it")
                     : "—"}
                 </td>
