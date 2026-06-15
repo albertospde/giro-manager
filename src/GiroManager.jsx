@@ -1602,7 +1602,7 @@ if (!r.ok) throw new Error(await r.text());
   // Export Excel
   const exportExcel = () => {
     const XLSX = window.XLSX;
-    const headers = ["N. LANCIO","EAN","COD.ED.","EDITORE","ACCOUNT","TITOLO","AUTORE","PREZZO","CEDOLE","LANCIATE","FINE GIRO","IN PO.ORD","AMAZON","TOT.TEORICO","DIFF. FGvsTRASM","DATA USCITA"];
+    const headers = ["N. LANCIO","EAN","COD.ED.","EDITORE","ACCOUNT","TITOLO","AUTORE","PREZZO","CEDOLE","LANCIO","F.G.","P.O. MELI","AMAZON","TOT. TEORICO","FG VS P.O. MELI","GIORNO USCITA"];
     const rows = dataFiltrata.map(r => [
       r.num_lancio, r.ean, r.codice_editore, r.editore, r.account_editore || "", r.titolo, r.autore, r.prezzo,
       r.cedole.join(", "), r.prenotato_iscrizione,
@@ -1708,12 +1708,12 @@ if (!r.ok) throw new Error(await r.text());
               <th style={css.th}>Autore</th>
               <th style={css.th}>€</th>
               <th style={css.th}>Cedole</th>
-              <th style={{ ...css.th, cursor: "pointer" }} onClick={() => toggleSort("prenotato_iscrizione")}>Lanciate{sortIcon("prenotato_iscrizione")}</th>
-              <th style={{ ...css.th, cursor: "pointer" }} onClick={() => toggleSort("pren_fine_giro")}>Fine Giro{sortIcon("pren_fine_giro")}</th>
-              <th style={{ ...css.th, cursor: "pointer" }} onClick={() => toggleSort("pren_senza_amazon")}>Trasmesse a Meli{sortIcon("pren_senza_amazon")}</th>
-              <th style={{ ...css.th, cursor: "pointer", color: "#e8a838" }} onClick={() => toggleSort("pren_amazon")}>Proposta Amazon{sortIcon("pren_amazon")}</th>
-              <th style={{ ...css.th, cursor: "pointer" }} onClick={() => toggleSort("teorico")}>Trasmesso Totale Teorico{sortIcon("teorico")}</th>
-              <th style={{ ...css.th, cursor: "pointer" }} onClick={() => toggleSort("delta_portale")} title="Fine Giro (no Amazon) − Lanciate">Diff. FG Vs Trasmesso{sortIcon("delta_portale")}</th>
+              <th style={{ ...css.th, cursor: "pointer" }} onClick={() => toggleSort("prenotato_iscrizione")}>Lancio{sortIcon("prenotato_iscrizione")}</th>
+              <th style={{ ...css.th, cursor: "pointer" }} onClick={() => toggleSort("pren_fine_giro")}>F.G.{sortIcon("pren_fine_giro")}</th>
+              <th style={{ ...css.th, cursor: "pointer" }} onClick={() => toggleSort("pren_senza_amazon")}>P.O. Meli{sortIcon("pren_senza_amazon")}</th>
+              <th style={{ ...css.th, cursor: "pointer", color: "#e8a838" }} onClick={() => toggleSort("pren_amazon")}>Amazon{sortIcon("pren_amazon")}</th>
+              <th style={{ ...css.th, cursor: "pointer" }} onClick={() => toggleSort("teorico")}>Tot. Teorico{sortIcon("teorico")}</th>
+              <th style={{ ...css.th, cursor: "pointer" }} onClick={() => toggleSort("delta_portale")} title="Fine Giro vs P.O. Meli">FG vs P.O. Meli{sortIcon("delta_portale")}</th>
               <th style={css.th}>Uscita</th>
             </tr>
           </thead>
