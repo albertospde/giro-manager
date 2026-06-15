@@ -1602,7 +1602,7 @@ if (!r.ok) throw new Error(await r.text());
   // Export Excel
   const exportExcel = () => {
     const XLSX = window.XLSX;
-    const headers = ["N. LANCIO","EAN","COD.ED.","EDITORE","ACCOUNT","TITOLO","AUTORE","PREZZO","CEDOLE","LANCIATE","FINE GIRO","TRASMESSE A MELI","PROPOSTA AMAZON","TRASMESSO TOTALE TEORICO","DIFF. FG VS TRASMESSO","GIORNO USCITA"];
+    const headers = ["N. LANCIO","EAN","COD.ED.","EDITORE","ACCOUNT","TITOLO","AUTORE","PREZZO","CEDOLE","LANCIATE","FINE GIRO","IN PO.ORD","AMAZON","TOT.TEORICO","DIFF. FGvsTRASM","DATA USCITA"];
     const rows = dataFiltrata.map(r => [
       r.num_lancio, r.ean, r.codice_editore, r.editore, r.account_editore || "", r.titolo, r.autore, r.prezzo,
       r.cedole.join(", "), r.prenotato_iscrizione,
