@@ -135,6 +135,7 @@ export default function ModuloAvanzamento({ titoli, prenotato, canali, token, ru
   const [manualOpen, setManualOpen] = useState(false);
   const [manualForm, setManualForm] = useState({ ean: "", titolo: "", autore: "", editore: "", prezzo: "", num_lancio: "", copie_lanciate: "", valore_lancio: "", data_messa_in_vendita: "" });
   const [filterAnno, setFilterAnno] = useState(new Date().getFullYear());
+  const [filterAnnoLancio, setFilterAnnoLancio] = useState(null);
   const [filterEditore, setFilterEditore] = useState("tutti");
   const [filterNumLancio, setFilterNumLancio] = useState([]);
   const [filterCedole, setFilterCedole] = useState([]);
@@ -430,9 +431,16 @@ export default function ModuloAvanzamento({ titoli, prenotato, canali, token, ru
   const novitaFiltrate = useMemo(() => {
     const filtered = novitaArricchite
       .filter(n => {
-        // Nessun filtro anno sulla tabella: mostra tutti i titoli dei giri
-        // Il filtro anno agisce solo sulla proiezione (valoriPerAnnoMese)
-        return true;
+        // Filtro "Anno giri": anno del giro_label
+        if (!filterAnno) return true;
+        return getAnnoRecord(n) === Number(filterAnno);
+      })
+      .filter(n => {
+        // Filtro "Anno lanci": anno di data_messa_in_vendita
+        if (!filterAnnoLancio) return true;
+        if (!n.data_messa_in_vendita) return false;
+        const match = String(n.data_messa_in_vendita).match(/^(\d{4})/);
+        return match && Number(match[1]) === Number(filterAnnoLancio);
       })
       .filter(n => filterEditore === "tutti" || n.editore === filterEditore)
       .filter(n => filterNumLancio.length === 0 || filterNumLancio.includes(String(n.num_lancio)))
@@ -481,7 +489,7 @@ export default function ModuloAvanzamento({ titoli, prenotato, canali, token, ru
       else if (sortKey === "risposta_editore") cmp = (a.risposta_editore || "").localeCompare(b.risposta_editore || "");
       return sortDir === "asc" ? cmp : -cmp;
     });
-  }, [novitaArricchite, filterAnno, filterEditore, filterNumLancio, filterCedole, filterGiri, filterMesi, filterDataVendita, filterCopieLanciate, search, sortKey, sortDir]);
+  }, [novitaArricchite, filterAnno, filterAnnoLancio, filterEditore, filterNumLancio, filterCedole, filterGiri, filterMesi, filterDataVendita, filterCopieLanciate, search, sortKey, sortDir]);
 
   const editoriList = useMemo(() => [...new Set(novitaArricchite.map(n => n.editore).filter(Boolean))].sort(), [novitaArricchite]);
   const numLanciList = useMemo(() => [...new Set(novitaArricchite.map(n => n.num_lancio).filter(Boolean))].sort((a, b) => Number(a) - Number(b)), [novitaArricchite]);
@@ -849,8 +857,12 @@ export default function ModuloAvanzamento({ titoli, prenotato, canali, token, ru
       {/* DASHBOARD KPI */}
       <div style={{ padding: "16px 20px", borderBottom: `1px solid ${T.border}` }}>
         <div style={{ display: "flex", gap: 10, alignItems: "center", marginBottom: 14, flexWrap: "wrap" }}>
-          <select style={{ ...css.input, fontSize: "14px", fontWeight: "600", color: T.accent }} value={filterAnno || ""} onChange={e => setFilterAnno(e.target.value ? Number(e.target.value) : null)} title="Anno proiezione">
-            <option value="">— Anno proiezione —</option>
+          <select style={{ ...css.input, fontSize: "14px", fontWeight: "600", color: T.accent }} value={filterAnno || ""} onChange={e => setFilterAnno(e.target.value ? Number(e.target.value) : null)} title="Anno giri">
+            <option value="">— Anno giri —</option>
+            {anniDisponibili.map(a => <option key={a} value={a}>{a}</option>)}
+          </select>
+          <select style={{ ...css.input, fontSize: "14px", fontWeight: "600", color: T.purple }} value={filterAnnoLancio || ""} onChange={e => setFilterAnnoLancio(e.target.value ? Number(e.target.value) : null)} title="Anno lanci (data fatturato)">
+            <option value="">— Anno lanci —</option>
             {anniDisponibili.map(a => <option key={a} value={a}>{a}</option>)}
           </select>
           <SearchableMultiSelect values={filterEditore === "tutti" ? [] : [filterEditore]} onChange={v => setFilterEditore(v.length > 0 ? v[0] : "tutti")} options={editoriList} placeholder="Tutti gli editori" width={190} />
