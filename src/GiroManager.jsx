@@ -1290,6 +1290,7 @@ function ModuloLanciSettimanali({ token, titoli, prenotato, canali, ruolo, userA
   const [filterAnno, setFilterAnno] = useState(null);
   const [filterLancio, setFilterLancio] = useState([]);
   const [filterAccount, setFilterAccount] = useState([]);
+  const [filterGiorno, setFilterGiorno] = useState("tutti");
   const [search, setSearch] = useState("");
   const [sortKey, setSortKey] = useState(null);
   const [sortDir, setSortDir] = useState("desc");
@@ -1439,6 +1440,9 @@ function ModuloLanciSettimanali({ token, titoli, prenotato, canali, ruolo, userA
     if (filterAccount.length > 0) {
       result = result.filter(r => filterAccount.includes(r.account_editore));
     }
+    if (filterGiorno !== "tutti") {
+      result = result.filter(r => r.giorno_uscita === filterGiorno);
+    }
     if (sortKey) {
       result = [...result].sort((a, b) => {
         const va = a[sortKey] ?? 0, vb = b[sortKey] ?? 0;
@@ -1446,7 +1450,7 @@ function ModuloLanciSettimanali({ token, titoli, prenotato, canali, ruolo, userA
       });
     }
     return result;
-  }, [dataArricchita, search, sortKey, sortDir, filterAccount]);
+  }, [dataArricchita, search, sortKey, sortDir, filterAccount, filterGiorno]);
 
   // KPI
   const kpi = useMemo(() => {
@@ -1598,9 +1602,9 @@ if (!r.ok) throw new Error(await r.text());
   // Export Excel
   const exportExcel = () => {
     const XLSX = window.XLSX;
-    const headers = ["EAN","COD.ED.","EDITORE","ACCOUNT","TITOLO","AUTORE","PREZZO","CEDOLE","LANCIATE","TRASMESSO","FINE GIRO","AMAZON","FG NO AMAZON","TEORICO","Δ PORTALE","GIORNO USCITA"];
+    const headers = ["N. LANCIO","EAN","COD.ED.","EDITORE","ACCOUNT","TITOLO","AUTORE","PREZZO","CEDOLE","LANCIATE","TRASMESSO","FINE GIRO","AMAZON","FG NO AMAZON","TEORICO","Δ PORTALE","GIORNO USCITA"];
     const rows = dataFiltrata.map(r => [
-      r.ean, r.codice_editore, r.editore, r.account_editore || "", r.titolo, r.autore, r.prezzo,
+      r.num_lancio, r.ean, r.codice_editore, r.editore, r.account_editore || "", r.titolo, r.autore, r.prezzo,
       r.cedole.join(", "), r.prenotato_iscrizione, r.prenotato_trasmesso ?? "",
       r.pren_fine_giro, r.pren_amazon, r.pren_senza_amazon, r.teorico, r.delta_portale, r.giorno_uscita
     ]);
@@ -1645,8 +1649,11 @@ if (!r.ok) throw new Error(await r.text());
         <SearchableMultiSelect values={filterAccount} onChange={setFilterAccount} options={accountsDisponibili} placeholder="Tutti gli account" width={160} />
         {/* Riepilogo giorni */}
         <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
-          <span style={css.tag(T.accent)}>MAR {kpi.martedi}</span>
-          <span style={css.tag(T.green)}>VEN {kpi.venerdi}</span>
+          <span style={{ ...css.tag(T.accent), cursor: "pointer", opacity: filterGiorno === "venerdì" ? 0.4 : 1 }} onClick={() => setFilterGiorno(g => g === "martedì" ? "tutti" : "martedì")}>MAR {kpi.martedi}</span>
+          <span style={{ ...css.tag(T.green), cursor: "pointer", opacity: filterGiorno === "martedì" ? 0.4 : 1 }} onClick={() => setFilterGiorno(g => g === "venerdì" ? "tutti" : "venerdì")}>VEN {kpi.venerdi}</span>
+          {filterGiorno !== "tutti" && (
+            <button style={{ ...css.btn(), fontSize: "11px", padding: "2px 8px" }} onClick={() => setFilterGiorno("tutti")}>✕</button>
+          )}
         </div>
         <div style={{ marginLeft: "auto", display: "flex", gap: 8 }}>
           <label style={{ ...css.btn("accent"), cursor: "pointer", display: "inline-flex", alignItems: "center", gap: 4 }}>
