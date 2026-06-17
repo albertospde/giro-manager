@@ -16,7 +16,6 @@ const css = {
   td: { padding: "7px 12px", borderBottom: `1px solid ${T.border}22`, verticalAlign: "middle", fontSize: "12px" },
 };
 
-// Mapping definitivo gruppo cliente Messaggerie → codice canale Supabase
 const GRUPPI_CANALE = {
   2: "FELTRINELLI", 23: "FELTRINELLI", 59: "FELTRINELLI", 77: "FELTRINELLI",
   8: "MONDADORI", 34: "MONDADORI", 80: "MONDADORI",
@@ -32,7 +31,6 @@ const GRUPPI_CANALE = {
   82: "AMAZON",
   58: "IBS",
   33: "ALTRI_ONLINE",
-  // 0 e NaN → INDIPENDENTI_ALTRE_CATENE (gestito nel codice)
 };
 
 const CANALI_LABELS = {
@@ -42,6 +40,22 @@ const CANALI_LABELS = {
   AMAZON: "Amazon", IBS: "Stereo Online", FASTBOOK: "Fastbook + GD", GROSSISTI: "Grossisti",
   CENTROLIBRI: "Centro Libri",
 };
+
+// Legge un valore da una riga per nome colonna o indice (0-based)
+// Prova prima il nome esatto, poi cerca per indice se il file usa header numerici
+function leggiCella(row, nomeColonna, indice, headers) {
+  // Prima prova il nome diretto
+  if (row[nomeColonna] !== undefined && row[nomeColonna] !== "") return row[nomeColonna];
+  // Poi prova varianti case-insensitive
+  const key = Object.keys(row).find(k => k.trim().toLowerCase() === nomeColonna.toLowerCase());
+  if (key && row[key] !== "") return row[key];
+  // Fallback: usa l'indice di colonna tramite l'array headers
+  if (headers && indice < headers.length) {
+    const hKey = headers[indice];
+    if (hKey !== undefined && row[hKey] !== undefined) return row[hKey];
+  }
+  return "";
+}
 
 export default function ModuloPrenotato({ token, titoli, onImportDone }) {
   const [step, setStep] = useState("upload");
@@ -61,6 +75,12 @@ export default function ModuloPrenotato({ token, titoli, onImportDone }) {
         const wb = XLSX.read(evt.target.result, { type: "array" });
         const sheetName = wb.SheetNames.find(n => n.toLowerCase().includes("pianifica")) || wb.SheetNames[0];
         const ws = wb.Sheets[sheetName];
+
+        // Leggi con header:1 per avere sia nomi che posizioni
+        const dataRaw = XLSX.utils.sheet_to_json(ws, { defval: "", header: 1 });
+        // Prima riga = headers
+        const headers = dataRaw[0] ? dataRaw[0].map(h => String(h || "").trim()) : [];
+        // Righe dati come oggetti keyed per nome colonna
         const data = XLSX.utils.sheet_to_json(ws, { defval: "" });
         setRighe(data);
 
@@ -75,7 +95,12 @@ export default function ModuloPrenotato({ token, titoli, onImportDone }) {
           const nomeCliente = String(row["Nome Cliente"] || "").trim();
           if (!ean || qta === 0) return;
 
-          // Gruppo vuoto, 0 o NaN → INDIPENDENTI
+          // Colonne aggiuntive: F=5 (N. ordine cliente), S=18 (sconto occ.), U=20 (pagamento occ.)
+          const numOrdineCliente = String(leggiCella(row, "N. ordine cliente", 5, headers) || leggiCella(row, "Ordine cliente", 5, headers) || "").trim();
+          const scontoOccRaw = leggiCella(row, "Sconto occasionale", 18, headers) || leggiCella(row, "Sc. occas.", 18, headers) || "";
+          const scontoOcc = parseFloat(String(scontoOccRaw).replace(",", ".")) || 0;
+          const pagamentoOcc = String(leggiCella(row, "Pagamento occasionale", 20, headers) || leggiCella(row, "Pag. occas.", 20, headers) || leggiCella(row, "Pag(occ)", 20, headers) || "").trim();
+
           let canale = "INDIPENDENTI_ALTRE_CATENE";
           if (gruppoRaw !== "" && gruppoRaw !== null && gruppoRaw !== undefined) {
             const gruppoInt = parseInt(parseFloat(gruppoRaw));
@@ -90,8 +115,19 @@ export default function ModuloPrenotato({ token, titoli, onImportDone }) {
 
           if (codiceCliente) {
             const keyC = `${codiceCliente}__${ean}__${canale}`;
-            if (!aggCliMap[keyC]) aggCliMap[keyC] = { codice_cliente: codiceCliente, nome_cliente: nomeCliente, ean, canale, qta: 0 };
+            if (!aggCliMap[keyC]) aggCliMap[keyC] = {
+              codice_cliente: codiceCliente,
+              nome_cliente: nomeCliente,
+              ean, canale, qta: 0,
+              sconto_occasionale: scontoOcc > 0 ? scontoOcc : null,
+              pagamento_occasionale: pagamentoOcc || null,
+              num_ordine_cliente: numOrdineCliente || null,
+            };
             aggCliMap[keyC].qta += qta;
+            // Se una riga ha sconto/pagamento/ordine, lo salviamo (prende il primo non-null trovato)
+            if (scontoOcc > 0 && !aggCliMap[keyC].sconto_occasionale) aggCliMap[keyC].sconto_occasionale = scontoOcc;
+            if (pagamentoOcc && !aggCliMap[keyC].pagamento_occasionale) aggCliMap[keyC].pagamento_occasionale = pagamentoOcc;
+            if (numOrdineCliente && !aggCliMap[keyC].num_ordine_cliente) aggCliMap[keyC].num_ordine_cliente = numOrdineCliente;
           }
         });
 
@@ -154,6 +190,9 @@ export default function ModuloPrenotato({ token, titoli, onImportDone }) {
       canale_id: canaleMap[r.canale] || null,
       titolo_id: r.titolo_id,
       quantita: r.qta,
+      sconto_occasionale: r.sconto_occasionale ?? null,
+      pagamento_occasionale: r.pagamento_occasionale ?? null,
+      num_ordine_cliente: r.num_ordine_cliente ?? null,
     })).filter(r => r.canale_id !== null);
 
     for (let i = 0; i < payloadClienti.length; i += 500) {
