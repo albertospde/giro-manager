@@ -1919,7 +1919,7 @@ function ModuloVerificaOrdini({ token }) {
       //    Join con titoli per ottenere EAN, filtro su num_lancio e anno_lancio via titoli→lanci_settimanali
       //    Strategia: prendo gli EAN del lancio da lanci_settimanali, poi filtro prenotato_clienti per titolo_id
       const lanciRows = await sbFetch(
-        `lanci_settimanali?select=ean,titolo_id:titoli(id)&anno_lancio=eq.${anno}&num_lancio=eq.${filterLancio}`,
+        `lanci_settimanali?select=ean&anno_lancio=eq.${anno}&num_lancio=eq.${filterLancio}`,
         token
       );
       if (!Array.isArray(lanciRows) || lanciRows.length === 0) {
