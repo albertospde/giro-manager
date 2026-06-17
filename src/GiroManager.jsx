@@ -1863,19 +1863,45 @@ function ModuloVerificaOrdini({ token }) {
   useEffect(() => { if (!filterAnno && anniDisp.length > 0) setFilterAnno(anniDisp[0]); }, [anniDisp]);
   useEffect(() => { if (filterLancio === null && lanciPerAnno.length > 0) setFilterLancio(lanciPerAnno[0]); }, [lanciPerAnno]);
 
-  // Legge un file Excel e restituisce righe come array di array (header:1)
+  // Legge un file Excel o CSV (anche UTF-16 LE come export Meli) → array di array
   const leggiExcel = (file) => new Promise((resolve, reject) => {
-    const reader = new FileReader();
-    reader.onload = (e) => {
-      try {
-        const XLSX = window.XLSX;
-        const wb = XLSX.read(e.target.result, { type: "array" });
-        const ws = wb.Sheets[wb.SheetNames[0]];
-        resolve(XLSX.utils.sheet_to_json(ws, { header: 1, defval: "" }));
-      } catch (err) { reject(err); }
-    };
-    reader.onerror = reject;
-    reader.readAsArrayBuffer(file);
+    const isCsv = file.name.toLowerCase().endsWith(".csv");
+    if (isCsv) {
+      // CSV Meli: UTF-16 LE con BOM
+      const reader = new FileReader();
+      reader.onload = (e) => {
+        try {
+          const XLSX = window.XLSX;
+          // Prova prima UTF-16 tramite TextDecoder
+          let testo;
+          try {
+            testo = new TextDecoder("utf-16").decode(e.target.result);
+          } catch {
+            testo = new TextDecoder("utf-8").decode(e.target.result);
+          }
+          // Rileva separatore (tab o punto e virgola o virgola)
+          const primaRiga = testo.split("\n")[0];
+          const sep = primaRiga.includes("\t") ? "\t" : primaRiga.includes(";") ? ";" : ",";
+          const righe = testo.split("\n").map(r => r.split(sep).map(c => c.replace(/\r/g, "").replace(/^"|"$/g, "").trim()));
+          resolve(righe.filter(r => r.length > 1));
+        } catch (err) { reject(err); }
+      };
+      reader.onerror = reject;
+      reader.readAsArrayBuffer(file);
+    } else {
+      // XLSX normale
+      const reader = new FileReader();
+      reader.onload = (e) => {
+        try {
+          const XLSX = window.XLSX;
+          const wb = XLSX.read(e.target.result, { type: "array" });
+          const ws = wb.Sheets[wb.SheetNames[0]];
+          resolve(XLSX.utils.sheet_to_json(ws, { header: 1, defval: "" }));
+        } catch (err) { reject(err); }
+      };
+      reader.onerror = reject;
+      reader.readAsArrayBuffer(file);
+    }
   });
 
   const normalizzaEan = (v) => String(v || "").replace(/\.0$/, "").trim();
@@ -1950,7 +1976,10 @@ function ModuloVerificaOrdini({ token }) {
         if (!row || row.length < 9) continue;
         const numOrdine = String(row[1] || "").trim().replace(/\s/g, "");
         const codCliente = normalizzaCodice(row[8]);
-        if (numOrdine && codCliente) ordineToCliente[numOrdine] = codCliente;
+        // Salta righe totale o senza dati validi
+        if (!numOrdine || numOrdine.toLowerCase().includes("totale")) continue;
+        if (!codCliente || codCliente.toLowerCase().includes("totale")) continue;
+        ordineToCliente[numOrdine] = codCliente;
       }
 
       // 4. Leggi file dettaglio: col A (idx 0) = numOrdine, col C (idx 2) = EAN
@@ -1968,8 +1997,9 @@ function ModuloVerificaOrdini({ token }) {
       for (const row of rowsDettaglio.slice(hIdxD + 1)) {
         if (!row || row.length < 3) continue;
         const numOrdine = String(row[0] || "").trim().replace(/\s/g, "");
+        if (!numOrdine || numOrdine.toLowerCase().includes("totale")) continue;
         const ean = normalizzaEan(row[2]);
-        if (!numOrdine || ean.length < 8) continue;
+        if (ean.length < 8) continue;
         const codCliente = ordineToCliente[numOrdine];
         if (codCliente) ordinatiSet.add(`${codCliente}__${ean}`);
       }
@@ -2075,10 +2105,10 @@ function ModuloVerificaOrdini({ token }) {
               File Riepilogo Cliente
             </div>
             <div style={{ color: T.textDim, fontSize: "11px", marginBottom: 12 }}>
-              Col B = N. Ordine · Col I = Codice cliente Meli
+              Col B = N° Ordine · Col I = Codice destinatario Meli
             </div>
             <label style={{ ...css.btn(fileRiepilogo ? "accent" : ""), cursor: "pointer", display: "inline-flex", alignItems: "center", gap: 6, fontSize: "12px" }}>
-              {fileRiepilogo ? `✓ ${fileRiepilogo.name}` : "↑ Carica riepilogo"}
+              {fileRiepilogo ? `✓ ${fileRiepilogo.name}` : "↑ Carica Riepilogo_cliente.csv"}
               <input type="file" accept=".xlsx,.xls,.csv" style={{ display: "none" }}
                 onChange={e => { setFileRiepilogo(e.target.files?.[0] || null); setResult(null); e.target.value = ""; }} />
             </label>
@@ -2091,13 +2121,13 @@ function ModuloVerificaOrdini({ token }) {
           {/* File Dettaglio */}
           <div style={{ background: T.surface, border: `1px solid ${fileDettaglio ? T.green : T.border}`, borderRadius: 8, padding: 16 }}>
             <div style={{ color: T.textMid, fontSize: "11px", letterSpacing: "0.1em", textTransform: "uppercase", marginBottom: 6 }}>
-              File Dettaglio Righe
+              File Dettaglio Cliente
             </div>
             <div style={{ color: T.textDim, fontSize: "11px", marginBottom: 12 }}>
-              Col A = N. Ordine · Col C = EAN
+              Col A = N° Ordine · Col C = EAN13
             </div>
             <label style={{ ...css.btn(fileDettaglio ? "accent" : ""), cursor: "pointer", display: "inline-flex", alignItems: "center", gap: 6, fontSize: "12px" }}>
-              {fileDettaglio ? `✓ ${fileDettaglio.name}` : "↑ Carica dettaglio"}
+              {fileDettaglio ? `✓ ${fileDettaglio.name}` : "↑ Carica Dettaglio_cliente.csv"}
               <input type="file" accept=".xlsx,.xls,.csv" style={{ display: "none" }}
                 onChange={e => { setFileDettaglio(e.target.files?.[0] || null); setResult(null); e.target.value = ""; }} />
             </label>
