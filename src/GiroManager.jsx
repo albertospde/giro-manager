@@ -1863,45 +1863,29 @@ function ModuloVerificaOrdini({ token }) {
   useEffect(() => { if (!filterAnno && anniDisp.length > 0) setFilterAnno(anniDisp[0]); }, [anniDisp]);
   useEffect(() => { if (filterLancio === null && lanciPerAnno.length > 0) setFilterLancio(lanciPerAnno[0]); }, [lanciPerAnno]);
 
-  // Legge un file Excel o CSV (anche UTF-16 LE come export Meli) → array di array
+  // Legge file xlsx o CSV UTF-16 (export Meli) → array di array
+  // Usa TextDecoder utf-16 + SheetJS per parsing robusto
   const leggiExcel = (file) => new Promise((resolve, reject) => {
-    const isCsv = file.name.toLowerCase().endsWith(".csv");
-    if (isCsv) {
-      // CSV Meli: UTF-16 LE con BOM
-      const reader = new FileReader();
-      reader.onload = (e) => {
-        try {
-          const XLSX = window.XLSX;
-          // Prova prima UTF-16 tramite TextDecoder
-          let testo;
-          try {
-            testo = new TextDecoder("utf-16").decode(e.target.result);
-          } catch {
-            testo = new TextDecoder("utf-8").decode(e.target.result);
-          }
-          // Rileva separatore (tab o punto e virgola o virgola)
-          const primaRiga = testo.split("\n")[0];
-          const sep = primaRiga.includes("\t") ? "\t" : primaRiga.includes(";") ? ";" : ",";
-          const righe = testo.split("\n").map(r => r.split(sep).map(c => c.replace(/\r/g, "").replace(/^"|"$/g, "").trim()));
-          resolve(righe.filter(r => r.length > 1));
-        } catch (err) { reject(err); }
-      };
-      reader.onerror = reject;
-      reader.readAsArrayBuffer(file);
-    } else {
-      // XLSX normale
-      const reader = new FileReader();
-      reader.onload = (e) => {
-        try {
-          const XLSX = window.XLSX;
+    const reader = new FileReader();
+    reader.onload = (e) => {
+      try {
+        const XLSX = window.XLSX;
+        const isCsv = file.name.toLowerCase().endsWith(".csv");
+        if (isCsv) {
+          // Decodifica UTF-16 LE con BOM → stringa → SheetJS
+          const testo = new TextDecoder("utf-16").decode(e.target.result);
+          const wb = XLSX.read(testo, { type: "string", FS: "\t" });
+          const ws = wb.Sheets[wb.SheetNames[0]];
+          resolve(XLSX.utils.sheet_to_json(ws, { header: 1, defval: "" }));
+        } else {
           const wb = XLSX.read(e.target.result, { type: "array" });
           const ws = wb.Sheets[wb.SheetNames[0]];
           resolve(XLSX.utils.sheet_to_json(ws, { header: 1, defval: "" }));
-        } catch (err) { reject(err); }
-      };
-      reader.onerror = reject;
-      reader.readAsArrayBuffer(file);
-    }
+        }
+      } catch (err) { reject(err); }
+    };
+    reader.onerror = reject;
+    reader.readAsArrayBuffer(file);
   });
 
   const normalizzaEan = (v) => String(v || "").replace(/\.0$/, "").trim();
@@ -1933,7 +1917,7 @@ function ModuloVerificaOrdini({ token }) {
 
       // Recupero titolo_id corrispondenti agli EAN del lancio dalla tabella titoli
       const titoliLancio = await sbFetch(
-        `titoli?select=id,ean&ean=in.(${[...eanLancio].join(",")})`,
+        `titoli?select=id,ean&ean=in.(${[...eanLancio].map(e => `"${e}"`).join(",")})`,
         token
       );
       if (!Array.isArray(titoliLancio) || titoliLancio.length === 0) {
@@ -2018,6 +2002,10 @@ function ModuloVerificaOrdini({ token }) {
       // 5. Differenza: pianificati ma non ordinati
       const mancanti = [];
       const presenti = [];
+      // Debug temporaneo: apri la console del browser per verificare i valori confrontati
+      console.log("[VO] pianSet sample:", [...pianSet.entries()].slice(0, 3));
+      console.log("[VO] ordinatiSet sample:", [...ordinatiSet].slice(0, 3));
+      console.log("[VO] ordineToCliente sample:", Object.entries(ordineToCliente).slice(0, 3));
       pianSet.forEach((r, key) => {
         if (ordinatiSet.has(key)) presenti.push(r);
         else mancanti.push(r);
