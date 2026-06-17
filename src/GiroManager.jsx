@@ -1830,12 +1830,402 @@ if (!r.ok) throw new Error(await r.text());
   );
 }
 
+// ─── MODULO VERIFICA ORDINI ────────────────────────────────────────────────
+function ModuloVerificaOrdini({ token }) {
+  const [lanciData, setLanciData] = useState([]);
+  const [loadingLanci, setLoadingLanci] = useState(true);
+  const [filterAnno, setFilterAnno] = useState(null);
+  const [filterLancio, setFilterLancio] = useState(null);
+  const [fileTestata, setFileTestata] = useState(null); // file testata ordini (num ordine in col A)
+  const [fileRighe, setFileRighe]   = useState(null); // file righe ordini  (num ordine in col A)
+  const [result, setResult] = useState(null); // { mancanti: [...], presenti: [...] }
+  const [processing, setProcessing] = useState(false);
+  const [toast, setToast] = useState(null);
+  const showToast = (msg, type = "ok") => { setToast({ msg, type }); setTimeout(() => setToast(null), 4000); };
+
+  // Carica lanci disponibili
+  useEffect(() => {
+    if (!token) return;
+    sbFetch("lanci_settimanali?select=anno_lancio,num_lancio&order=anno_lancio.desc,num_lancio.desc", token)
+      .then(d => {
+        if (Array.isArray(d)) setLanciData(d);
+        setLoadingLanci(false);
+      });
+  }, [token]);
+
+  const anniDisp = useMemo(() => [...new Set(lanciData.map(r => r.anno_lancio))].sort((a, b) => b - a), [lanciData]);
+  const lanciPerAnno = useMemo(() => {
+    const anno = filterAnno || anniDisp[0];
+    if (!anno) return [];
+    return [...new Set(lanciData.filter(r => r.anno_lancio === anno).map(r => r.num_lancio))].sort((a, b) => b - a);
+  }, [lanciData, filterAnno, anniDisp]);
+
+  // Auto-select anno e lancio più recenti
+  useEffect(() => { if (!filterAnno && anniDisp.length > 0) setFilterAnno(anniDisp[0]); }, [anniDisp]);
+  useEffect(() => { if (filterLancio === null && lanciPerAnno.length > 0) setFilterLancio(lanciPerAnno[0]); }, [lanciPerAnno]);
+
+  // Legge i numeri ordine da un file Excel/CSV (colonna A, saltando eventuale header)
+  const estraiNumeriOrdine = async (file) => {
+    const XLSX = window.XLSX;
+    const buf = await file.arrayBuffer();
+    const wb = XLSX.read(buf, { type: "array" });
+    const ws = wb.Sheets[wb.SheetNames[0]];
+    const rows = XLSX.utils.sheet_to_json(ws, { header: 1 });
+    const numeri = new Set();
+    for (const row of rows) {
+      const val = row[0]; // colonna A
+      if (val == null || val === "") continue;
+      const s = String(val).trim();
+      // Salta header testuali
+      if (isNaN(Number(s.replace(/\s/g, "")))) continue;
+      numeri.add(s.replace(/\s/g, ""));
+    }
+    return numeri;
+  };
+
+  const esegui = async () => {
+    if (!filterLancio || !fileTestata || !fileRighe) {
+      showToast("Seleziona lancio e carica entrambi i file", "err");
+      return;
+    }
+    setProcessing(true);
+    setResult(null);
+    try {
+      // 1. Fetch titoli del lancio selezionato da lanci_settimanali
+      const anno = filterAnno || anniDisp[0];
+      const titoli = await sbFetch(
+        `lanci_settimanali?select=*&anno_lancio=eq.${anno}&num_lancio=eq.${filterLancio}&order=editore.asc,titolo.asc`,
+        token
+      );
+      if (!Array.isArray(titoli) || titoli.length === 0) {
+        showToast("Nessun titolo trovato per il lancio selezionato", "err");
+        setProcessing(false);
+        return;
+      }
+
+      // 2. Estrai numeri ordine dai due file
+      const ordiniTestata = await estraiNumeriOrdine(fileTestata);
+      const ordiniRighe   = await estraiNumeriOrdine(fileRighe);
+
+      // Un cliente (ordine) è "presente" se il suo numero ordine compare IN ENTRAMBI i file
+      // La pianificazione visite usa codice_cliente; qui confrontiamo a livello di EAN/riga
+      // L'utente carica:
+      //   fileTestata → contiene codice cliente + numero ordine (col A = num ordine)
+      //   fileRighe   → contiene EAN per numero ordine  (col A = num ordine)
+      // Logica: un EAN del lancio è "coperto" se il num ordine appare in fileRighe
+      // Un titolo è "mancante" se il suo EAN non appare in nessuna riga di fileRighe
+
+      // Estrai anche colonne extra da fileRighe per vedere quali EAN coprono quali ordini
+      const XLSX = window.XLSX;
+
+      // Rileggi fileRighe per estrarre EAN → numeri ordine
+      const bufRighe = await fileRighe.arrayBuffer();
+      const wbR = XLSX.read(bufRighe, { type: "array" });
+      const wsR = wbR.Sheets[wbR.SheetNames[0]];
+      const rowsR = XLSX.utils.sheet_to_json(wsR, { header: 1 });
+
+      // Trova header row in fileRighe (riga con "ean" o almeno 3 colonne)
+      let headerIdxR = 0;
+      for (let i = 0; i < Math.min(rowsR.length, 10); i++) {
+        if (rowsR[i] && rowsR[i].some(c => String(c || "").toLowerCase().includes("ean"))) {
+          headerIdxR = i; break;
+        }
+      }
+      const headersR = rowsR[headerIdxR].map(h => String(h || "").trim().toLowerCase());
+      const colEanR = headersR.findIndex(h => h.includes("ean"));
+      const colOrdR = 0; // col A sempre = numero ordine
+
+      // Mappa: ean → Set<numOrdine>
+      const eanToOrdini = {};
+      for (const row of rowsR.slice(headerIdxR + 1)) {
+        if (!row || row.length < 2) continue;
+        const numOrd = String(row[colOrdR] || "").trim().replace(/\s/g, "");
+        if (!numOrd || isNaN(Number(numOrd))) continue;
+        const ean = colEanR >= 0
+          ? String(row[colEanR] || "").replace(/\.0$/, "").trim()
+          : "";
+        if (ean.length >= 10) {
+          if (!eanToOrdini[ean]) eanToOrdini[ean] = new Set();
+          eanToOrdini[ean].add(numOrd);
+        }
+      }
+
+      // File testata: num ordine → codice cliente
+      const bufT = await fileTestata.arrayBuffer();
+      const wbT = XLSX.read(bufT, { type: "array" });
+      const wsT = wbT.Sheets[wbT.SheetNames[0]];
+      const rowsT = XLSX.utils.sheet_to_json(wsT, { header: 1 });
+
+      let headerIdxT = 0;
+      for (let i = 0; i < Math.min(rowsT.length, 10); i++) {
+        if (rowsT[i] && rowsT[i].some(c => String(c || "").toLowerCase().includes("cliente") || String(c || "").toLowerCase().includes("ordine"))) {
+          headerIdxT = i; break;
+        }
+      }
+      const headersT = rowsT[headerIdxT].map(h => String(h || "").trim().toLowerCase());
+      const colOrdT = 0; // col A = numero ordine
+      // Cerca colonna codice cliente (può chiamarsi "cod. cliente", "codice cliente", ecc.)
+      const colClT = headersT.findIndex(h => h.includes("cliente"));
+      const colNomeClT = headersT.findIndex(h => h.includes("ragio") || h.includes("nome") || (h.includes("descr") && !h.includes("edit")));
+
+      // Mappa: num ordine → { codiceCliente, nomeCliente }
+      const ordineToCliente = {};
+      for (const row of rowsT.slice(headerIdxT + 1)) {
+        if (!row || row.length < 1) continue;
+        const numOrd = String(row[colOrdT] || "").trim().replace(/\s/g, "");
+        if (!numOrd || isNaN(Number(numOrd))) continue;
+        ordineToCliente[numOrd] = {
+          numOrdine: numOrd,
+          codiceCliente: colClT >= 0 ? String(row[colClT] || "").trim() : "",
+          nomeCliente:   colNomeClT >= 0 ? String(row[colNomeClT] || "").trim() : "",
+        };
+      }
+
+      // EAN del lancio
+      const eanLancio = new Set(titoli.map(t => String(t.ean || "").trim()).filter(e => e.length >= 10));
+
+      // Set di tutti i numeri ordine presenti in fileRighe per EAN del lancio
+      const ordiniConEanLancio = new Set();
+      for (const ean of eanLancio) {
+        if (eanToOrdini[ean]) eanToOrdini[ean].forEach(o => ordiniConEanLancio.add(o));
+      }
+
+      // Tutti i clienti in testata
+      const tuttiClienti = Object.values(ordineToCliente);
+
+      // Mancanti = clienti la cui testata ha un num ordine NON presente in righe con EAN del lancio
+      const mancanti = tuttiClienti.filter(c => !ordiniConEanLancio.has(c.numOrdine));
+      const presenti = tuttiClienti.filter(c => ordiniConEanLancio.has(c.numOrdine));
+
+      setResult({
+        mancanti,
+        presenti,
+        totLancio: titoli.length,
+        totClienti: tuttiClienti.length,
+        eanCoperti: [...eanLancio].filter(e => eanToOrdini[e]?.size > 0).length,
+        eanMancanti: [...eanLancio].filter(e => !eanToOrdini[e] || eanToOrdini[e].size === 0),
+        titoli,
+      });
+      showToast(`Analisi completata: ${mancanti.length} clienti mancanti su ${tuttiClienti.length}`);
+    } catch (err) {
+      showToast(err.message, "err");
+    }
+    setProcessing(false);
+  };
+
+  // Export Excel risultato
+  const exportRisultato = () => {
+    if (!result) return;
+    const XLSX = window.XLSX;
+    const wb = XLSX.utils.book_new();
+
+    // Foglio 1: clienti mancanti
+    const hM = ["N. ORDINE", "COD. CLIENTE", "NOME CLIENTE"];
+    const rM = result.mancanti.map(c => [c.numOrdine, c.codiceCliente, c.nomeCliente]);
+    XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet([hM, ...rM]), "Clienti Mancanti");
+
+    // Foglio 2: clienti presenti
+    const hP = ["N. ORDINE", "COD. CLIENTE", "NOME CLIENTE"];
+    const rP = result.presenti.map(c => [c.numOrdine, c.codiceCliente, c.nomeCliente]);
+    XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet([hP, ...rP]), "Clienti Presenti");
+
+    // Foglio 3: EAN mancanti (senza ordini)
+    const hE = ["EAN", "EDITORE", "TITOLO", "COPIE ISCRIZIONE"];
+    const rE = result.eanMancanti.map(ean => {
+      const t = result.titoli.find(x => x.ean === ean) || {};
+      return [ean, t.editore || "", t.titolo || "", t.prenotato_iscrizione || 0];
+    });
+    XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet([hE, ...rE]), "EAN Senza Ordini");
+
+    XLSX.writeFile(wb, `VerificaOrdini_Lancio${filterLancio}_${filterAnno}.xlsx`);
+  };
+
+  if (loadingLanci) return (
+    <div style={{ flex: 1, display: "flex", alignItems: "center", justifyContent: "center", color: T.textMid }}>
+      Caricamento lanci...
+    </div>
+  );
+
+  const anno = filterAnno || anniDisp[0];
+
+  return (
+    <div style={{ display: "flex", flexDirection: "column", height: "100%", overflow: "hidden" }}>
+      {/* TOOLBAR */}
+      <div style={{ padding: "14px 20px", borderBottom: `1px solid ${T.border}`, display: "flex", gap: 12, alignItems: "center", flexWrap: "wrap" }}>
+        <select style={{ ...css.input, fontSize: "13px", fontWeight: "600", color: T.accent }}
+          value={anno || ""} onChange={e => { setFilterAnno(Number(e.target.value)); setFilterLancio(null); setResult(null); }}>
+          {anniDisp.map(a => <option key={a} value={a}>{a}</option>)}
+        </select>
+        <select style={{ ...css.input, fontSize: "13px", fontWeight: "600" }}
+          value={filterLancio ?? ""} onChange={e => { setFilterLancio(Number(e.target.value)); setResult(null); }}>
+          {lanciPerAnno.map(n => <option key={n} value={n}>Lancio {n}</option>)}
+        </select>
+        <div style={{ marginLeft: "auto", display: "flex", gap: 8, alignItems: "center" }}>
+          {result && (
+            <button style={{ ...css.btn(), fontSize: "12px" }} onClick={exportRisultato}>
+              ↓ Export Excel
+            </button>
+          )}
+        </div>
+      </div>
+
+      {/* BODY */}
+      <div style={{ flex: 1, overflowY: "auto", padding: "20px 24px", display: "flex", flexDirection: "column", gap: 20 }}>
+
+        {/* Upload files */}
+        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16 }}>
+          {/* File Testata */}
+          <div style={{ background: T.surface, border: `1px solid ${fileTestata ? T.green : T.border}`, borderRadius: 8, padding: 16 }}>
+            <div style={{ color: T.textMid, fontSize: "11px", letterSpacing: "0.1em", textTransform: "uppercase", marginBottom: 8 }}>
+              File Testata Ordini
+            </div>
+            <div style={{ color: T.textDim, fontSize: "11px", marginBottom: 12 }}>
+              Colonna A = N. Ordine · Colonna con "cliente" = Codice Cliente
+            </div>
+            <label style={{ ...css.btn(fileTestata ? "accent" : ""), cursor: "pointer", display: "inline-flex", alignItems: "center", gap: 6, fontSize: "12px" }}>
+              {fileTestata ? `✓ ${fileTestata.name}` : "↑ Carica file testata"}
+              <input type="file" accept=".xlsx,.xls,.csv" style={{ display: "none" }}
+                onChange={e => { setFileTestata(e.target.files?.[0] || null); setResult(null); e.target.value = ""; }} />
+            </label>
+            {fileTestata && (
+              <button style={{ ...css.btn(), marginLeft: 8, fontSize: "11px", padding: "3px 8px" }}
+                onClick={() => { setFileTestata(null); setResult(null); }}>✕</button>
+            )}
+          </div>
+
+          {/* File Righe */}
+          <div style={{ background: T.surface, border: `1px solid ${fileRighe ? T.green : T.border}`, borderRadius: 8, padding: 16 }}>
+            <div style={{ color: T.textMid, fontSize: "11px", letterSpacing: "0.1em", textTransform: "uppercase", marginBottom: 8 }}>
+              File Righe Ordini
+            </div>
+            <div style={{ color: T.textDim, fontSize: "11px", marginBottom: 12 }}>
+              Colonna A = N. Ordine · Colonna con "EAN" = codice libro
+            </div>
+            <label style={{ ...css.btn(fileRighe ? "accent" : ""), cursor: "pointer", display: "inline-flex", alignItems: "center", gap: 6, fontSize: "12px" }}>
+              {fileRighe ? `✓ ${fileRighe.name}` : "↑ Carica file righe"}
+              <input type="file" accept=".xlsx,.xls,.csv" style={{ display: "none" }}
+                onChange={e => { setFileRighe(e.target.files?.[0] || null); setResult(null); e.target.value = ""; }} />
+            </label>
+            {fileRighe && (
+              <button style={{ ...css.btn(), marginLeft: 8, fontSize: "11px", padding: "3px 8px" }}
+                onClick={() => { setFileRighe(null); setResult(null); }}>✕</button>
+            )}
+          </div>
+        </div>
+
+        {/* Pulsante analisi */}
+        <div style={{ display: "flex", justifyContent: "center" }}>
+          <button
+            style={{ ...css.btn("accent"), fontSize: "13px", padding: "10px 32px", opacity: (!filterLancio || !fileTestata || !fileRighe || processing) ? 0.5 : 1 }}
+            disabled={!filterLancio || !fileTestata || !fileRighe || processing}
+            onClick={esegui}
+          >
+            {processing ? "Analisi in corso..." : "▶ Analizza"}
+          </button>
+        </div>
+
+        {/* Risultati */}
+        {result && (
+          <>
+            {/* KPI */}
+            <div style={{ display: "flex", gap: 12, flexWrap: "wrap" }}>
+              <KpiCard label="Titoli nel lancio" value={result.totLancio} color={T.text} />
+              <KpiCard label="EAN con ordini" value={result.eanCoperti} color={T.green} />
+              <KpiCard label="EAN senza ordini" value={result.eanMancanti.length} color={result.eanMancanti.length > 0 ? T.red : T.textDim} />
+              <KpiCard label="Clienti totali" value={result.totClienti} color={T.text} />
+              <KpiCard label="Clienti mancanti" value={result.mancanti.length} color={result.mancanti.length > 0 ? "#e8a838" : T.green} />
+              <KpiCard label="Clienti presenti" value={result.presenti.length} color={T.green} />
+            </div>
+
+            {/* Tabella clienti mancanti */}
+            {result.mancanti.length > 0 && (
+              <div>
+                <div style={{ color: "#e8a838", fontSize: "12px", fontWeight: "600", letterSpacing: "0.08em", marginBottom: 10, display: "flex", alignItems: "center", gap: 8 }}>
+                  ⚠ Clienti mancanti ({result.mancanti.length})
+                  <span style={{ color: T.textDim, fontSize: "10px", fontWeight: "400" }}>ordini presenti in testata ma senza righe per EAN del lancio {filterLancio}</span>
+                </div>
+                <div style={{ overflowX: "auto", borderRadius: 6, border: `1px solid ${T.border}` }}>
+                  <table style={css.table}>
+                    <thead>
+                      <tr>
+                        <th style={css.th}>N. Ordine</th>
+                        <th style={css.th}>Cod. Cliente</th>
+                        <th style={css.th}>Nome Cliente</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {result.mancanti.map((c, i) => (
+                        <tr key={i} style={{ background: i % 2 === 0 ? "transparent" : T.surface + "66" }}>
+                          <td style={{ ...css.td, fontFamily: "monospace", fontSize: "11px", color: T.textMid }}>{c.numOrdine}</td>
+                          <td style={{ ...css.td, color: T.accent, fontWeight: "600" }}>{c.codiceCliente || "—"}</td>
+                          <td style={{ ...css.td }}>{c.nomeCliente || "—"}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            )}
+
+            {result.mancanti.length === 0 && (
+              <div style={{ textAlign: "center", padding: "32px 20px", color: T.green, fontSize: "14px" }}>
+                ✓ Tutti i clienti della testata hanno ordini per i titoli del lancio {filterLancio}
+              </div>
+            )}
+
+            {/* EAN senza ordini */}
+            {result.eanMancanti.length > 0 && (
+              <div>
+                <div style={{ color: T.red, fontSize: "12px", fontWeight: "600", letterSpacing: "0.08em", marginBottom: 10 }}>
+                  ✕ EAN del lancio senza nessun ordine ({result.eanMancanti.length})
+                </div>
+                <div style={{ overflowX: "auto", borderRadius: 6, border: `1px solid ${T.border}` }}>
+                  <table style={css.table}>
+                    <thead>
+                      <tr>
+                        <th style={css.th}>EAN</th>
+                        <th style={css.th}>Editore</th>
+                        <th style={css.th}>Titolo</th>
+                        <th style={css.th}>Copie iscrizione</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {result.eanMancanti.map((ean, i) => {
+                        const t = result.titoli.find(x => x.ean === ean) || {};
+                        return (
+                          <tr key={i} style={{ background: i % 2 === 0 ? "transparent" : T.surface + "66" }}>
+                            <td style={{ ...css.td, fontFamily: "monospace", fontSize: "11px", color: T.textMid }}>{ean}</td>
+                            <td style={{ ...css.td, color: T.accent, fontWeight: "600" }}>{t.editore || "—"}</td>
+                            <td style={{ ...css.td, maxWidth: 260 }}><div style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{t.titolo || "—"}</div></td>
+                            <td style={{ ...css.td, textAlign: "right" }}>{(t.prenotato_iscrizione || 0).toLocaleString("it")}</td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            )}
+          </>
+        )}
+      </div>
+
+      {toast && (
+        <div style={{ position: "fixed", bottom: 24, left: "50%", transform: "translateX(-50%)", background: toast.type === "err" ? "#4a1a2a" : "#1a3a2a", border: `1px solid ${toast.type === "err" ? T.red : T.green}`, color: toast.type === "err" ? T.red : T.green, borderRadius: 6, padding: "8px 20px", fontSize: "12px", zIndex: 999, boxShadow: "0 4px 20px #0008" }}>
+          {toast.msg}
+        </div>
+      )}
+    </div>
+  );
+}
+
 const MODULES = [
   { id: "dashboard", label: "Dashboard", icon: "◈" },
   { id: "cedola", label: "Giri e Cedole", icon: "≡" },
   { id: "finegiro", label: "Fine Giro", icon: "⊞" },
   { id: "avanzamento", label: "Avanzamento Novità", icon: "▣" },
   { id: "lanci", label: "Lanci Settimanali", icon: "🚀" },
+  { id: "verificaordini", label: "Verifica Ordini", icon: "🔍" },
 ];
 
 const MODULES_IMPORT = [
@@ -1957,6 +2347,7 @@ export default function App() {
           {activeModule === "finegiro" && <ModuloFineGiro titoli={titoli} prenotato={prenotato} canali={canali} token={session.token} ruolo={ruolo} spalmatura={spalmatura} />}
           {activeModule === "avanzamento" && <ModuloAvanzamento token={session.token} titoli={titoli} prenotato={prenotato} ruolo={ruolo} />}
           {activeModule === "lanci" && <ModuloLanciSettimanali token={session.token} titoli={titoli} prenotato={prenotato} canali={canali} ruolo={ruolo} userAccount={userAccount} />}
+          {activeModule === "verificaordini" && <ModuloVerificaOrdini token={session.token} />}
           {activeModule === "import" && <ModuloImport giriList={giriDB} token={session.token} />}
           {activeModule === "importobiettivi" && <ModuloImport giriList={giriDB} token={session.token} onlyObiettivi={true} />}
         </div>
