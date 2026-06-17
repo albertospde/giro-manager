@@ -1927,15 +1927,27 @@ function ModuloVerificaOrdini({ token }) {
         setProcessing(false); return;
       }
 
-      // Ricavo titolo_id e EAN dal lancio
-      // lanci_settimanali ha colonna ean diretta
+      // 1. Prendo EAN e titolo_id dal lancio selezionato
       const eanLancio = new Set(lanciRows.map(r => normalizzaEan(r.ean)).filter(e => e.length >= 8));
 
-      // 2. Fetch prenotato_clienti filtrando per EAN del lancio tramite join titoli
-      //    prenotato_clienti ha titolo_id; titoli ha ean
-      //    Uso: prenotato_clienti?select=*,titoli(ean)
+      // Recupero titolo_id corrispondenti agli EAN del lancio dalla tabella titoli
+      const titoliLancio = await sbFetch(
+        `titoli?select=id,ean&ean=in.(${[...eanLancio].join(",")})`,
+        token
+      );
+      if (!Array.isArray(titoliLancio) || titoliLancio.length === 0) {
+        showToast("EAN del lancio non trovati in tabella titoli", "err");
+        setProcessing(false); return;
+      }
+
+      // Mappa titolo_id → ean
+      const titIdToEan = {};
+      titoliLancio.forEach(t => { titIdToEan[t.id] = normalizzaEan(t.ean); });
+      const titoloIds = Object.keys(titIdToEan).join(",");
+
+      // 2. Fetch prenotato_clienti filtrato per titolo_id del lancio
       const pianificazione = await sbFetch(
-        `prenotato_clienti?select=codice_cliente,nome_cliente,quantita,sconto_occasionale,pagamento_occasionale,num_ordine_cliente,titoli(ean)&order=codice_cliente.asc`,
+        `prenotato_clienti?select=codice_cliente,nome_cliente,quantita,sconto_occasionale,pagamento_occasionale,num_ordine_cliente,titolo_id&titolo_id=in.(${titoloIds})&order=codice_cliente.asc`,
         token
       );
       if (!Array.isArray(pianificazione)) {
@@ -1943,10 +1955,8 @@ function ModuloVerificaOrdini({ token }) {
         setProcessing(false); return;
       }
 
-      // Filtra solo le righe con EAN del lancio selezionato
-      const pianLancio = pianificazione
-        .map(r => ({ ...r, ean: normalizzaEan(r.titoli?.ean) }))
-        .filter(r => eanLancio.has(r.ean));
+      // Aggiungo EAN a ogni riga
+      const pianLancio = pianificazione.map(r => ({ ...r, ean: titIdToEan[r.titolo_id] || "" })).filter(r => r.ean);
 
       if (pianLancio.length === 0) {
         showToast("Nessuna riga in pianificazione visite per questo lancio. Hai ricaricato il file dopo l'aggiornamento Supabase?", "err");
