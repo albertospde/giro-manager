@@ -1905,7 +1905,8 @@ function ModuloVerificaOrdini({ token }) {
   });
 
   const normalizzaEan = (v) => String(v || "").replace(/\.0$/, "").trim();
-  const normalizzaCodice = (v) => String(v || "").trim();
+  // Rimuove zeri iniziali per confronto uniforme (es. "0002594419" → "2594419")
+  const normalizzaCodice = (v) => String(v || "").trim().replace(/^0+/, "") || "0";
 
   const esegui = async () => {
     if (!filterLancio || !fileRiepilogo || !fileDettaglio) {
