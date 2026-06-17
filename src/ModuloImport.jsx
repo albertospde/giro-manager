@@ -17,18 +17,51 @@ const css = {
 };
 
 // Mappa colonne template → campi DB
+// NOTA: ranking_editore rimosso dal template — viene recuperato da DB via codice_editore
+// Le colonne nel template sono ora:
+// 0=giro_label, 1=n_cedola, 2=ranking_titolo, 3=ean, 4=titolo, 5=autore,
+// 6=codice_editore, 7=editore_nome, 8=prezzo, 9=uscita, 10=formato, 11=eta,
+// 12=obiettivo_assegnato, 13=il_triangolo, 14=top_100,
+// 15=account_editore, 16=promozione, 17=note_comunicazione, 18=note,
+// 19=ean_gemello_1, 20=titolo_gemello_1,
+// 21=ean_gemello_2, 22=titolo_gemello_2,
+// 23=ean_gemello_3, 24=titolo_gemello_3
 const COL_MAP = {
-  0: "giro_label", 1: "n_cedola", 2: "ranking_editore", 3: "ranking_titolo", 4: "ean",
-  5: "titolo", 6: "autore", 7: "codice_editore", 8: "editore_nome",
-  9: "prezzo", 10: "uscita", 11: "formato", 12: "eta",
-  13: "obiettivo_assegnato", 14: "il_triangolo", 15: "top_100",
-  16: "account_editore", 17: "promozione", 18: "note_comunicazione", 19: "note",
-  20: "ean_gemello_1", 21: "titolo_gemello_1",
-  22: "ean_gemello_2", 23: "titolo_gemello_2",
-  24: "ean_gemello_3", 25: "titolo_gemello_3",
+  0: "giro_label", 1: "n_cedola", 2: "ranking_titolo", 3: "ean",
+  4: "titolo", 5: "autore", 6: "codice_editore", 7: "editore_nome",
+  8: "prezzo", 9: "uscita", 10: "formato", 11: "eta",
+  12: "obiettivo_assegnato", 13: "il_triangolo", 14: "top_100",
+  15: "account_editore", 16: "promozione", 17: "note_comunicazione", 18: "note",
+  19: "ean_gemello_1", 20: "titolo_gemello_1",
+  21: "ean_gemello_2", 22: "titolo_gemello_2",
+  23: "ean_gemello_3", 24: "titolo_gemello_3",
 };
 
 const REQUIRED = ["giro_label", "ean", "titolo", "editore_nome", "prezzo", "formato"];
+
+// ─── Fetch ranking editori da Supabase ───────────────────────────────────────
+async function fetchRankingEditori(token) {
+  const res = await fetch(
+    `${SUPABASE_URL}/rest/v1/ranking_editori?select=codice_editore,ranking&order=ranking.asc`,
+    {
+      headers: {
+        "apikey": SUPABASE_KEY,
+        "Authorization": `Bearer ${token}`,
+      },
+    }
+  );
+  if (!res.ok) return {};
+  const data = await res.json();
+  // Mappa codice_editore → ranking minimo (nel caso di duplicati, prende il più basso)
+  const map = {};
+  data.forEach(({ codice_editore, ranking }) => {
+    const cod = String(codice_editore).trim().toUpperCase();
+    if (!(cod in map) || ranking < map[cod]) {
+      map[cod] = ranking;
+    }
+  });
+  return map;
+}
 
 // ─── Componente principale ───────────────────────────────────────────────────
 
@@ -40,13 +73,21 @@ export default function ModuloImport({ giriList, token, onImportDone }) {
   const [importing, setImporting] = useState(false);
   const [done, setDone] = useState(null);
   const [step, setStep] = useState("upload"); // upload | preview | result
+  const [rankingMissing, setRankingMissing] = useState([]); // editori non trovati nel DB
 
-  const handleFile = useCallback((e) => {
+  const handleFile = useCallback(async (e) => {
     const f = e.target.files[0];
     if (!f) return;
     setFile(f);
 
-    // Usa SheetJS (caricato via CDN in index.html)
+    // Carica ranking editori dal DB
+    let rankingMap = {};
+    try {
+      rankingMap = await fetchRankingEditori(token);
+    } catch (err) {
+      console.warn("Impossibile caricare ranking editori:", err);
+    }
+
     const reader = new FileReader();
     reader.onload = (evt) => {
       try {
@@ -61,6 +102,8 @@ export default function ModuloImport({ giriList, token, onImportDone }) {
 
         const parsed = [];
         const errs = [];
+        const missing = new Set();
+
         dataRows.forEach((row, idx) => {
           const obj = {};
           Object.entries(COL_MAP).forEach(([colIdx, field]) => {
@@ -68,11 +111,20 @@ export default function ModuloImport({ giriList, token, onImportDone }) {
             if (field === "prezzo") val = parseFloat(val) || null;
             if (field === "obiettivo_assegnato") val = parseInt(val) || 0;
             if (field === "il_triangolo" || field === "top_100") val = String(val).trim().toUpperCase() === "SI";
-            if (field === "ranking_editore" || field === "ranking_titolo") val = parseInt(val) || null;
+            if (field === "ranking_titolo") val = parseInt(val) || null;
             if (field === "n_cedola" || field === "giro_label") val = val ? String(val) : null;
             obj[field] = val === "" ? null : val;
           });
           obj.giro_id = null; // assegnato all'import
+
+          // Risolvi ranking_editore dal DB tramite codice_editore
+          const cod = String(obj.codice_editore ?? "").trim().toUpperCase();
+          if (cod && rankingMap[cod] !== undefined) {
+            obj.ranking_editore = rankingMap[cod];
+          } else {
+            obj.ranking_editore = null;
+            if (cod) missing.add(`${cod} (${obj.editore_nome ?? "?"})`);
+          }
 
           // Validazione
           const rowErrs = [];
@@ -85,13 +137,14 @@ export default function ModuloImport({ giriList, token, onImportDone }) {
 
         setRows(parsed);
         setErrors(errs);
+        setRankingMissing([...missing]);
         setStep("preview");
       } catch (err) {
         alert("Errore lettura file: " + err.message);
       }
     };
     reader.readAsArrayBuffer(f);
-  }, []);
+  }, [token]);
 
   const handleImport = async () => {
     if (!giroSel) return;
@@ -121,7 +174,7 @@ export default function ModuloImport({ giriList, token, onImportDone }) {
     setImporting(false);
   };
 
-  const reset = () => { setFile(null); setRows([]); setErrors([]); setDone(null); setStep("upload"); };
+  const reset = () => { setFile(null); setRows([]); setErrors([]); setDone(null); setStep("upload"); setRankingMissing([]); };
 
   return (
     <div style={{ flex: 1, overflowY: "auto", padding: 24 }}>
@@ -139,7 +192,7 @@ export default function ModuloImport({ giriList, token, onImportDone }) {
       {/* STEP 1: UPLOAD */}
       {step === "upload" && (
         <div style={{ maxWidth: 500 }}>
-              <div style={{ border: `2px dashed ${T.borderHi}`, borderRadius: 6, padding: 40, textAlign: "center", marginBottom: 20 }}>
+          <div style={{ border: `2px dashed ${T.borderHi}`, borderRadius: 6, padding: 40, textAlign: "center", marginBottom: 20 }}>
             <div style={{ fontSize: "32px", marginBottom: 12 }}>📂</div>
             <div style={{ color: T.text, marginBottom: 8 }}>Carica il template compilato</div>
             <div style={{ color: T.textMid, fontSize: "11px", marginBottom: 20 }}>Solo file .xlsx — usa il template ufficiale</div>
@@ -164,6 +217,13 @@ export default function ModuloImport({ giriList, token, onImportDone }) {
               <span style={{ color: T.textMid, fontSize: "11px" }}>Errori: </span>
               <span style={{ color: errors.length > 0 ? T.red : T.green, fontWeight: "700" }}>{errors.length}</span>
             </div>
+            {/* Badge editori senza ranking */}
+            {rankingMissing.length > 0 && (
+              <div style={{ background: T.surface, border: `1px solid ${T.accent}66`, borderRadius: 4, padding: "10px 16px" }}>
+                <span style={{ color: T.textMid, fontSize: "11px" }}>Ranking editore non trovato: </span>
+                <span style={{ color: T.accent, fontWeight: "700" }}>{rankingMissing.length}</span>
+              </div>
+            )}
             <div style={{ marginLeft: "auto", display: "flex", gap: 8 }}>
               <button style={css.btn()} onClick={reset}>← Ricarica</button>
               <button style={css.btn("accent")} onClick={handleImport} disabled={importing || errors.length > 0}>
@@ -179,11 +239,19 @@ export default function ModuloImport({ giriList, token, onImportDone }) {
             </div>
           )}
 
+          {/* Warning editori senza ranking — non bloccante */}
+          {rankingMissing.length > 0 && (
+            <div style={{ background: T.accent + "11", border: `1px solid ${T.accent}44`, borderRadius: 4, padding: 16, marginBottom: 16 }}>
+              <div style={{ color: T.accent, fontWeight: "700", marginBottom: 8, fontSize: "12px" }}>⚠ Editori non presenti in ranking_editori (ranking_editore = null)</div>
+              {rankingMissing.map((e, i) => <div key={i} style={{ color: T.textMid, fontSize: "11px" }}>{e}</div>)}
+            </div>
+          )}
+
           <div style={{ overflowX: "auto" }}>
             <table style={{ width: "100%", borderCollapse: "collapse" }}>
               <thead>
                 <tr>
-                  {["#","EAN","Titolo","Autore","Editore","Prezzo","Uscita","Formato","Obj","▲","★"].map(h => <th key={h} style={css.th}>{h}</th>)}
+                  {["#","Rk Ed.","EAN","Titolo","Autore","Editore","Prezzo","Uscita","Formato","Obj","▲","★"].map(h => <th key={h} style={css.th}>{h}</th>)}
                 </tr>
               </thead>
               <tbody>
@@ -192,6 +260,9 @@ export default function ModuloImport({ giriList, token, onImportDone }) {
                   return (
                     <tr key={i} style={{ background: hasErr ? T.red + "11" : i % 2 === 0 ? "transparent" : T.surface + "66" }}>
                       <td style={{ ...css.td, color: T.textMid }}>{r.n_cedola}</td>
+                      <td style={{ ...css.td, color: r.ranking_editore ? T.accent : T.red, fontWeight: "700", fontSize: "11px" }}>
+                        {r.ranking_editore ?? "—"}
+                      </td>
                       <td style={{ ...css.td, fontFamily: "monospace", fontSize: "11px", color: T.textMid }}>{r.ean}</td>
                       <td style={{ ...css.td, maxWidth: 200, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", fontWeight: "600" }}>{r.titolo}</td>
                       <td style={{ ...css.td, color: T.textMid }}>{r.autore}</td>
