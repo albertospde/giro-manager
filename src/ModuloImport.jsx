@@ -113,6 +113,9 @@ export default function ModuloImport({ giriList, token, onImportDone }) {
             if (field === "il_triangolo" || field === "top_100") val = String(val).trim().toUpperCase() === "SI";
             if (field === "ranking_titolo") val = parseInt(val) || null;
             if (field === "n_cedola" || field === "giro_label") val = val ? String(val) : null;
+            // Campi testo → stampatello maiuscolo
+            const CAMPI_TESTO = ["titolo","autore","editore_nome","codice_editore","uscita","formato","eta","account_editore","promozione","note_comunicazione","note","n_cedola","giro_label","titolo_gemello_1","titolo_gemello_2","titolo_gemello_3"];
+            if (CAMPI_TESTO.includes(field) && typeof val === "string" && val !== "") val = val.trim().toUpperCase();
             obj[field] = val === "" ? null : val;
           });
           obj.giro_id = null; // assegnato all'import
