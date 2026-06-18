@@ -1667,6 +1667,7 @@ function ModuloLanciSettimanali({ token, titoli, prenotato, canali, ruolo, userA
             autore: String(r[col.autore] || "").trim(),
             prezzo: parseFloat(String(r[col.prezzo] || "0").replace(",", ".")) || 0,
             prenotato_iscrizione: parseInt(String(r[col.prenotato] || "0").replace(/\./g, "")) || 0,
+            prenotato_trasmesso: parseInt(String(r[col.prenotato] || "0").replace(/\./g, "")) || 0,
           };
         }).filter(Boolean);
         if (payload.length === 0) throw new Error("Nessun EAN valido");
