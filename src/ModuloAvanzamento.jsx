@@ -128,7 +128,7 @@ function parseCopie(str) {
   return parseInt(s) || 0;
 }
 
-export default function ModuloAvanzamento({ titoli, prenotato, canali, token, ruolo }) {
+export default function ModuloAvanzamento({ titoli, prenotato, canali, token, ruolo, userAccount }) {
   const [novitaDB, setNovitaDB] = useState([]);
   const [loading, setLoading] = useState(true);
   const [uploading, setUploading] = useState(false);
@@ -137,6 +137,8 @@ export default function ModuloAvanzamento({ titoli, prenotato, canali, token, ru
   const [filterAnno, setFilterAnno] = useState(new Date().getFullYear());
   const [filterAnnoLancio, setFilterAnnoLancio] = useState(null);
   const [filterEditore, setFilterEditore] = useState("tutti");
+  const [filterAccount, setFilterAccount] = useState([]);
+  useEffect(() => { if (ruolo === 'agente' && userAccount) { setFilterAccount([userAccount]); } }, [ruolo, userAccount]);
   const [filterNumLancio, setFilterNumLancio] = useState([]);
   const [filterCedole, setFilterCedole] = useState([]);
   const [filterGiri, setFilterGiri] = useState([]);
@@ -385,6 +387,8 @@ export default function ModuloAvanzamento({ titoli, prenotato, canali, token, ru
         risposta_editore: nov?.risposta_editore || null,
         manuale: nov?.manuale || false,
         ha_lancio: !!nov,
+        account_editore: t.account_editore || null,
+        codice_editore: t.codice_editore || null,
       };
     });
   }, [novitaDB, prenotato, titoli]);
@@ -443,6 +447,7 @@ export default function ModuloAvanzamento({ titoli, prenotato, canali, token, ru
         return match && Number(match[1]) === Number(filterAnnoLancio);
       })
       .filter(n => filterEditore === "tutti" || n.editore === filterEditore)
+      .filter(n => filterAccount.length === 0 || filterAccount.includes(n.account_editore))
       .filter(n => filterNumLancio.length === 0 || filterNumLancio.includes(String(n.num_lancio)))
       .filter(n => filterCedole.length === 0 || filterCedole.includes(n.nome_cedola))
       .filter(n => filterGiri.length === 0 || filterGiri.includes(n.giro_label))
@@ -489,7 +494,7 @@ export default function ModuloAvanzamento({ titoli, prenotato, canali, token, ru
       else if (sortKey === "risposta_editore") cmp = (a.risposta_editore || "").localeCompare(b.risposta_editore || "");
       return sortDir === "asc" ? cmp : -cmp;
     });
-  }, [novitaArricchite, filterAnno, filterAnnoLancio, filterEditore, filterNumLancio, filterCedole, filterGiri, filterMesi, filterDataVendita, filterCopieLanciate, search, sortKey, sortDir]);
+  }, [novitaArricchite, filterAnno, filterAnnoLancio, filterEditore, filterAccount, filterNumLancio, filterCedole, filterGiri, filterMesi, filterDataVendita, filterCopieLanciate, search, sortKey, sortDir]);
 
   const editoriList = useMemo(() => [...new Set(novitaArricchite.map(n => n.editore).filter(Boolean))].sort(), [novitaArricchite]);
   const numLanciList = useMemo(() => [...new Set(novitaArricchite.map(n => n.num_lancio).filter(Boolean))].sort((a, b) => Number(a) - Number(b)), [novitaArricchite]);
@@ -866,6 +871,7 @@ export default function ModuloAvanzamento({ titoli, prenotato, canali, token, ru
             {anniDisponibili.map(a => <option key={a} value={a}>{a}</option>)}
           </select>
           <SearchableMultiSelect values={filterEditore === "tutti" ? [] : [filterEditore]} onChange={v => setFilterEditore(v.length > 0 ? v[0] : "tutti")} options={editoriList} placeholder="Tutti gli editori" width={190} />
+          {ruolo !== "agente" && <SearchableMultiSelect values={filterAccount} onChange={setFilterAccount} options={[...new Set(novitaArricchite.map(n => n.account_editore).filter(Boolean))].sort()} placeholder="Tutti gli account" width={160} />}
           <SearchableMultiSelect values={filterNumLancio} onChange={setFilterNumLancio} options={numLanciList.map(String)} placeholder="Tutti i lanci" width={150} />
           <SearchableMultiSelect values={filterGiri} onChange={setFilterGiri} options={giriList} placeholder="Tutti i giri" width={160} />
           <SearchableMultiSelect values={filterCedole} onChange={setFilterCedole} options={cedoleList} placeholder="Tutte le cedole" width={170} />
