@@ -503,13 +503,14 @@ function SearchableMultiSelect({ values, onChange, options, placeholder = "Tutti
   );
 }
 
-function ModuloCedola({ titoli, giriList, onUpdateTitolo, spalmatura, prenotato, ruolo, token, onTitoliChange }) {
+function ModuloCedola({ titoli, giriList, onUpdateTitolo, spalmatura, prenotato, ruolo, token, onTitoliChange, userAccount }) {
   const [giroLabelSel, setGiroLabelSel] = useState([]);
   const [giroSel, setGiroSel] = useState([]);
   const [search, setSearch] = useState("");
   const [filterFlag, setFilterFlag] = useState("tutti");
   const [filterEditori, setFilterEditori] = useState([]);
   const [filterAccount, setFilterAccount] = useState([]);
+  useEffect(() => { if (ruolo === 'agente' && userAccount) { setFilterAccount(prev => prev.length > 0 ? prev : [userAccount]); } }, [ruolo, userAccount]);
   const [editingId, setEditingId] = useState(null);
   const [sortKey, setSortKey] = useState("n_cedola");
   const [showNuovoGiro, setShowNuovoGiro] = useState(false);
@@ -783,7 +784,7 @@ function ModuloCedola({ titoli, giriList, onUpdateTitolo, spalmatura, prenotato,
   );
 }
 
-function ModuloFineGiro({ titoli, prenotato, canali, token, ruolo, spalmatura }) {
+function ModuloFineGiro({ titoli, prenotato, canali, token, ruolo, spalmatura, userAccount }) {
   const anniDispFineGiro = useMemo(() => {
     const s = new Set();
     titoli.forEach(t => { if (t.giro_label && t.giro_label !== "EXTRA") { const yr = Number(t.giro_label.split(" ")[1]); if (yr >= 2020) s.add(yr); } });
@@ -805,6 +806,7 @@ function ModuloFineGiro({ titoli, prenotato, canali, token, ruolo, spalmatura })
   const [cedolaSel, setCedolaSel] = useState([]);
   const [filterEditori, setFilterEditori] = useState([]);
   const [filterAccount, setFilterAccount] = useState([]);
+  useEffect(() => { if (ruolo === 'agente' && userAccount) { setFilterAccount(prev => prev.length > 0 ? prev : [userAccount]); } }, [ruolo, userAccount]);
   const [filterCanale, setFilterCanale] = useState([]);
   const [search, setSearch] = useState("");
   const [sortPren, setSortPren] = useState(null); // null | "asc" | "desc"
@@ -2339,11 +2341,11 @@ export default function App() {
           {/* MOD 3: Passato spalmatura alla Dashboard */}
           {activeModule === "dashboard" && <ModuloDashboard titoli={titoli} prenotato={prenotato} canali={canali} spalmatura={spalmatura} ruolo={ruolo} />}
           {/* FIX 5: Passato token a ModuloCedola */}
-          {activeModule === "cedola" && <ModuloCedola titoli={titoli} giriList={giriDB} onUpdateTitolo={t => { updateTitolo(t); setTitoli(prev => prev.some(x => x.id === t.id) ? prev.map(x => x.id === t.id ? t : x) : [...prev, t]); }} spalmatura={spalmatura} prenotato={prenotato} ruolo={ruolo} token={session.token} onTitoliChange={refreshDati} />}
+          {activeModule === "cedola" && <ModuloCedola titoli={titoli} giriList={giriDB} onUpdateTitolo={t => { updateTitolo(t); setTitoli(prev => prev.some(x => x.id === t.id) ? prev.map(x => x.id === t.id ? t : x) : [...prev, t]); }} spalmatura={spalmatura} prenotato={prenotato} ruolo={ruolo} token={session.token} onTitoliChange={refreshDati} userAccount={userAccount} />}
           {activeModule === "prenotato" && <ModuloPrenotato token={session.token} titoli={titoli} onImportDone={() => sbFetch("prenotato?select=*&limit=100000", session.token).then(setPrenotato)} />}
           {/* MOD 4: Passato spalmatura a ModuloFineGiro */}
-          {activeModule === "finegiro" && <ModuloFineGiro titoli={titoli} prenotato={prenotato} canali={canali} token={session.token} ruolo={ruolo} spalmatura={spalmatura} />}
-          {activeModule === "avanzamento" && <ModuloAvanzamento token={session.token} titoli={titoli} prenotato={prenotato} ruolo={ruolo} />}
+          {activeModule === "finegiro" && <ModuloFineGiro titoli={titoli} prenotato={prenotato} canali={canali} token={session.token} ruolo={ruolo} spalmatura={spalmatura} userAccount={userAccount} />}
+          {activeModule === "avanzamento" && <ModuloAvanzamento token={session.token} titoli={titoli} prenotato={prenotato} ruolo={ruolo} userAccount={userAccount} />}
           {activeModule === "lanci" && <ModuloLanciSettimanali token={session.token} titoli={titoli} prenotato={prenotato} canali={canali} ruolo={ruolo} userAccount={userAccount} />}
           {activeModule === "verificaordini" && <ModuloVerificaOrdini token={session.token} />}
           {activeModule === "import" && <ModuloImport giriList={giriDB} token={session.token} />}
