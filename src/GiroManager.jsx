@@ -6,6 +6,111 @@ import ModuloAvanzamento from "./ModuloAvanzamento.jsx";
 const SUPABASE_URL = "https://tdflwenlylhctxssatax.supabase.co";
 const SUPABASE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InRkZmx3ZW5seWxoY3R4c3NhdGF4Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzYzMzgyNzYsImV4cCI6MjA5MTkxNDI3Nn0.l35qEL7LOvyYuI1McQlVqj4vbyTqmlevcmqWbTGYi2Q";
 
+const ACCOUNT_BY_COD = {
+  "103": "CALAVETTA",
+  "108": "CALAVETTA",
+  "112": "PASSARINI",
+  "118": "CALAVETTA",
+  "12": "CALAVETTA",
+  "134": "PARRELLA",
+  "137": "CALAVETTA",
+  "138": "PASSARINI",
+  "152": "CALAVETTA",
+  "22": "PARRELLA",
+  "277": "PARRELLA",
+  "290": "CALAVETTA",
+  "296": "CALAVETTA",
+  "299": "CALAVETTA",
+  "305": "VENTURA",
+  "308": "CALAVETTA",
+  "320": "PASSARINI",
+  "326": "VENTURA",
+  "333": "CALAVETTA",
+  "347": "CALAVETTA",
+  "366": "CALAVETTA",
+  "37": "CALAVETTA",
+  "386": "CALAVETTA",
+  "422": "SALA",
+  "428": "PALLOTTA",
+  "437": "CALAVETTA",
+  "455": "VENTURA",
+  "465": "PASSARINI",
+  "468": "PARRELLA",
+  "487": "SALA",
+  "502": "CALAVETTA",
+  "510": "CALAVETTA",
+  "522": "BRIZZI",
+  "524": "PARRELLA",
+  "532": "PASSARINI",
+  "534": "CALAVETTA",
+  "565": "PALLOTTA",
+  "568": "CALAVETTA",
+  "58": "CALAVETTA",
+  "64": "CALAVETTA",
+  "671": "PARRELLA",
+  "683": "CALAVETTA",
+  "692": "CALAVETTA",
+  "710": "PASSARINI",
+  "72": "SALA",
+  "724": "CALAVETTA",
+  "73": "PARRELLA",
+  "735": "VENTURA",
+  "738": "VENTURA",
+  "739": "PASSARINI",
+  "747": "PASSARINI",
+  "750": "PASSARINI",
+  "751": "PASSARINI",
+  "753": "PASSARINI",
+  "763": "BRIZZI",
+  "77": "CALAVETTA",
+  "773": "PARRELLA",
+  "776": "CALAVETTA",
+  "780": "CALAVETTA",
+  "795": "PASSARINI",
+  "821": "SALA",
+  "854": "CALAVETTA",
+  "909": "PARRELLA",
+  "919": "CALAVETTA",
+  "934": "CALAVETTA",
+  "935": "PARRELLA",
+  "937": "CALAVETTA",
+  "941": "PASSARINI",
+  "945": "CALAVETTA",
+  "952": "CALAVETTA",
+  "992": "CALAVETTA",
+  "995": "CALAVETTA",
+  "A21": "CALAVETTA",
+  "A54": "PASSARINI",
+  "A58": "CALAVETTA",
+  "A59": "BRIZZI",
+  "A60": "PASSARINI",
+  "A61": "SALA",
+  "A77": "CALAVETTA",
+  "A86": "PARRELLA",
+  "A94": "VALZASINA",
+  "A98": "SALA",
+  "AC2": "CALAVETTA",
+  "AC7": "CALAVETTA",
+  "AD6": "SALA",
+  "AL5": "VENTURA",
+  "AL9": "BRIZZI",
+  "B44": "PARRELLA",
+  "B58": "PARRELLA",
+  "B59": "PARRELLA",
+  "B81": "PARRELLA",
+  "C48": "CALAVETTA",
+  "C52": "CALAVETTA",
+  "C72": "PASSARINI",
+  "C79": "VENTURA",
+  "C85": "CALAVETTA",
+  "D52": "SALA",
+  "D65": "SALA",
+  "D71": "SALA",
+  "D80": "PARRELLA",
+  "D92": "PASSARINI",
+  "D95": "BRIZZI"
+};
+
 const sb = {
   auth: {
     signIn: async (email, password) => {
@@ -2253,7 +2358,7 @@ export default function App() {
   useEffect(() => {
     if (!session) return;
     sbFetch("giri?select=*&order=anno.desc,numero.desc", session.token).then(setGiriDB);
-    sbFetch("titoli?select=*&order=ranking_editore.asc,ranking_titolo.asc", session.token).then(setTitoli);
+    sbFetch("titoli?select=*&order=ranking_editore.asc,ranking_titolo.asc", session.token).then(data => setTitoli(Array.isArray(data) ? data.map(t => ({ ...t, account_editore: ACCOUNT_BY_COD[t.codice_editore] || t.account_editore || null })) : data));
     sbFetch("prenotato?select=*&limit=100000", session.token).then(setPrenotato);
     sbFetch("spalmatura_obiettivo?select=*", session.token).then(setSpalmatura);
     sbFetch("canali?select=*&order=nome.asc", session.token).then(setCanali);
@@ -2277,7 +2382,7 @@ export default function App() {
   const refreshDati = useCallback(() => {
     if (!session) return;
     sbFetch("prenotato?select=*&limit=100000", session.token).then(data => { if (Array.isArray(data)) setPrenotato(data); });
-    sbFetch("titoli?select=*&order=ranking_editore.asc,ranking_titolo.asc", session.token).then(data => { if (Array.isArray(data)) setTitoli(data); });
+    sbFetch("titoli?select=*&order=ranking_editore.asc,ranking_titolo.asc", session.token).then(data => { if (Array.isArray(data)) setTitoli(data.map(t => ({ ...t, account_editore: ACCOUNT_BY_COD[t.codice_editore] || t.account_editore || null }))); });
   }, [session]);
 
   if (checkingAuth) return <div style={{ ...css.app, display: "flex", alignItems: "center", justifyContent: "center", height: "100vh", color: T.textMid }}>Caricamento...</div>;
