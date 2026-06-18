@@ -1512,7 +1512,7 @@ function ModuloLanciSettimanali({ token, titoli, prenotato, canali, ruolo, userA
         const giornoUscita = r.giorno_uscita_override || giornoCalcolato;
         const isOverride = !!r.giorno_uscita_override;
 
-        const deltaPortale = (r.prenotato_trasmesso ?? r.prenotato_iscrizione ?? 0) - prenSenzaAmazon;
+        const deltaPortale = prenFineGiro - (r.prenotato_trasmesso ?? r.prenotato_iscrizione ?? 0);
 
         return {
           ...r,
@@ -1709,11 +1709,11 @@ if (!r.ok) throw new Error(await r.text());
   // Export Excel
   const exportExcel = () => {
     const XLSX = window.XLSX;
-    const headers = ["N. LANCIO","EAN","COD.ED.","EDITORE","ACCOUNT","TITOLO","AUTORE","PREZZO","CEDOLE","LANCIO","F.G.","P.O. MELI","AMAZON","TOT. TEORICO","FG VS P.O. MELI","GIORNO USCITA"];
+    const headers = ["N. LANCIO","EAN","COD.ED.","EDITORE","ACCOUNT","TITOLO","AUTORE","PREZZO","CEDOLE","F.G.","P.O. MELI","AMAZON","TOT. TEORICO","FG VS P.O. MELI","GIORNO USCITA"];
     const rows = dataFiltrata.map(r => [
       r.num_lancio, r.ean, r.codice_editore, r.editore, r.account_editore || "", r.titolo, r.autore, r.prezzo,
       r.cedole.join(", "), r.prenotato_iscrizione,
-      r.pren_fine_giro, r.pren_senza_amazon, r.pren_amazon, r.teorico, r.delta_portale, r.giorno_uscita
+      r.pren_fine_giro, r.prenotato_trasmesso ?? "", r.pren_amazon, r.teorico, r.delta_portale, r.giorno_uscita
     ]);
     // Riepilogo editori
     const rH = ["EDITORE","TITOLI","LANCIATE","TRASMESSE","FINE GIRO","AMAZON","VALORE"];
@@ -1815,9 +1815,8 @@ if (!r.ok) throw new Error(await r.text());
               <th style={css.th}>Autore</th>
               <th style={css.th}>€</th>
               <th style={css.th}>Cedole</th>
-              <th style={{ ...css.th, cursor: "pointer" }} onClick={() => toggleSort("prenotato_iscrizione")}>Lancio{sortIcon("prenotato_iscrizione")}</th>
               <th style={{ ...css.th, cursor: "pointer" }} onClick={() => toggleSort("pren_fine_giro")}>F.G.{sortIcon("pren_fine_giro")}</th>
-              <th style={{ ...css.th, cursor: "pointer" }} onClick={() => toggleSort("pren_senza_amazon")}>P.O. Meli{sortIcon("pren_senza_amazon")}</th>
+              <th style={{ ...css.th, cursor: "pointer" }} onClick={() => toggleSort("prenotato_trasmesso")}>P.O. Meli{sortIcon("prenotato_trasmesso")}</th>
               <th style={{ ...css.th, cursor: "pointer", color: "#e8a838" }} onClick={() => toggleSort("pren_amazon")}>Amazon{sortIcon("pren_amazon")}</th>
               <th style={{ ...css.th, cursor: "pointer" }} onClick={() => toggleSort("teorico")}>Tot. Teorico{sortIcon("teorico")}</th>
               <th style={{ ...css.th, cursor: "pointer" }} onClick={() => toggleSort("delta_portale")} title="Fine Giro vs P.O. Meli">FG vs P.O. Meli{sortIcon("delta_portale")}</th>
@@ -1852,7 +1851,6 @@ if (!r.ok) throw new Error(await r.text());
                     </div>
                   )}
                 </td>
-                <td style={{ ...css.td, fontWeight: "600" }}>{(r.prenotato_iscrizione || 0).toLocaleString("it")}</td>
                 <td style={{ ...css.td, fontWeight: "600" }}>
                   {r.is_live_fg ? (
                     <span style={{ color: T.purple }}>{r.pren_fine_giro.toLocaleString("it")}</span>
@@ -1872,7 +1870,7 @@ if (!r.ok) throw new Error(await r.text());
                   )}
                 </td>
                 <td style={{ ...css.td, fontWeight: "600" }}>
-                  {r.pren_senza_amazon > 0 ? r.pren_senza_amazon.toLocaleString("it") : "—"}
+                  {r.prenotato_trasmesso != null ? r.prenotato_trasmesso.toLocaleString("it") : "—"}
                 </td>
                 <td style={{ ...css.td, fontWeight: "600" }}>
                   {r.is_live_amazon ? (
@@ -1896,7 +1894,7 @@ if (!r.ok) throw new Error(await r.text());
                   {r.teorico > 0 ? r.teorico.toLocaleString("it") : "—"}
                 </td>
                 <td style={{ ...css.td, fontWeight: "700", color: r.delta_portale > 0 ? T.green : r.delta_portale < 0 ? T.red : T.textMid, textAlign: "right" }}>
-                  {r.pren_senza_amazon > 0 || r.prenotato_iscrizione > 0
+                  {r.prenotato_trasmesso != null || r.pren_fine_giro > 0
                     ? (r.delta_portale > 0 ? "+" : "") + r.delta_portale.toLocaleString("it")
                     : "—"}
                 </td>
