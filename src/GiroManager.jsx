@@ -631,6 +631,7 @@ function SearchableMultiSelect({ values, onChange, options, placeholder = "Tutti
 
 function ModuloCedola({ titoli, giriList, onUpdateTitolo, spalmatura, prenotato, ruolo, token, onTitoliChange, userAccount }) {
   const [giroLabelSel, setGiroLabelSel] = useState([]);
+  const [extraSel, setExtraSel] = useState([]);
   const [giroSel, setGiroSel] = useState([]);
   const [search, setSearch] = useState("");
   const [filterFlag, setFilterFlag] = useState("tutti");
@@ -791,22 +792,47 @@ function ModuloCedola({ titoli, giriList, onUpdateTitolo, spalmatura, prenotato,
   }, [titoli]);
   const [filterAnnoCedola, setFilterAnnoCedola] = useState([new Date().getFullYear()]);
 
-  const giriLabel = useMemo(() => [...new Set(titoli.map(t => t.giro_label).filter(Boolean))]
+  const giriLabel = useMemo(() => [...new Set(titoli.filter(t => t.giro_label !== "EXTRA").map(t => t.giro_label).filter(Boolean))]
     .filter(g => filterAnnoCedola.length === 0 || filterAnnoCedola.includes(Number(g.split(" ")[1])))
-    .sort((a, b) => { const [na, ya] = a.split(" "); const [nb, yb] = b.split(" "); return Number(yb) - Number(ya) || Number(nb) - Number(na); }), [titoli, filterAnnoCedola]);
+    .sort((a, b) => { const [na, ya] = a.split(" "); const [nb, yb] = b.split(" "); return Number(yb || 0) - Number(ya || 0) || Number(nb || 0) - Number(na || 0); }), [titoli, filterAnnoCedola]);
+
+  // Anno dedicato alla colonna Extragiri (indipendente dall'anno dei Giri Vendita)
+  const anniDispExtraCedola = useMemo(() => {
+    const s = new Set([new Date().getFullYear()]);
+    titoli.forEach(t => { if (t.giro_label === "EXTRA" && t.uscita) { const yr = new Date(t.uscita).getFullYear(); if (yr >= 2020 && !isNaN(yr)) s.add(yr); } });
+    return [...s].sort((a, b) => b - a);
+  }, [titoli]);
+  const [filterAnnoExtraCedola, setFilterAnnoExtraCedola] = useState([new Date().getFullYear()]);
+
+  // Cedole extra in ordine alfabetico, filtrate per anno (in base alla data di uscita del titolo).
+  // Le cedole senza data di uscita restano sempre visibili, per non perderle.
+  const cedoleExtra = useMemo(() => {
+    const anniSel = new Set(filterAnnoExtraCedola);
+    const cods = new Set();
+    titoli.forEach(t => {
+      if (t.giro_label !== "EXTRA" || !t.n_cedola) return;
+      if (anniSel.size === 0) { cods.add(t.n_cedola); return; }
+      const yr = t.uscita ? new Date(t.uscita).getFullYear() : null;
+      if (yr === null || isNaN(yr) || anniSel.has(yr)) cods.add(t.n_cedola);
+    });
+    return [...cods].sort((a, b) => a.localeCompare(b, "it", { sensitivity: "base" }));
+  }, [titoli, filterAnnoExtraCedola]);
+
   const cedole = useMemo(() => { const t = giroLabelSel.length === 0 ? titoli.filter(t => filterAnnoCedola.length === 0 || filterAnnoCedola.includes(Number((t.giro_label||"").split(" ")[1]))) : titoli.filter(t => giroLabelSel.includes(t.giro_label)); return [...new Set(t.map(t => t.n_cedola).filter(Boolean))].sort(); }, [titoli, giroLabelSel, filterAnnoCedola]);
   const accounts = useMemo(() => { const t = giroSel.length === 0 ? (giroLabelSel.length === 0 ? titoli : titoli.filter(t => giroLabelSel.includes(t.giro_label))) : titoli.filter(t => giroSel.includes(t.n_cedola)); return [...new Set(t.map(t => t.account_editore).filter(Boolean))].sort(); }, [titoli, giroLabelSel, giroSel]);
   const editori = useMemo(() => { const t = giroSel.length === 0 ? (giroLabelSel.length === 0 ? titoli : titoli.filter(t => giroLabelSel.includes(t.giro_label))) : titoli.filter(t => giroSel.includes(t.n_cedola)); return [...new Set(t.map(t => t.editore_nome).filter(Boolean))].sort(); }, [titoli, giroLabelSel, giroSel]);
 
+  const resetSelezione = () => { setGiroLabelSel([]); setExtraSel([]); setGiroSel([]); setFilterEditori([]); setFilterAccount([]); setSearch(""); setFilterFlag("tutti"); };
+
   const filtered = useMemo(() => titoli
-    .filter(t => giroLabelSel.length === 0 || giroLabelSel.includes(t.giro_label))
+    .filter(t => extraSel.length > 0 ? (t.giro_label === "EXTRA" && extraSel.includes(t.n_cedola)) : (giroLabelSel.length === 0 || giroLabelSel.includes(t.giro_label)))
     .filter(t => giroSel.length === 0 || giroSel.includes(t.n_cedola))
     .filter(t => filterEditori.length === 0 || filterEditori.includes(t.editore_nome))
     .filter(t => filterAccount.length === 0 || filterAccount.includes(t.account_editore))
     .filter(t => { if (!search) return true; const q = search.toLowerCase(); return t.titolo?.toLowerCase().includes(q) || t.autore?.toLowerCase().includes(q) || t.editore_nome?.toLowerCase().includes(q) || t.ean?.includes(q); })
     .filter(t => { if (filterFlag === "triangolo") return t.il_triangolo; if (filterFlag === "top100") return t.top_100; if (filterFlag === "gemelli") return t.ean_gemello_1; return true; })
     .sort((a, b) => { if (sortKey === "n_cedola") return (a.n_cedola ?? "").localeCompare(b.n_cedola ?? "") || ((a.ranking_editore ?? 99) - (b.ranking_editore ?? 99)) || (a.editore_nome ?? "").localeCompare(b.editore_nome ?? "") || (a.posizione ?? 0) - (b.posizione ?? 0); if (sortKey === "editore") return ((a.ranking_editore ?? 99) - (b.ranking_editore ?? 99)) || (a.editore_nome ?? "").localeCompare(b.editore_nome ?? "") || (a.posizione ?? 0) - (b.posizione ?? 0); if (sortKey === "prezzo") return (b.prezzo ?? 0) - (a.prezzo ?? 0); return 0; }),
-  [titoli, giroLabelSel, giroSel, search, filterFlag, filterEditori, filterAccount, sortKey]);
+  [titoli, giroLabelSel, extraSel, giroSel, search, filterFlag, filterEditori, filterAccount, sortKey]);
 
   const editingTitolo = titoli.find(t => t.id === editingId);
 
@@ -837,6 +863,42 @@ function ModuloCedola({ titoli, giriList, onUpdateTitolo, spalmatura, prenotato,
     const wb = XLSX.utils.book_new(); XLSX.utils.book_append_sheet(wb, wsCedola, "CEDOLA"); XLSX.utils.book_append_sheet(wb, wsObj, "OBIETTIVI");
     XLSX.writeFile(wb, `CEDOLA_DIREZIONALE_${giroLabelSel.length === 0 ? "TUTTI" : giroLabelSel.join("-")}.xlsx`);
   };
+
+  if (giroLabelSel.length === 0 && extraSel.length === 0) {
+    return (
+      <div style={{ flex: 1, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "flex-start", gap: 28, padding: "48px 20px", overflowY: "auto" }}>
+        <div style={{ color: T.textMid, fontSize: "14px" }}>Seleziona un giro o una cedola extra</div>
+        <div style={{ display: "flex", gap: 48, alignItems: "flex-start", justifyContent: "center", flexWrap: "wrap" }}>
+
+          {/* Colonna GIRI VENDITA */}
+          <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 14, width: 240 }}>
+            <div style={{ color: T.text, fontSize: "12px", fontWeight: 700, letterSpacing: "0.5px", textTransform: "uppercase" }}>Giri Vendita</div>
+            <SearchableMultiSelect values={filterAnnoCedola.map(String)} onChange={v => setFilterAnnoCedola(v.map(Number))} options={anniDispCedola.map(String)} renderOption={v => v} placeholder="Anno" width={140} />
+            <div style={{ display: "flex", flexDirection: "column", gap: 8, width: "100%" }}>
+              {giriLabel.length === 0 && <div style={{ color: T.textMid, fontSize: "12px", textAlign: "center", padding: "10px 0" }}>Nessun giro per l'anno selezionato</div>}
+              {giriLabel.map(g => (
+                <button key={g} style={{ ...css.btn("accent"), padding: "10px 16px", fontSize: "13px", width: "100%" }} onClick={() => setGiroLabelSel([g])}>Giro {g}</button>
+              ))}
+            </div>
+          </div>
+
+          {/* Colonna EXTRAGIRI */}
+          <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 14, width: 240 }}>
+            <div style={{ color: T.text, fontSize: "12px", fontWeight: 700, letterSpacing: "0.5px", textTransform: "uppercase" }}>Extragiri</div>
+            <SearchableMultiSelect values={filterAnnoExtraCedola.map(String)} onChange={v => setFilterAnnoExtraCedola(v.map(Number))} options={anniDispExtraCedola.map(String)} renderOption={v => v} placeholder="Anno" width={140} />
+            <div style={{ display: "flex", flexDirection: "column", gap: 8, width: "100%" }}>
+              {cedoleExtra.length === 0 && <div style={{ color: T.textMid, fontSize: "12px", textAlign: "center", padding: "10px 0" }}>Nessuna cedola extra per l'anno selezionato</div>}
+              {cedoleExtra.map(c => (
+                <button key={c} style={{ ...css.btn(), padding: "10px 16px", fontSize: "13px", borderColor: T.accent, color: T.accent, width: "100%" }} onClick={() => setExtraSel([c])}>{c}</button>
+              ))}
+            </div>
+          </div>
+
+        </div>
+      </div>
+    );
+  }
+
 
   return (
     <div style={{ display: "flex", flexDirection: "column", height: "100%", overflow: "hidden" }}>
@@ -929,8 +991,11 @@ function ModuloCedola({ titoli, giriList, onUpdateTitolo, spalmatura, prenotato,
         </div>
       )}
       <div style={{ padding: "12px 20px", borderBottom: `1px solid ${T.border}`, display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap" }}>
-        <SearchableMultiSelect values={filterAnnoCedola.map(String)} onChange={v => { setFilterAnnoCedola(v.map(Number)); setGiroLabelSel([]); setGiroSel([]); setFilterEditori([]); }} options={anniDispCedola.map(String)} renderOption={v => v} placeholder="Anno" width={110} />
-        <SearchableMultiSelect values={giroLabelSel} onChange={v => { setGiroLabelSel(v); setGiroSel([]); setFilterEditori([]); }} options={giriLabel} renderOption={g => `Giro ${g}`} placeholder="Tutti i giri" width={170} />
+        <SearchableMultiSelect values={filterAnnoCedola.map(String)} onChange={v => { setFilterAnnoCedola(v.map(Number)); setGiroLabelSel([]); setExtraSel([]); setGiroSel([]); setFilterEditori([]); }} options={anniDispCedola.map(String)} renderOption={v => v} placeholder="Anno" width={110} />
+        <SearchableMultiSelect values={giroLabelSel} onChange={v => { setGiroLabelSel(v); setExtraSel([]); setGiroSel([]); setFilterEditori([]); }} options={giriLabel} renderOption={g => `Giro ${g}`} placeholder="Tutti i giri" width={170} />
+        {cedoleExtra.length > 0 && (
+          <SearchableMultiSelect values={extraSel} onChange={v => { setExtraSel(v); setGiroLabelSel([]); setGiroSel([]); setFilterEditori([]); }} options={cedoleExtra} placeholder="Cedole Extra" width={170} />
+        )}
         <SearchableMultiSelect values={giroSel} onChange={v => { setGiroSel(v); setFilterEditori([]); }} options={cedole} placeholder="Tutte le cedole" width={160} />
         <SearchableMultiSelect values={filterEditori} onChange={setFilterEditori} options={editori} placeholder="Tutti gli editori" width={190} />
         <SearchableMultiSelect values={filterAccount} onChange={setFilterAccount} options={accounts} placeholder="Tutti gli account" width={160} />
@@ -940,6 +1005,7 @@ function ModuloCedola({ titoli, giriList, onUpdateTitolo, spalmatura, prenotato,
             {f === "tutti" ? "Tutti" : f === "triangolo" ? "▲" : f === "top100" ? "★" : "Gem."}
           </button>
         ))}
+        <button style={css.btn()} onClick={resetSelezione}>↺ Cambia giro</button>
         <div style={{ marginLeft: "auto", color: T.textMid, fontSize: "11px" }}><span style={{ color: T.text }}>{filtered.length}</span> titoli</div>
         {ruolo !== "agente" && <>
           <button style={{ ...css.btn(), borderColor: T.green, color: T.green }} onClick={() => setShowNuovoGiro(true)}>+ Giro</button>
