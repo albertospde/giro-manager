@@ -712,13 +712,24 @@ function ModuloCedola({ titoli, giriList, onUpdateTitolo, spalmatura, prenotato,
     }
     setSavingTitolo(true);
 
-    // Eredita il ranking_editore da un titolo già esistente dello stesso editore (per codice, poi per nome),
-    // altrimenti il nuovo titolo finisce in coda senza ranking e si "aggancia" alfabeticamente ad altri editori senza ranking.
-    const siblingConRanking = titoli.find(t => t.ranking_editore != null && (
-      (formTitolo.codice_editore && t.codice_editore === formTitolo.codice_editore) ||
-      (!formTitolo.codice_editore && t.editore_nome === formTitolo.editore_nome)
-    ));
-    const rankingEditoreEredita = siblingConRanking?.ranking_editore ?? null;
+    // Eredita il ranking_editore dai titoli già esistenti dello stesso editore.
+    // ATTENZIONE: lo stesso codice_editore può essere condiviso da imprint diversi con ranking diversi
+    // (es. "A94" = sia ADELPHI che ADELPHI RAGAZZI). Quindi il nome editore è più affidabile del codice
+    // per identificare l'imprint corretto: 1) codice+nome insieme, 2) nome da solo, 3) codice da solo.
+    let candidati = titoli.filter(t => t.ranking_editore != null && formTitolo.codice_editore && formTitolo.editore_nome && t.codice_editore === formTitolo.codice_editore && t.editore_nome === formTitolo.editore_nome);
+    if (candidati.length === 0 && formTitolo.editore_nome) {
+      candidati = titoli.filter(t => t.ranking_editore != null && t.editore_nome === formTitolo.editore_nome);
+    }
+    if (candidati.length === 0 && formTitolo.codice_editore) {
+      candidati = titoli.filter(t => t.ranking_editore != null && t.codice_editore === formTitolo.codice_editore);
+    }
+    let rankingEditoreEredita = null;
+    if (candidati.length > 0) {
+      const conteggio = {};
+      candidati.forEach(t => { conteggio[t.ranking_editore] = (conteggio[t.ranking_editore] || 0) + 1; });
+      const [valorePiuFrequente] = Object.entries(conteggio).sort((a, b) => b[1] - a[1] || Number(a[0]) - Number(b[0]))[0];
+      rankingEditoreEredita = Number(valorePiuFrequente);
+    }
 
     // Sequenza per editore: i titoli dello stesso editore nella stessa cedola condividono la numerazione "posizione" (es. 1..15 Adelphi, 1..20 Harper).
     const gruppoCedola = titoli.filter(t => t.giro_label === formTitolo.giro_label && t.n_cedola === formTitolo.n_cedola && t.editore_nome === formTitolo.editore_nome);
