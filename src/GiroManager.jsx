@@ -1035,7 +1035,27 @@ function ModuloFineGiro({ titoli, prenotato, canali, token, ruolo, spalmatura, u
     return Number(yb || 0) - Number(ya || 0) || Number(nb || 0) - Number(na || 0);
   }), [titoli]);
 
-  const cedoleExtra = useMemo(() => [...new Set(titoli.filter(t => t.giro_label === "EXTRA").map(t => t.n_cedola).filter(Boolean))].sort(), [titoli]);
+  // Anno dedicato alla colonna Extragiri (indipendente dall'anno dei Giri Vendita)
+  const anniDispExtraFineGiro = useMemo(() => {
+    const s = new Set([new Date().getFullYear()]);
+    titoli.forEach(t => { if (t.giro_label === "EXTRA" && t.uscita) { const yr = new Date(t.uscita).getFullYear(); if (yr >= 2020 && !isNaN(yr)) s.add(yr); } });
+    return [...s].sort((a, b) => b - a);
+  }, [titoli]);
+  const [filterAnnoExtraFineGiro, setFilterAnnoExtraFineGiro] = useState([new Date().getFullYear()]);
+
+  // Cedole extra in ordine alfabetico, filtrate per anno (in base alla data di uscita del titolo).
+  // Le cedole senza data di uscita restano sempre visibili, per non perderle.
+  const cedoleExtra = useMemo(() => {
+    const anniSel = new Set(filterAnnoExtraFineGiro);
+    const cods = new Set();
+    titoli.forEach(t => {
+      if (t.giro_label !== "EXTRA" || !t.n_cedola) return;
+      if (anniSel.size === 0) { cods.add(t.n_cedola); return; }
+      const yr = t.uscita ? new Date(t.uscita).getFullYear() : null;
+      if (yr === null || isNaN(yr) || anniSel.has(yr)) cods.add(t.n_cedola);
+    });
+    return [...cods].sort((a, b) => a.localeCompare(b, "it", { sensitivity: "base" }));
+  }, [titoli, filterAnnoExtraFineGiro]);
 
   const [giroLabelSel, setGiroLabelSel] = useState([]);
   const [extraSel, setExtraSel] = useState([]);
@@ -1054,13 +1074,6 @@ function ModuloFineGiro({ titoli, prenotato, canali, token, ruolo, spalmatura, u
   const [prenotatoCliente, setPrenotatoCliente] = useState([]);
   const [auroraEdit, setAuroraEdit] = useState({});
   const [auroraEditing, setAuroraEditing] = useState(null);
-
-  // Auto-seleziona il giro più recente all'avvio (giriLabel è ordinato DESC → [0] è il più recente)
-  useEffect(() => {
-    if (giriLabel.length > 0 && giroLabelSel.length === 0 && extraSel.length === 0) {
-      setGiroLabelSel([giriLabel[0]]);
-    }
-  }, [giriLabel]);
 
   const resetFiltri = () => { setGiroLabelSel([]); setExtraSel([]); setCedolaSel([]); setFilterEditori([]); setFilterAccount([]); setFilterCanale([]); setSearch(""); setClienteSel(null); setSoloPrenotati(false); };
 
@@ -1290,14 +1303,34 @@ function ModuloFineGiro({ titoli, prenotato, canali, token, ruolo, spalmatura, u
 
   if (giroLabelSel.length === 0 && extraSel.length === 0) {
     return (
-      <div style={{ flex: 1, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 24 }}>
+      <div style={{ flex: 1, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "flex-start", gap: 28, padding: "48px 20px", overflowY: "auto" }}>
         <div style={{ color: T.textMid, fontSize: "14px" }}>Seleziona un giro o una cedola extra</div>
-        <div style={{ display: "flex", gap: 12, flexWrap: "wrap", justifyContent: "center" }}>
-          <div style={{ marginBottom: 16, display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
-            <SearchableMultiSelect values={filterAnnoFineGiro.map(String)} onChange={v => { setFilterAnnoFineGiro(v.map(Number)); }} options={anniDispFineGiro.map(String)} renderOption={v => v} placeholder="Anno" width={110} />
+        <div style={{ display: "flex", gap: 48, alignItems: "flex-start", justifyContent: "center", flexWrap: "wrap" }}>
+
+          {/* Colonna GIRI VENDITA */}
+          <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 14, width: 240 }}>
+            <div style={{ color: T.text, fontSize: "12px", fontWeight: 700, letterSpacing: "0.5px", textTransform: "uppercase" }}>Giri Vendita</div>
+            <SearchableMultiSelect values={filterAnnoFineGiro.map(String)} onChange={v => setFilterAnnoFineGiro(v.map(Number))} options={anniDispFineGiro.map(String)} renderOption={v => v} placeholder="Anno" width={140} />
+            <div style={{ display: "flex", flexDirection: "column", gap: 8, width: "100%" }}>
+              {giriLabel.length === 0 && <div style={{ color: T.textMid, fontSize: "12px", textAlign: "center", padding: "10px 0" }}>Nessun giro per l'anno selezionato</div>}
+              {giriLabel.map(g => (
+                <button key={g} style={{ ...css.btn("accent"), padding: "10px 16px", fontSize: "13px", width: "100%" }} onClick={() => setGiroLabelSel([g])}>Giro {g}</button>
+              ))}
+            </div>
           </div>
-          {giriLabel.map(g => <button key={g} style={{ ...css.btn("accent"), padding: "10px 20px", fontSize: "13px" }} onClick={() => setGiroLabelSel([g])}>Giro {g}</button>)}
-          {cedoleExtra.map(c => <button key={c} style={{ ...css.btn(), padding: "10px 20px", fontSize: "13px", borderColor: T.accent, color: T.accent }} onClick={() => setExtraSel([c])}>{c}</button>)}
+
+          {/* Colonna EXTRAGIRI */}
+          <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 14, width: 240 }}>
+            <div style={{ color: T.text, fontSize: "12px", fontWeight: 700, letterSpacing: "0.5px", textTransform: "uppercase" }}>Extragiri</div>
+            <SearchableMultiSelect values={filterAnnoExtraFineGiro.map(String)} onChange={v => setFilterAnnoExtraFineGiro(v.map(Number))} options={anniDispExtraFineGiro.map(String)} renderOption={v => v} placeholder="Anno" width={140} />
+            <div style={{ display: "flex", flexDirection: "column", gap: 8, width: "100%" }}>
+              {cedoleExtra.length === 0 && <div style={{ color: T.textMid, fontSize: "12px", textAlign: "center", padding: "10px 0" }}>Nessuna cedola extra per l'anno selezionato</div>}
+              {cedoleExtra.map(c => (
+                <button key={c} style={{ ...css.btn(), padding: "10px 16px", fontSize: "13px", borderColor: T.accent, color: T.accent, width: "100%" }} onClick={() => setExtraSel([c])}>{c}</button>
+              ))}
+            </div>
+          </div>
+
         </div>
       </div>
     );
