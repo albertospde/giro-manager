@@ -265,13 +265,13 @@ function EditModal({ titolo, siblings = [], onSave, onClose, token }) {
   const handleSave = async () => {
     setSaving(true);
 
-    // Sequenza nella cedola: se la posizione richiesta cambia, riordina i titoli "fratelli" della stessa cedola
+    // Sequenza per editore (stessa cedola + stesso editore): se la posizione richiesta cambia, riordina i titoli "fratelli"
     let formFinal = form;
     const posOriginale = titolo.posizione ?? null;
     const posRichiesta = form.posizione === "" || form.posizione == null ? null : parseInt(form.posizione, 10);
     if (posRichiesta != null && posRichiesta !== posOriginale) {
       const gruppo = siblings
-        .filter(t => t.id !== form.id && t.giro_label === form.giro_label && t.n_cedola === form.n_cedola)
+        .filter(t => t.id !== form.id && t.giro_label === form.giro_label && t.n_cedola === form.n_cedola && t.editore_nome === form.editore_nome)
         .sort((a, b) => (a.posizione || 0) - (b.posizione || 0));
       const posClamp = Math.max(1, Math.min(posRichiesta, gruppo.length + 1));
       gruppo.splice(posClamp - 1, 0, { id: form.id, posizione: posClamp });
@@ -329,7 +329,7 @@ function EditModal({ titolo, siblings = [], onSave, onClose, token }) {
           <button style={css.btn()} onClick={onClose}>✕</button>
         </div>
         <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
-          {[["titolo","Titolo","full"],["autore","Autore"],["editore_nome","Editore"],["ean","EAN"],["prezzo","Prezzo"],["uscita","Uscita"],["formato","Formato"],["eta","Età"],["posizione","Posizione in cedola"],["account_editore","Account"],["promozione","Promozione"],["obiettivo_assegnato","Obiettivo assegnato"],["obiettivo_raggiunto","Obiettivo raggiunto"]].map(([k, label, span]) => (
+          {[["titolo","Titolo","full"],["autore","Autore"],["editore_nome","Editore"],["ean","EAN"],["prezzo","Prezzo"],["uscita","Uscita"],["formato","Formato"],["eta","Età"],["posizione","Posizione per editore"],["account_editore","Account"],["promozione","Promozione"],["obiettivo_assegnato","Obiettivo assegnato"],["obiettivo_raggiunto","Obiettivo raggiunto"]].map(([k, label, span]) => (
             <div key={k} style={span === "full" ? { gridColumn: "1/-1" } : {}}>
               <label style={{ color: T.textMid, fontSize: "10px", letterSpacing: "0.08em", textTransform: "uppercase", display: "block", marginBottom: 4 }}>{label}</label>
               <input style={{ ...css.input, width: "100%", boxSizing: "border-box" }} value={form[k] ?? ""} onChange={set(k)} />
@@ -712,8 +712,8 @@ function ModuloCedola({ titoli, giriList, onUpdateTitolo, spalmatura, prenotato,
     }
     setSavingTitolo(true);
 
-    // Sequenza nella cedola: i titoli della stessa cedola (giro + n_cedola) condividono la numerazione "posizione".
-    const gruppoCedola = titoli.filter(t => t.giro_label === formTitolo.giro_label && t.n_cedola === formTitolo.n_cedola);
+    // Sequenza per editore: i titoli dello stesso editore nella stessa cedola condividono la numerazione "posizione" (es. 1..15 Adelphi, 1..20 Harper).
+    const gruppoCedola = titoli.filter(t => t.giro_label === formTitolo.giro_label && t.n_cedola === formTitolo.n_cedola && t.editore_nome === formTitolo.editore_nome);
     const maxPos = gruppoCedola.reduce((m, t) => Math.max(m, t.posizione || 0), 0);
     const posRichiesta = formTitolo.posizione ? parseInt(formTitolo.posizione, 10) : null;
     // Se non indicata o fuori range, il titolo va in fondo alla cedola
@@ -785,7 +785,7 @@ function ModuloCedola({ titoli, giriList, onUpdateTitolo, spalmatura, prenotato,
     .filter(t => filterAccount.length === 0 || filterAccount.includes(t.account_editore))
     .filter(t => { if (!search) return true; const q = search.toLowerCase(); return t.titolo?.toLowerCase().includes(q) || t.autore?.toLowerCase().includes(q) || t.editore_nome?.toLowerCase().includes(q) || t.ean?.includes(q); })
     .filter(t => { if (filterFlag === "triangolo") return t.il_triangolo; if (filterFlag === "top100") return t.top_100; if (filterFlag === "gemelli") return t.ean_gemello_1; return true; })
-    .sort((a, b) => { if (sortKey === "n_cedola") return (a.n_cedola ?? "").localeCompare(b.n_cedola ?? "") || (a.posizione ?? 0) - (b.posizione ?? 0); if (sortKey === "editore") return (a.editore_nome ?? "").localeCompare(b.editore_nome ?? ""); if (sortKey === "prezzo") return (b.prezzo ?? 0) - (a.prezzo ?? 0); return 0; }),
+    .sort((a, b) => { if (sortKey === "n_cedola") return (a.n_cedola ?? "").localeCompare(b.n_cedola ?? "") || (a.editore_nome ?? "").localeCompare(b.editore_nome ?? "") || (a.posizione ?? 0) - (b.posizione ?? 0); if (sortKey === "editore") return (a.editore_nome ?? "").localeCompare(b.editore_nome ?? "") || (a.posizione ?? 0) - (b.posizione ?? 0); if (sortKey === "prezzo") return (b.prezzo ?? 0) - (a.prezzo ?? 0); return 0; }),
   [titoli, giroLabelSel, giroSel, search, filterFlag, filterEditori, filterAccount, sortKey]);
 
   const editingTitolo = titoli.find(t => t.id === editingId);
@@ -879,9 +879,9 @@ function ModuloCedola({ titoli, giriList, onUpdateTitolo, spalmatura, prenotato,
                 <input style={{ ...css.input, width: "100%", boxSizing: "border-box" }} value={formTitolo.n_cedola} onChange={e => setFormTitolo(f => ({ ...f, n_cedola: e.target.value }))} placeholder="es. 1A 2026" />
               </div>
               <div>
-                <label style={{ color: T.textMid, fontSize: "10px", textTransform: "uppercase", letterSpacing: "0.08em", display: "block", marginBottom: 4 }}>Posizione in cedola</label>
+                <label style={{ color: T.textMid, fontSize: "10px", textTransform: "uppercase", letterSpacing: "0.08em", display: "block", marginBottom: 4 }}>Posizione per editore</label>
                 <input style={{ ...css.input, width: "100%", boxSizing: "border-box" }} type="number" min="1" value={formTitolo.posizione} onChange={e => setFormTitolo(f => ({ ...f, posizione: e.target.value }))} placeholder={(() => {
-                  const n = titoli.filter(t => t.giro_label === formTitolo.giro_label && t.n_cedola === formTitolo.n_cedola).length;
+                  const n = titoli.filter(t => t.giro_label === formTitolo.giro_label && t.n_cedola === formTitolo.n_cedola && t.editore_nome === formTitolo.editore_nome).length;
                   return n > 0 ? `vuoto = in fondo (pos. ${n + 1})` : "vuoto = pos. 1";
                 })()} />
               </div>
