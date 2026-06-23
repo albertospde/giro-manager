@@ -65,6 +65,23 @@ export default function ModuloPrenotato({ token, titoli, onImportDone }) {
   const [importing, setImporting] = useState(false);
   const [done, setDone] = useState(null);
 
+  // Se lo stesso EAN compare su più righe di `titoli` (ristampe/relanci su giri diversi),
+  // preferisce il giro più recente invece del primo trovato in ordine arbitrario
+  // (titoli arriva ordinato per ranking_editore/ranking_titolo, non per giro).
+  const trovaTitoloPerEan = useCallback((ean) => {
+    const candidati = titoli.filter(t => t.ean === ean || t.ean === String(parseInt(ean)));
+    if (candidati.length <= 1) return candidati[0];
+    return [...candidati].sort((a, b) => {
+      const annoA = Number((a.giro_label || "").split(" ")[1]) || 0;
+      const annoB = Number((b.giro_label || "").split(" ")[1]) || 0;
+      if (annoB !== annoA) return annoB - annoA;
+      const numA = Number((a.giro_label || "").split(" ")[0]) || 0;
+      const numB = Number((b.giro_label || "").split(" ")[0]) || 0;
+      if (numB !== numA) return numB - numA;
+      return (b.id || 0) - (a.id || 0); // fallback: id più alto = inserito più di recente
+    })[0];
+  }, [titoli]);
+
   const handleFile = useCallback((e) => {
     const f = e.target.files[0];
     if (!f) return;
@@ -132,12 +149,12 @@ export default function ModuloPrenotato({ token, titoli, onImportDone }) {
         });
 
         const result = Object.values(aggMap).map(r => {
-          const titolo = titoli.find(t => t.ean === r.ean || t.ean === String(parseInt(r.ean)));
+          const titolo = trovaTitoloPerEan(r.ean);
           return { ...r, titolo: titolo?.titolo ?? "— non trovato —", found: !!titolo, titolo_id: titolo?.id };
         }).sort((a, b) => a.ean.localeCompare(b.ean));
 
         const resultClienti = Object.values(aggCliMap).map(r => {
-          const titolo = titoli.find(t => t.ean === r.ean || t.ean === String(parseInt(r.ean)));
+          const titolo = trovaTitoloPerEan(r.ean);
           return { ...r, found: !!titolo, titolo_id: titolo?.id };
         });
 
@@ -149,7 +166,7 @@ export default function ModuloPrenotato({ token, titoli, onImportDone }) {
       }
     };
     reader.readAsArrayBuffer(f);
-  }, [titoli]);
+  }, [trovaTitoloPerEan]);
 
   const riepilogoCanale = useMemo(() => {
     const map = {};
