@@ -42,7 +42,7 @@ const REQUIRED = ["giro_label", "ean", "titolo", "editore_nome", "prezzo", "form
 // ─── Fetch ranking editori da Supabase ───────────────────────────────────────
 async function fetchRankingEditori(token) {
   const res = await fetch(
-    `${SUPABASE_URL}/rest/v1/ranking_editori?select=codice_editore,ranking&order=ranking.asc`,
+    `${SUPABASE_URL}/rest/v1/ranking_editori?select=editore_nome,ranking&order=ranking.asc`,
     {
       headers: {
         "apikey": SUPABASE_KEY,
@@ -50,14 +50,18 @@ async function fetchRankingEditori(token) {
       },
     }
   );
-  if (!res.ok) return {};
+  if (!res.ok) {
+    console.error("Fetch ranking_editori fallita:", res.status, res.statusText);
+    throw new Error(`Errore caricamento ranking editori (HTTP ${res.status})`);
+  }
   const data = await res.json();
-  // Mappa codice_editore → ranking minimo (nel caso di duplicati, prende il più basso)
+  // Mappa editore_nome → ranking minimo (nel caso di doppioni sullo stesso nome, prende il più basso)
   const map = {};
-  data.forEach(({ codice_editore, ranking }) => {
-    const cod = String(codice_editore).trim().toUpperCase();
-    if (!(cod in map) || ranking < map[cod]) {
-      map[cod] = ranking;
+  data.forEach(({ editore_nome, ranking }) => {
+    const nome = String(editore_nome ?? "").trim().toUpperCase();
+    if (!nome) return;
+    if (!(nome in map) || ranking < map[nome]) {
+      map[nome] = ranking;
     }
   });
   return map;
@@ -85,7 +89,8 @@ export default function ModuloImport({ giriList, token, onImportDone }) {
     try {
       rankingMap = await fetchRankingEditori(token);
     } catch (err) {
-      console.warn("Impossibile caricare ranking editori:", err);
+      alert("Impossibile caricare il ranking editori dal database: " + err.message + "\nRiprova; se l'errore persiste, controlla la sessione/login.");
+      return;
     }
 
     const reader = new FileReader();
@@ -120,13 +125,13 @@ export default function ModuloImport({ giriList, token, onImportDone }) {
           });
           obj.giro_id = null; // assegnato all'import
 
-          // Risolvi ranking_editore dal DB tramite codice_editore
-          const cod = String(obj.codice_editore ?? "").trim().toUpperCase();
-          if (cod && rankingMap[cod] !== undefined) {
-            obj.ranking_editore = rankingMap[cod];
+          // Risolvi ranking_editore dal DB tramite editore_nome
+          const nome = String(obj.editore_nome ?? "").trim().toUpperCase();
+          if (nome && rankingMap[nome] !== undefined) {
+            obj.ranking_editore = rankingMap[nome];
           } else {
             obj.ranking_editore = null;
-            if (cod) missing.add(`${cod} (${obj.editore_nome ?? "?"})`);
+            if (nome) missing.add(`${nome}${obj.codice_editore ? ` (cod. ${obj.codice_editore})` : ""}`);
           }
 
           // Validazione
