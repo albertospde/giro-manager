@@ -623,6 +623,32 @@ function ModuloCedola({ titoli, giriList, onUpdateTitolo, spalmatura, prenotato,
   const [toastCedola, setToastCedola] = useState(null);
   const showToastCedola = (msg, type = "ok") => { setToastCedola({ msg, type }); setTimeout(() => setToastCedola(null), 3000); };
 
+  // Edit inline obiettivo assegnato (matitina in tabella, senza apertura modale completa)
+  const [editingObjId, setEditingObjId] = useState(null);
+  const [objInputValue, setObjInputValue] = useState("");
+  const [savingObjId, setSavingObjId] = useState(null);
+
+  const startEditObj = (t) => { setEditingObjId(t.id); setObjInputValue(t.obiettivo_assegnato ?? ""); };
+  const cancelEditObj = () => { setEditingObjId(null); setObjInputValue(""); };
+
+  const saveEditObj = async (t) => {
+    const nuovoValore = objInputValue === "" ? null : parseInt(objInputValue, 10);
+    if (objInputValue !== "" && (isNaN(nuovoValore) || nuovoValore < 0)) {
+      showToastCedola("Valore obiettivo non valido", "err");
+      return;
+    }
+    if (nuovoValore === (t.obiettivo_assegnato ?? null)) { cancelEditObj(); return; }
+    setSavingObjId(t.id);
+    const ok = await sbUpdateTitolo(t.id, { obiettivo_assegnato: nuovoValore }, token);
+    setSavingObjId(null);
+    if (!ok) { showToastCedola("Errore nel salvataggio dell'obiettivo", "err"); return; }
+    onUpdateTitolo({ ...t, obiettivo_assegnato: nuovoValore });
+    showToastCedola("Obiettivo aggiornato");
+    setEditingObjId(null);
+    setObjInputValue("");
+  };
+
+
   // Form nuovo giro
   const emptyGiro = { numero: "", anno: new Date().getFullYear(), descrizione: "" };
   const [formGiro, setFormGiro] = useState(emptyGiro);
@@ -873,9 +899,41 @@ function ModuloCedola({ titoli, giriList, onUpdateTitolo, spalmatura, prenotato,
                 <td style={{ ...css.td, color: T.textMid, fontSize: "11px" }}>{t.codice_editore}</td>
                 <td style={{ ...css.td, color: T.accent, fontWeight: "600", whiteSpace: "nowrap" }}>{t.editore_nome}</td>
                 <td style={{ ...css.td, whiteSpace: "nowrap" }}>€ {t.prezzo?.toFixed(2)}</td>
-                <td style={{ ...css.td, whiteSpace: "nowrap", minWidth: 120 }}>
-                  {(() => { const pren = prenotato.filter(p => p.titolo_id === t.id).reduce((s,p) => s+p.quantita, 0); return (<><div style={{ fontSize: "11px", marginBottom: 4 }}>{pren.toLocaleString("it")} / {(t.obiettivo_assegnato||0).toLocaleString("it")}</div><ProgressBar value={pren} total={t.obiettivo_assegnato} /></>); })()}
+                <td style={{ ...css.td, whiteSpace: "nowrap", minWidth: 130 }}>
+                  {(() => {
+                    const pren = prenotato.filter(p => p.titolo_id === t.id).reduce((s,p) => s+p.quantita, 0);
+                    if (editingObjId === t.id) {
+                      return (
+                        <div style={{ display: "flex", alignItems: "center", gap: 4 }}>
+                          <input
+                            autoFocus
+                            type="number"
+                            min="0"
+                            style={{ ...css.input, width: 64, padding: "3px 6px", fontSize: "11px" }}
+                            value={objInputValue}
+                            onChange={e => setObjInputValue(e.target.value)}
+                            onKeyDown={e => { if (e.key === "Enter") saveEditObj(t); if (e.key === "Escape") cancelEditObj(); }}
+                            disabled={savingObjId === t.id}
+                          />
+                          <button title="Salva" style={{ ...css.btn(), padding: "2px 6px", fontSize: "11px", color: T.green, borderColor: T.green }} onClick={() => saveEditObj(t)} disabled={savingObjId === t.id}>✓</button>
+                          <button title="Annulla" style={{ ...css.btn(), padding: "2px 6px", fontSize: "11px" }} onClick={cancelEditObj} disabled={savingObjId === t.id}>✕</button>
+                        </div>
+                      );
+                    }
+                    return (
+                      <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                        <div style={{ flex: 1 }}>
+                          <div style={{ fontSize: "11px", marginBottom: 4 }}>{pren.toLocaleString("it")} / {(t.obiettivo_assegnato||0).toLocaleString("it")}</div>
+                          <ProgressBar value={pren} total={t.obiettivo_assegnato} />
+                        </div>
+                        {ruolo !== "agente" && (
+                          <button title="Modifica obiettivo" style={{ background: "none", border: "none", cursor: "pointer", color: T.textMid, fontSize: "12px", padding: 2 }} onClick={() => startEditObj(t)}>✎</button>
+                        )}
+                      </div>
+                    );
+                  })()}
                 </td>
+
                 <td style={css.td}><div style={{ display: "flex", gap: 4 }}>{t.il_triangolo && <Badge label="▲" color={T.purple} />}{t.top_100 && <Badge label="★" color={T.accent} />}</div></td>
                 <td style={css.td}>{t.ean_gemello_1 && <div style={{ fontSize: "10px", color: T.textMid }}><div>{t.ean_gemello_1}</div>{t.ean_gemello_2 && <div>{t.ean_gemello_2}</div>}{t.ean_gemello_3 && <div>{t.ean_gemello_3}</div>}</div>}</td>
                 <td style={{ ...css.td, maxWidth: 160 }}>{(t.note || t.note_comunicazione) && <div style={{ fontSize: "11px", color: T.textMid, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", maxWidth: 150 }} title={t.note_comunicazione || t.note}>{t.note_comunicazione || t.note}</div>}</td>
