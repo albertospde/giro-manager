@@ -785,7 +785,7 @@ function ModuloCedola({ titoli, giriList, onUpdateTitolo, spalmatura, prenotato,
     .filter(t => filterAccount.length === 0 || filterAccount.includes(t.account_editore))
     .filter(t => { if (!search) return true; const q = search.toLowerCase(); return t.titolo?.toLowerCase().includes(q) || t.autore?.toLowerCase().includes(q) || t.editore_nome?.toLowerCase().includes(q) || t.ean?.includes(q); })
     .filter(t => { if (filterFlag === "triangolo") return t.il_triangolo; if (filterFlag === "top100") return t.top_100; if (filterFlag === "gemelli") return t.ean_gemello_1; return true; })
-    .sort((a, b) => { if (sortKey === "n_cedola") return (a.n_cedola ?? "").localeCompare(b.n_cedola ?? "") || (a.editore_nome ?? "").localeCompare(b.editore_nome ?? "") || (a.posizione ?? 0) - (b.posizione ?? 0); if (sortKey === "editore") return (a.editore_nome ?? "").localeCompare(b.editore_nome ?? "") || (a.posizione ?? 0) - (b.posizione ?? 0); if (sortKey === "prezzo") return (b.prezzo ?? 0) - (a.prezzo ?? 0); return 0; }),
+    .sort((a, b) => { if (sortKey === "n_cedola") return (a.n_cedola ?? "").localeCompare(b.n_cedola ?? "") || ((a.ranking_editore ?? 99) - (b.ranking_editore ?? 99)) || (a.editore_nome ?? "").localeCompare(b.editore_nome ?? "") || (a.posizione ?? 0) - (b.posizione ?? 0); if (sortKey === "editore") return ((a.ranking_editore ?? 99) - (b.ranking_editore ?? 99)) || (a.editore_nome ?? "").localeCompare(b.editore_nome ?? "") || (a.posizione ?? 0) - (b.posizione ?? 0); if (sortKey === "prezzo") return (b.prezzo ?? 0) - (a.prezzo ?? 0); return 0; }),
   [titoli, giroLabelSel, giroSel, search, filterFlag, filterEditori, filterAccount, sortKey]);
 
   const editingTitolo = titoli.find(t => t.id === editingId);
