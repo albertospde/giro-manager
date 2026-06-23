@@ -257,24 +257,45 @@ function KpiCard({ label, value, sub, color = T.accent }) {
 }
 
 // FIX 5: EditModal ora riceve anche token e onSaveDB per salvare su Supabase
-function EditModal({ titolo, onSave, onClose, token }) {
+function EditModal({ titolo, siblings = [], onSave, onClose, token }) {
   const [form, setForm] = useState({ ...titolo });
   const [saving, setSaving] = useState(false);
   const set = k => e => setForm(f => ({ ...f, [k]: e.target.type === "checkbox" ? e.target.checked : e.target.value }));
 
   const handleSave = async () => {
     setSaving(true);
+
+    // Sequenza nella cedola: se la posizione richiesta cambia, riordina i titoli "fratelli" della stessa cedola
+    let formFinal = form;
+    const posOriginale = titolo.posizione ?? null;
+    const posRichiesta = form.posizione === "" || form.posizione == null ? null : parseInt(form.posizione, 10);
+    if (posRichiesta != null && posRichiesta !== posOriginale) {
+      const gruppo = siblings
+        .filter(t => t.id !== form.id && t.giro_label === form.giro_label && t.n_cedola === form.n_cedola)
+        .sort((a, b) => (a.posizione || 0) - (b.posizione || 0));
+      const posClamp = Math.max(1, Math.min(posRichiesta, gruppo.length + 1));
+      gruppo.splice(posClamp - 1, 0, { id: form.id, posizione: posClamp });
+      for (let idx = 0; idx < gruppo.length; idx++) {
+        const nuovaPos = idx + 1;
+        if (gruppo[idx].id !== form.id && gruppo[idx].posizione !== nuovaPos) {
+          const ok = await sbUpdateTitolo(gruppo[idx].id, { posizione: nuovaPos }, token);
+          if (ok) onSave({ ...gruppo[idx], posizione: nuovaPos });
+        }
+      }
+      formFinal = { ...form, posizione: String(posClamp) };
+    }
+
     // Prepara l'oggetto con solo i campi modificabili
     const payload = {};
     const editableFields = [
       "titolo","autore","editore_nome","ean","prezzo","uscita","formato","eta",
-      "account_editore","promozione","obiettivo_assegnato","obiettivo_raggiunto",
+      "account_editore","promozione","obiettivo_assegnato","obiettivo_raggiunto","posizione",
       "il_triangolo","top_100","ean_gemello_1","titolo_gemello_1","ean_gemello_2",
       "titolo_gemello_2","ean_gemello_3","titolo_gemello_3","note_comunicazione","note"
     ];
-    const numFields = ["prezzo","obiettivo_assegnato","obiettivo_raggiunto"];
+    const numFields = ["prezzo","obiettivo_assegnato","obiettivo_raggiunto","posizione"];
     editableFields.forEach(k => {
-      let valForm = form[k];
+      let valForm = formFinal[k];
       let valOrig = titolo[k];
       // Normalizza numerici per confronto corretto (input restituisce stringhe)
       if (numFields.includes(k)) {
@@ -287,12 +308,12 @@ function EditModal({ titolo, onSave, onClose, token }) {
     });
 
     if (Object.keys(payload).length > 0 && token) {
-      const ok = await sbUpdateTitolo(form.id, payload, token);
+      const ok = await sbUpdateTitolo(formFinal.id, payload, token);
       if (!ok) { alert("Errore nel salvataggio su database."); setSaving(false); return; }
     }
     // Normalizza i tipi numerici prima di aggiornare lo state React
-    const formNorm = { ...form };
-    ["prezzo","obiettivo_assegnato","obiettivo_raggiunto"].forEach(k => {
+    const formNorm = { ...formFinal };
+    ["prezzo","obiettivo_assegnato","obiettivo_raggiunto","posizione"].forEach(k => {
       if (formNorm[k] !== "" && formNorm[k] != null) formNorm[k] = Number(formNorm[k]);
     });
     onSave(formNorm);
@@ -308,7 +329,7 @@ function EditModal({ titolo, onSave, onClose, token }) {
           <button style={css.btn()} onClick={onClose}>✕</button>
         </div>
         <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
-          {[["titolo","Titolo","full"],["autore","Autore"],["editore_nome","Editore"],["ean","EAN"],["prezzo","Prezzo"],["uscita","Uscita"],["formato","Formato"],["eta","Età"],["account_editore","Account"],["promozione","Promozione"],["obiettivo_assegnato","Obiettivo assegnato"],["obiettivo_raggiunto","Obiettivo raggiunto"]].map(([k, label, span]) => (
+          {[["titolo","Titolo","full"],["autore","Autore"],["editore_nome","Editore"],["ean","EAN"],["prezzo","Prezzo"],["uscita","Uscita"],["formato","Formato"],["eta","Età"],["posizione","Posizione in cedola"],["account_editore","Account"],["promozione","Promozione"],["obiettivo_assegnato","Obiettivo assegnato"],["obiettivo_raggiunto","Obiettivo raggiunto"]].map(([k, label, span]) => (
             <div key={k} style={span === "full" ? { gridColumn: "1/-1" } : {}}>
               <label style={{ color: T.textMid, fontSize: "10px", letterSpacing: "0.08em", textTransform: "uppercase", display: "block", marginBottom: 4 }}>{label}</label>
               <input style={{ ...css.input, width: "100%", boxSizing: "border-box" }} value={form[k] ?? ""} onChange={set(k)} />
@@ -675,16 +696,38 @@ function ModuloCedola({ titoli, giriList, onUpdateTitolo, spalmatura, prenotato,
   };
 
   // Form nuovo titolo manuale
-  const emptyTitolo = { ean: "", titolo: "", autore: "", editore_nome: "", codice_editore: "", prezzo: "", uscita: "", formato: "Cover", n_cedola: "", giro_label: "", obiettivo_assegnato: "", account_editore: "", note_comunicazione: "", note: "" };
+  const emptyTitolo = { ean: "", titolo: "", autore: "", editore_nome: "", codice_editore: "", prezzo: "", uscita: "", formato: "Cover", n_cedola: "", giro_label: "", posizione: "", obiettivo_assegnato: "", account_editore: "", note_comunicazione: "", note: "" };
   const [formTitolo, setFormTitolo] = useState(emptyTitolo);
   const [savingTitolo, setSavingTitolo] = useState(false);
   const giriLabelAll = useMemo(() => [...new Set(titoli.map(t => t.giro_label).filter(Boolean))].sort((a, b) => { const [na, ya] = a.split(" "); const [nb, yb] = b.split(" "); return Number(yb) - Number(ya) || Number(nb) - Number(na); }), [titoli]);
 
   const saveNuovoTitolo = async () => {
-    if (!formTitolo.ean || !formTitolo.titolo || !formTitolo.n_cedola || !formTitolo.giro_label) {
-      showToastCedola("EAN, titolo, cedola e giro sono obbligatori", "err"); return;
+    const mancanti = [];
+    if (!formTitolo.ean?.trim()) mancanti.push("EAN");
+    if (!formTitolo.titolo?.trim()) mancanti.push("Titolo");
+    if (!formTitolo.n_cedola?.trim()) mancanti.push("N° Cedola");
+    if (!formTitolo.giro_label) mancanti.push("Giro");
+    if (mancanti.length > 0) {
+      showToastCedola(`Campo obbligatorio mancante: ${mancanti.join(", ")}`, "err"); return;
     }
     setSavingTitolo(true);
+
+    // Sequenza nella cedola: i titoli della stessa cedola (giro + n_cedola) condividono la numerazione "posizione".
+    const gruppoCedola = titoli.filter(t => t.giro_label === formTitolo.giro_label && t.n_cedola === formTitolo.n_cedola);
+    const maxPos = gruppoCedola.reduce((m, t) => Math.max(m, t.posizione || 0), 0);
+    const posRichiesta = formTitolo.posizione ? parseInt(formTitolo.posizione, 10) : null;
+    // Se non indicata o fuori range, il titolo va in fondo alla cedola
+    const posizioneFinale = (posRichiesta && posRichiesta >= 1 && posRichiesta <= maxPos + 1) ? posRichiesta : maxPos + 1;
+    if (posizioneFinale <= maxPos) {
+      // Spinge giù di un posto tutti i titoli della cedola da quella posizione in poi
+      const daSpostare = gruppoCedola.filter(t => (t.posizione || 0) >= posizioneFinale);
+      await Promise.all(daSpostare.map(async t => {
+        const nuovaPos = (t.posizione || 0) + 1;
+        const ok = await sbUpdateTitolo(t.id, { posizione: nuovaPos }, token);
+        if (ok) onUpdateTitolo({ ...t, posizione: nuovaPos });
+      }));
+    }
+
     const payload = {
       ean: formTitolo.ean.trim(),
       titolo: formTitolo.titolo,
@@ -696,6 +739,7 @@ function ModuloCedola({ titoli, giriList, onUpdateTitolo, spalmatura, prenotato,
       formato: formTitolo.formato || "Cover",
       n_cedola: formTitolo.n_cedola,
       giro_label: formTitolo.giro_label,
+      posizione: posizioneFinale,
       obiettivo_assegnato: parseInt(formTitolo.obiettivo_assegnato) || null,
       account_editore: formTitolo.account_editore || null,
       note_comunicazione: formTitolo.note_comunicazione || null,
@@ -708,7 +752,7 @@ function ModuloCedola({ titoli, giriList, onUpdateTitolo, spalmatura, prenotato,
     });
     if (r.ok) {
       const data = await r.json();
-      showToastCedola(`"${formTitolo.titolo}" aggiunto`);
+      showToastCedola(`"${formTitolo.titolo}" aggiunto in posizione ${posizioneFinale}`);
       setShowNuovoTitolo(false);
       setFormTitolo(emptyTitolo);
       if (onTitoliChange) onTitoliChange();
@@ -741,7 +785,7 @@ function ModuloCedola({ titoli, giriList, onUpdateTitolo, spalmatura, prenotato,
     .filter(t => filterAccount.length === 0 || filterAccount.includes(t.account_editore))
     .filter(t => { if (!search) return true; const q = search.toLowerCase(); return t.titolo?.toLowerCase().includes(q) || t.autore?.toLowerCase().includes(q) || t.editore_nome?.toLowerCase().includes(q) || t.ean?.includes(q); })
     .filter(t => { if (filterFlag === "triangolo") return t.il_triangolo; if (filterFlag === "top100") return t.top_100; if (filterFlag === "gemelli") return t.ean_gemello_1; return true; })
-    .sort((a, b) => { if (sortKey === "n_cedola") return (a.n_cedola ?? "").localeCompare(b.n_cedola ?? ""); if (sortKey === "editore") return (a.editore_nome ?? "").localeCompare(b.editore_nome ?? ""); if (sortKey === "prezzo") return (b.prezzo ?? 0) - (a.prezzo ?? 0); return 0; }),
+    .sort((a, b) => { if (sortKey === "n_cedola") return (a.n_cedola ?? "").localeCompare(b.n_cedola ?? "") || (a.posizione ?? 0) - (b.posizione ?? 0); if (sortKey === "editore") return (a.editore_nome ?? "").localeCompare(b.editore_nome ?? ""); if (sortKey === "prezzo") return (b.prezzo ?? 0) - (a.prezzo ?? 0); return 0; }),
   [titoli, giroLabelSel, giroSel, search, filterFlag, filterEditori, filterAccount, sortKey]);
 
   const editingTitolo = titoli.find(t => t.id === editingId);
@@ -776,7 +820,7 @@ function ModuloCedola({ titoli, giriList, onUpdateTitolo, spalmatura, prenotato,
 
   return (
     <div style={{ display: "flex", flexDirection: "column", height: "100%", overflow: "hidden" }}>
-      {editingTitolo && <EditModal titolo={editingTitolo} onSave={onUpdateTitolo} onClose={() => setEditingId(null)} token={token} />}
+      {editingTitolo && <EditModal titolo={editingTitolo} siblings={titoli} onSave={onUpdateTitolo} onClose={() => setEditingId(null)} token={token} />}
 
       {/* MODAL NUOVO GIRO */}
       {showNuovoGiro && (
@@ -834,6 +878,13 @@ function ModuloCedola({ titoli, giriList, onUpdateTitolo, spalmatura, prenotato,
                 <label style={{ color: T.textMid, fontSize: "10px", textTransform: "uppercase", letterSpacing: "0.08em", display: "block", marginBottom: 4 }}>N° Cedola *</label>
                 <input style={{ ...css.input, width: "100%", boxSizing: "border-box" }} value={formTitolo.n_cedola} onChange={e => setFormTitolo(f => ({ ...f, n_cedola: e.target.value }))} placeholder="es. 1A 2026" />
               </div>
+              <div>
+                <label style={{ color: T.textMid, fontSize: "10px", textTransform: "uppercase", letterSpacing: "0.08em", display: "block", marginBottom: 4 }}>Posizione in cedola</label>
+                <input style={{ ...css.input, width: "100%", boxSizing: "border-box" }} type="number" min="1" value={formTitolo.posizione} onChange={e => setFormTitolo(f => ({ ...f, posizione: e.target.value }))} placeholder={(() => {
+                  const n = titoli.filter(t => t.giro_label === formTitolo.giro_label && t.n_cedola === formTitolo.n_cedola).length;
+                  return n > 0 ? `vuoto = in fondo (pos. ${n + 1})` : "vuoto = pos. 1";
+                })()} />
+              </div>
             </div>
             <div style={{ marginTop: 12 }}>
               <label style={{ color: T.textMid, fontSize: "10px", textTransform: "uppercase", letterSpacing: "0.08em", display: "block", marginBottom: 4 }}>Note comunicazione</label>
@@ -883,6 +934,7 @@ function ModuloCedola({ titoli, giriList, onUpdateTitolo, spalmatura, prenotato,
           <thead>
             <tr>
               <th style={css.th} onClick={() => setSortKey("n_cedola")}>Cedola{sortKey === "n_cedola" ? " ↓" : ""}</th>
+              <th style={{ ...css.th, textAlign: "center" }}>Pos.</th>
               <th style={css.th}>EAN</th><th style={css.th}>Titolo</th><th style={css.th}>Autore</th><th style={css.th}>Cod.Ed.</th>
               <th style={css.th} onClick={() => setSortKey("editore")}>Editore{sortKey === "editore" ? " ↓" : ""}</th>
               <th style={css.th} onClick={() => setSortKey("prezzo")}>€{sortKey === "prezzo" ? " ↓" : ""}</th>
@@ -893,6 +945,7 @@ function ModuloCedola({ titoli, giriList, onUpdateTitolo, spalmatura, prenotato,
             {filtered.map((t, i) => (
               <tr key={t.id} style={{ background: i % 2 === 0 ? "transparent" : T.surface + "66" }}>
                 <td style={{ ...css.td, color: T.textMid, fontSize: "10px", whiteSpace: "nowrap" }}>{t.n_cedola}</td>
+                <td style={{ ...css.td, color: T.textMid, fontSize: "11px", textAlign: "center" }}>{t.posizione ?? "—"}</td>
                 <td style={{ ...css.td, color: T.textDim, fontFamily: "monospace", fontSize: "11px" }}>{t.ean}</td>
                 <td style={{ ...css.td, maxWidth: 260 }}><div style={{ fontWeight: "600", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{t.titolo}</div></td>
                 <td style={{ ...css.td, color: T.textMid }}>{t.autore}</td>
@@ -1729,6 +1782,30 @@ function ModuloLanciSettimanali({ token, titoli, prenotato, canali, ruolo, userA
           };
         }).filter(Boolean);
         if (payload.length === 0) throw new Error("Nessun EAN valido");
+
+        // Se un titolo (EAN) era già presente in un lancio precedente, lo "spostiamo":
+        // viene eliminato dal lancio vecchio e resta solo nell'ultimo lancio caricato.
+        const gruppiPerLancio = {};
+        payload.forEach(p => {
+          const key = `${p.anno_lancio}|${p.num_lancio}`;
+          if (!gruppiPerLancio[key]) gruppiPerLancio[key] = { anno: p.anno_lancio, num: p.num_lancio, eans: [] };
+          gruppiPerLancio[key].eans.push(p.ean);
+        });
+        for (const { anno, num, eans } of Object.values(gruppiPerLancio)) {
+          for (let i = 0; i < eans.length; i += 200) {
+            const eanBatch = eans.slice(i, i + 200);
+            const eanList = eanBatch.join(",");
+            const delResp = await fetch(
+              `${SUPABASE_URL}/rest/v1/lanci_settimanali?ean=in.(${eanList})&not.and=(anno_lancio.eq.${anno},num_lancio.eq.${num})`,
+              {
+                method: "DELETE",
+                headers: { "apikey": SUPABASE_KEY, "Authorization": `Bearer ${token}`, "Content-Type": "application/json", "Prefer": "return=minimal" },
+              }
+            );
+            if (!delResp.ok) console.warn("Pulizia lanci precedenti non riuscita:", await delResp.text());
+          }
+        }
+
         for (let i = 0; i < payload.length; i += 500) {
           const batch = payload.slice(i, i + 500);
           const r = await fetch(`${SUPABASE_URL}/rest/v1/rpc/upsert_lanci`, {
