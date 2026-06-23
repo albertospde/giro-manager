@@ -289,11 +289,11 @@ function EditModal({ titolo, siblings = [], onSave, onClose, token }) {
     const payload = {};
     const editableFields = [
       "titolo","autore","editore_nome","ean","prezzo","uscita","formato","eta",
-      "account_editore","promozione","obiettivo_assegnato","obiettivo_raggiunto","posizione",
+      "account_editore","promozione","obiettivo_assegnato","obiettivo_raggiunto","posizione","ranking_editore",
       "il_triangolo","top_100","ean_gemello_1","titolo_gemello_1","ean_gemello_2",
       "titolo_gemello_2","ean_gemello_3","titolo_gemello_3","note_comunicazione","note"
     ];
-    const numFields = ["prezzo","obiettivo_assegnato","obiettivo_raggiunto","posizione"];
+    const numFields = ["prezzo","obiettivo_assegnato","obiettivo_raggiunto","posizione","ranking_editore"];
     editableFields.forEach(k => {
       let valForm = formFinal[k];
       let valOrig = titolo[k];
@@ -313,7 +313,7 @@ function EditModal({ titolo, siblings = [], onSave, onClose, token }) {
     }
     // Normalizza i tipi numerici prima di aggiornare lo state React
     const formNorm = { ...formFinal };
-    ["prezzo","obiettivo_assegnato","obiettivo_raggiunto","posizione"].forEach(k => {
+    ["prezzo","obiettivo_assegnato","obiettivo_raggiunto","posizione","ranking_editore"].forEach(k => {
       if (formNorm[k] !== "" && formNorm[k] != null) formNorm[k] = Number(formNorm[k]);
     });
     onSave(formNorm);
@@ -329,7 +329,7 @@ function EditModal({ titolo, siblings = [], onSave, onClose, token }) {
           <button style={css.btn()} onClick={onClose}>✕</button>
         </div>
         <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
-          {[["titolo","Titolo","full"],["autore","Autore"],["editore_nome","Editore"],["ean","EAN"],["prezzo","Prezzo"],["uscita","Uscita"],["formato","Formato"],["eta","Età"],["posizione","Posizione per editore"],["account_editore","Account"],["promozione","Promozione"],["obiettivo_assegnato","Obiettivo assegnato"],["obiettivo_raggiunto","Obiettivo raggiunto"]].map(([k, label, span]) => (
+          {[["titolo","Titolo","full"],["autore","Autore"],["editore_nome","Editore"],["ean","EAN"],["prezzo","Prezzo"],["uscita","Uscita"],["formato","Formato"],["eta","Età"],["posizione","Posizione per editore"],["ranking_editore","Ranking editore"],["account_editore","Account"],["promozione","Promozione"],["obiettivo_assegnato","Obiettivo assegnato"],["obiettivo_raggiunto","Obiettivo raggiunto"]].map(([k, label, span]) => (
             <div key={k} style={span === "full" ? { gridColumn: "1/-1" } : {}}>
               <label style={{ color: T.textMid, fontSize: "10px", letterSpacing: "0.08em", textTransform: "uppercase", display: "block", marginBottom: 4 }}>{label}</label>
               <input style={{ ...css.input, width: "100%", boxSizing: "border-box" }} value={form[k] ?? ""} onChange={set(k)} />
@@ -712,6 +712,14 @@ function ModuloCedola({ titoli, giriList, onUpdateTitolo, spalmatura, prenotato,
     }
     setSavingTitolo(true);
 
+    // Eredita il ranking_editore da un titolo già esistente dello stesso editore (per codice, poi per nome),
+    // altrimenti il nuovo titolo finisce in coda senza ranking e si "aggancia" alfabeticamente ad altri editori senza ranking.
+    const siblingConRanking = titoli.find(t => t.ranking_editore != null && (
+      (formTitolo.codice_editore && t.codice_editore === formTitolo.codice_editore) ||
+      (!formTitolo.codice_editore && t.editore_nome === formTitolo.editore_nome)
+    ));
+    const rankingEditoreEredita = siblingConRanking?.ranking_editore ?? null;
+
     // Sequenza per editore: i titoli dello stesso editore nella stessa cedola condividono la numerazione "posizione" (es. 1..15 Adelphi, 1..20 Harper).
     const gruppoCedola = titoli.filter(t => t.giro_label === formTitolo.giro_label && t.n_cedola === formTitolo.n_cedola && t.editore_nome === formTitolo.editore_nome);
     const maxPos = gruppoCedola.reduce((m, t) => Math.max(m, t.posizione || 0), 0);
@@ -734,6 +742,7 @@ function ModuloCedola({ titoli, giriList, onUpdateTitolo, spalmatura, prenotato,
       autore: formTitolo.autore || null,
       editore_nome: formTitolo.editore_nome || null,
       codice_editore: formTitolo.codice_editore || null,
+      ranking_editore: rankingEditoreEredita,
       prezzo: parseFloat(String(formTitolo.prezzo).replace(",", ".")) || null,
       uscita: formTitolo.uscita || null,
       formato: formTitolo.formato || "Cover",
