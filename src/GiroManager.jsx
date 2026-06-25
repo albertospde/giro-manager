@@ -1742,7 +1742,7 @@ function ModuloLanciSettimanali({ token, titoli, prenotato, canali, ruolo, userA
         const giornoUscita = r.giorno_uscita_override || giornoCalcolato;
         const isOverride = !!r.giorno_uscita_override;
 
-        const deltaPortale = prenFineGiro - teorico;
+        const deltaPortale = teorico - prenFineGiro;
 
         return {
           ...r,
