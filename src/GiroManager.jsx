@@ -2,6 +2,7 @@ import { useState, useEffect, useMemo, useCallback } from "react";
 import ModuloImport from "./ModuloImport.jsx";
 import ModuloPrenotato from "./ModuloPrenotato.jsx";
 import ModuloAvanzamento from "./ModuloAvanzamento.jsx";
+import ModuloCaricoSemplice from "./ModuloCaricoSemplice.jsx";
 
 const SUPABASE_URL = "https://tdflwenlylhctxssatax.supabase.co";
 const SUPABASE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InRkZmx3ZW5seWxoY3R4c3NhdGF4Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzYzMzgyNzYsImV4cCI6MjA5MTkxNDI3Nn0.l35qEL7LOvyYuI1McQlVqj4vbyTqmlevcmqWbTGYi2Q";
@@ -642,6 +643,7 @@ function ModuloCedola({ titoli, giriList, onUpdateTitolo, spalmatura, prenotato,
   const [sortKey, setSortKey] = useState("n_cedola");
   const [showNuovoGiro, setShowNuovoGiro] = useState(false);
   const [showNuovoTitolo, setShowNuovoTitolo] = useState(false);
+  const [showCaricoSemplice, setShowCaricoSemplice] = useState(false);
   const [toastCedola, setToastCedola] = useState(null);
   const showToastCedola = (msg, type = "ok") => { setToastCedola({ msg, type }); setTimeout(() => setToastCedola(null), 3000); };
 
@@ -984,6 +986,18 @@ function ModuloCedola({ titoli, giriList, onUpdateTitolo, spalmatura, prenotato,
         </div>
       )}
 
+      {/* MODAL CARICO SEMPLICE */}
+      {showCaricoSemplice && (
+        <ModuloCaricoSemplice
+          giriList={giriList}
+          titoliEsistenti={titoli}
+          token={token}
+          onClose={() => setShowCaricoSemplice(false)}
+          onImportDone={() => { onTitoliChange && onTitoliChange(); }}
+        />
+      )}
+
+
       {/* TOAST LOCALE */}
       {toastCedola && (
         <div style={{ position: "fixed", bottom: 24, left: "50%", transform: "translateX(-50%)", background: toastCedola.type === "err" ? "#4a1a2a" : "#1a3a2a", border: `1px solid ${toastCedola.type === "err" ? T.red : T.green}`, color: toastCedola.type === "err" ? T.red : T.green, borderRadius: 6, padding: "8px 20px", fontSize: "12px", zIndex: 999, boxShadow: "0 4px 20px #0008" }}>
@@ -1010,6 +1024,7 @@ function ModuloCedola({ titoli, giriList, onUpdateTitolo, spalmatura, prenotato,
         {ruolo !== "agente" && <>
           <button style={{ ...css.btn(), borderColor: T.green, color: T.green }} onClick={() => setShowNuovoGiro(true)}>+ Giro</button>
           <button style={{ ...css.btn(), borderColor: T.green, color: T.green }} onClick={() => setShowNuovoTitolo(true)}>+ Titolo</button>
+          <button style={{ ...css.btn(), borderColor: T.accent, color: T.accent }} onClick={() => setShowCaricoSemplice(true)}>+ Carico</button>
         </>}
         <button style={css.btn("accent")} onClick={exportAgenti}>↓ Download Agenti</button>
         {ruolo !== "agente" && <button style={css.btn("accent")} onClick={exportDirezionale}>↓ Download Direzionali</button>}
