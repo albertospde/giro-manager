@@ -136,7 +136,7 @@ export default function ModuloAvanzamento({ titoli, prenotato, canali, token, ru
   const [manualForm, setManualForm] = useState({ ean: "", titolo: "", autore: "", editore: "", prezzo: "", num_lancio: "", copie_lanciate: "", valore_lancio: "", data_messa_in_vendita: "" });
   const [filterAnno, setFilterAnno] = useState(new Date().getFullYear());
   const [filterAnnoLancio, setFilterAnnoLancio] = useState(null);
-  const [filterEditore, setFilterEditore] = useState("tutti");
+  const [filterEditori, setFilterEditori] = useState([]);
   const [filterAccount, setFilterAccount] = useState([]);
   useEffect(() => { if (ruolo === 'agente' && userAccount) { setFilterAccount([userAccount]); } }, [ruolo, userAccount]);
   const [filterNumLancio, setFilterNumLancio] = useState([]);
@@ -412,6 +412,19 @@ export default function ModuloAvanzamento({ titoli, prenotato, canali, token, ru
     return [...s].sort((a, b) => b - a);
   }, [novitaArricchite]);
 
+  // Anni "lanci" calcolati SOLO da data_messa_in_vendita (coerenti col filtro che li usa)
+  const anniDisponibiliLanci = useMemo(() => {
+    const s = new Set();
+    novitaArricchite.forEach(n => {
+      if (n.data_messa_in_vendita) {
+        const match = String(n.data_messa_in_vendita).match(/^(\d{4})/);
+        if (match) s.add(Number(match[1]));
+      }
+    });
+    s.add(new Date().getFullYear());
+    return [...s].sort((a, b) => b - a);
+  }, [novitaArricchite]);
+
   const getAnnoRecord = (n) => {
     if (n.giro_label && n.giro_label !== "EXTRA") {
       const parts = n.giro_label.split(" ");
@@ -446,7 +459,7 @@ export default function ModuloAvanzamento({ titoli, prenotato, canali, token, ru
         const match = String(n.data_messa_in_vendita).match(/^(\d{4})/);
         return match && Number(match[1]) === Number(filterAnnoLancio);
       })
-      .filter(n => filterEditore === "tutti" || n.editore === filterEditore)
+      .filter(n => filterEditori.length === 0 || filterEditori.includes(n.editore))
       .filter(n => filterAccount.length === 0 || filterAccount.includes(n.account_editore))
       .filter(n => filterNumLancio.length === 0 || filterNumLancio.includes(String(n.num_lancio)))
       .filter(n => filterCedole.length === 0 || filterCedole.includes(n.nome_cedola))
@@ -494,7 +507,7 @@ export default function ModuloAvanzamento({ titoli, prenotato, canali, token, ru
       else if (sortKey === "risposta_editore") cmp = (a.risposta_editore || "").localeCompare(b.risposta_editore || "");
       return sortDir === "asc" ? cmp : -cmp;
     });
-  }, [novitaArricchite, filterAnno, filterAnnoLancio, filterEditore, filterAccount, filterNumLancio, filterCedole, filterGiri, filterMesi, filterDataVendita, filterCopieLanciate, search, sortKey, sortDir]);
+  }, [novitaArricchite, filterAnno, filterAnnoLancio, filterEditori, filterAccount, filterNumLancio, filterCedole, filterGiri, filterMesi, filterDataVendita, filterCopieLanciate, search, sortKey, sortDir]);
 
   const editoriList = useMemo(() => [...new Set(novitaArricchite.map(n => n.editore).filter(Boolean))].sort(), [novitaArricchite]);
   const numLanciList = useMemo(() => [...new Set(novitaArricchite.map(n => n.num_lancio).filter(Boolean))].sort((a, b) => Number(a) - Number(b)), [novitaArricchite]);
@@ -868,9 +881,9 @@ export default function ModuloAvanzamento({ titoli, prenotato, canali, token, ru
           </select>
           <select style={{ ...css.input, fontSize: "14px", fontWeight: "600", color: T.purple }} value={filterAnnoLancio || ""} onChange={e => setFilterAnnoLancio(e.target.value ? Number(e.target.value) : null)} title="Anno lanci (data fatturato)">
             <option value="">— Anno lanci —</option>
-            {anniDisponibili.map(a => <option key={a} value={a}>{a}</option>)}
+            {anniDisponibiliLanci.map(a => <option key={a} value={a}>{a}</option>)}
           </select>
-          <SearchableMultiSelect values={filterEditore === "tutti" ? [] : [filterEditore]} onChange={v => setFilterEditore(v.length > 0 ? v[0] : "tutti")} options={editoriList} placeholder="Tutti gli editori" width={190} />
+          <SearchableMultiSelect values={filterEditori} onChange={setFilterEditori} options={editoriList} placeholder="Tutti gli editori" width={190} />
           {ruolo !== "agente" && <SearchableMultiSelect values={filterAccount} onChange={setFilterAccount} options={[...new Set(novitaArricchite.map(n => n.account_editore).filter(Boolean))].sort()} placeholder="Tutti gli account" width={160} />}
           <SearchableMultiSelect values={filterNumLancio} onChange={setFilterNumLancio} options={numLanciList.map(String)} placeholder="Tutti i lanci" width={150} />
           <SearchableMultiSelect values={filterGiri} onChange={setFilterGiri} options={giriList} placeholder="Tutti i giri" width={160} />
