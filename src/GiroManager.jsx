@@ -649,6 +649,17 @@ function ModuloCedola({ titoli, giriList, onUpdateTitolo, spalmatura, prenotato,
   const [editingObjId, setEditingObjId] = useState(null);
   const [objInputValue, setObjInputValue] = useState("");
   const [savingObjId, setSavingObjId] = useState(null);
+  const [savingTop100Id, setSavingTop100Id] = useState(null);
+
+  const toggleTop100 = async (t) => {
+    setSavingTop100Id(t.id);
+    const nuovoValore = !t.top_100;
+    const ok = await sbUpdateTitolo(t.id, { top_100: nuovoValore }, token);
+    setSavingTop100Id(null);
+    if (!ok) { showToastCedola("Errore nell'aggiornamento Top 100", "err"); return; }
+    onUpdateTitolo({ ...t, top_100: nuovoValore });
+    showToastCedola(nuovoValore ? "Aggiunto a Top 100" : "Rimosso da Top 100");
+  };
 
   const startEditObj = (t) => { setEditingObjId(t.id); setObjInputValue(t.obiettivo_assegnato ?? ""); };
   const cancelEditObj = () => { setEditingObjId(null); setObjInputValue(""); };
@@ -842,11 +853,24 @@ function ModuloCedola({ titoli, giriList, onUpdateTitolo, spalmatura, prenotato,
     return Math.round(titolo.obiettivo_assegnato * spRow.percentuale);
   };
 
+  // Costruisce un foglio nello stesso formato del template ufficiale di import:
+  // riga 1 = titolo (merge), riga 2 = legenda (merge), riga 3 = intestazioni, dati da riga 4.
+  const buildTemplateSheet = (XLSX, title, legend, headers, rows) => {
+    const ws = XLSX.utils.aoa_to_sheet([[title], [legend], headers, ...rows]);
+    ws["!merges"] = [
+      { s: { r: 0, c: 0 }, e: { r: 0, c: headers.length - 1 } },
+      { s: { r: 1, c: 0 }, e: { r: 1, c: headers.length - 1 } },
+    ];
+    ws["!cols"] = headers.map(h => ({ wch: Math.max(12, Math.min(32, h.length + 4)) }));
+    ws["!rows"] = [{ hpt: 22 }, { hpt: 16 }, { hpt: 26 }];
+    return ws;
+  };
+
   const exportAgenti = () => {
     const XLSX = window.XLSX;
     const headers = ["N° CEDOLA","EAN","TITOLO","AUTORE","COD.EDITORE","EDITORE","PREZZO","USCITA","NOTE","EAN GEM 1","TITOLO GEM 1","EAN GEM 2","TITOLO GEM 2","EAN GEM 3","TITOLO GEM 3","OBJ INDIPENDENTI & ALTRE CATENE"];
     const rows = filtered.map(t => [t.n_cedola, t.ean, t.titolo, t.autore, t.codice_editore, t.editore_nome, t.prezzo, t.uscita, t.note_comunicazione || t.note, t.ean_gemello_1, t.titolo_gemello_1, t.ean_gemello_2, t.titolo_gemello_2, t.ean_gemello_3, t.titolo_gemello_3, getObjCanale(t, 'INDIPENDENTI_ALTRE_CATENE')]);
-    const ws = XLSX.utils.aoa_to_sheet([headers, ...rows]);
+    const ws = buildTemplateSheet(XLSX, "CEDOLA AGENTI — GIRO " + (giroLabelSel.length === 0 ? "TUTTI" : giroLabelSel.join(", ")), "Esportazione dati cedola per la rete agenti", headers, rows);
     const wb = XLSX.utils.book_new(); XLSX.utils.book_append_sheet(wb, ws, "CEDOLA AGENTI");
     XLSX.writeFile(wb, `CEDOLA_AGENTI_${giroLabelSel.length === 0 ? "TUTTI" : giroLabelSel.join("-")}.xlsx`);
   };
@@ -854,14 +878,31 @@ function ModuloCedola({ titoli, giriList, onUpdateTitolo, spalmatura, prenotato,
   const exportDirezionale = () => {
     const XLSX = window.XLSX;
     const canaliDir = [{ codice: 'FELTRINELLI', label: 'Feltrinelli' },{ codice: 'GIUNTI', label: 'Giunti' },{ codice: 'MONDADORI', label: 'Mondadori' },{ codice: 'UBIK', label: 'Ubik' },{ codice: 'INDIPENDENTI_ALTRE_CATENE', label: 'Indip. & Altre Catene' },{ codice: 'AMAZON', label: 'Amazon' },{ codice: 'IBS', label: 'IBS' },{ codice: 'ALTRI_ONLINE', label: 'Altri Online' },{ codice: 'FASTBOOK', label: 'Fastbook' },{ codice: 'GROSSISTI', label: 'Grossisti' },{ codice: 'CENTROLIBRI', label: 'Centrolibri' },{ codice: 'GDO', label: 'GDO' }];
+    const giroLabelStr = giroLabelSel.length === 0 ? "TUTTI" : giroLabelSel.join(", ");
     const headersCedola = ["N° CEDOLA","EAN","TITOLO","AUTORE","COD.EDITORE","EDITORE","PREZZO","OBJ TOTALE","NOTE","EAN GEM 1","TITOLO GEM 1","EAN GEM 2","TITOLO GEM 2","EAN GEM 3","TITOLO GEM 3"];
     const rowsCedola = filtered.map(t => [t.n_cedola, t.ean, t.titolo, t.autore, t.codice_editore, t.editore_nome, t.prezzo, t.obiettivo_assegnato || 0, t.note_comunicazione || t.note, t.ean_gemello_1, t.titolo_gemello_1, t.ean_gemello_2, t.titolo_gemello_2, t.ean_gemello_3, t.titolo_gemello_3]);
-    const wsCedola = XLSX.utils.aoa_to_sheet([headersCedola, ...rowsCedola]);
+    const wsCedola = buildTemplateSheet(XLSX, "CEDOLA DIREZIONALE — GIRO " + giroLabelStr, "Esportazione dati cedola per la direzione", headersCedola, rowsCedola);
     const headersObj = ["N° CEDOLA","EAN","TITOLO","AUTORE","COD.EDITORE","EDITORE","PREZZO","OBJ TOTALE",...canaliDir.map(c => c.label)];
     const rowsObj = filtered.map(t => [t.n_cedola, t.ean, t.titolo, t.autore, t.codice_editore, t.editore_nome, t.prezzo, t.obiettivo_assegnato || 0, ...canaliDir.map(c => getObjCanale(t, c.codice))]);
-    const wsObj = XLSX.utils.aoa_to_sheet([headersObj, ...rowsObj]);
+    const wsObj = buildTemplateSheet(XLSX, "OBIETTIVI PER CANALE — GIRO " + giroLabelStr, "Ripartizione obiettivi per canale di vendita", headersObj, rowsObj);
     const wb = XLSX.utils.book_new(); XLSX.utils.book_append_sheet(wb, wsCedola, "CEDOLA"); XLSX.utils.book_append_sheet(wb, wsObj, "OBIETTIVI");
     XLSX.writeFile(wb, `CEDOLA_DIREZIONALE_${giroLabelSel.length === 0 ? "TUTTI" : giroLabelSel.join("-")}.xlsx`);
+  };
+
+  // Export nello stesso identico formato del template di import (foglio "CEDOLA", colonne nell'ordine
+  // atteso da ModuloImport/COL_MAP), così il file scaricato può essere modificato e ricaricato direttamente.
+  const exportTemplateRicaricabile = () => {
+    const XLSX = window.XLSX;
+    const headers = ["GIRO","EAN","TITOLO","AUTORE","EDITORE","PREZZO","USCITA","OBIETTIVO","TOP 100","PROMOZIONE","NOTE","EAN GEMELLO 1","TITOLO GEMELLO 1","EAN GEMELLO 2","TITOLO GEMELLO 2","EAN GEMELLO 3","TITOLO GEMELLO 3"];
+    const rows = filtered.map(t => [
+      t.giro_label === "EXTRA" ? "" : t.giro_label,
+      t.ean, t.titolo, t.autore, t.editore_nome, t.prezzo, t.uscita,
+      t.obiettivo_assegnato || "", t.top_100 ? "SI" : "", t.promozione || "", t.note_comunicazione || t.note || "",
+      t.ean_gemello_1, t.titolo_gemello_1, t.ean_gemello_2, t.titolo_gemello_2, t.ean_gemello_3, t.titolo_gemello_3,
+    ]);
+    const ws = buildTemplateSheet(XLSX, "TEMPLATE CEDOLA GIRO — NON MODIFICARE LE INTESTAZIONI", "Colonne obbligatorie: GIRO, EAN, TITOLO, EDITORE, PREZZO • file ricaricabile da \"Carica con Template\"", headers, rows);
+    const wb = XLSX.utils.book_new(); XLSX.utils.book_append_sheet(wb, ws, "CEDOLA");
+    XLSX.writeFile(wb, `TEMPLATE_CEDOLA_${giroLabelSel.length === 0 ? "TUTTI" : giroLabelSel.join("-")}.xlsx`);
   };
 
   if (giroLabelSel.length === 0 && extraSel.length === 0) {
@@ -1013,6 +1054,7 @@ function ModuloCedola({ titoli, giriList, onUpdateTitolo, spalmatura, prenotato,
         </>}
         <button style={css.btn("accent")} onClick={exportAgenti}>↓ Download Agenti</button>
         {ruolo !== "agente" && <button style={css.btn("accent")} onClick={exportDirezionale}>↓ Download Direzionali</button>}
+        {ruolo !== "agente" && <button style={{ ...css.btn(), borderColor: T.blue, color: T.blue }} onClick={exportTemplateRicaricabile} title="Genera un file nello stesso formato del template di import, ricaricabile direttamente">↓ Template ricaricabile</button>}
         <a href="https://lafeltrinelli.sharepoint.com/:f:/s/PDE/IgD7OJj1nZrhTKrDAVfuqOc3AQQaTrH4gMuXZT7Ob6Fbm2w?e=mEDMdm" target="_blank" rel="noopener noreferrer" style={{ ...css.btn(), borderColor: "#9c6fcf", color: "#9c6fcf", textDecoration: "none" }}>📄 PDF & Materiali</a>
       </div>
       <div style={{ flex: 1, overflowY: "auto" }}>
@@ -1024,7 +1066,7 @@ function ModuloCedola({ titoli, giriList, onUpdateTitolo, spalmatura, prenotato,
               <th style={css.th}>EAN</th><th style={css.th}>Titolo</th><th style={css.th}>Autore</th><th style={css.th}>Cod.Ed.</th>
               <th style={css.th} onClick={() => setSortKey("editore")}>Editore{sortKey === "editore" ? " ↓" : ""}</th>
               <th style={css.th} onClick={() => setSortKey("prezzo")}>€{sortKey === "prezzo" ? " ↓" : ""}</th>
-              <th style={css.th}>Obj</th><th style={css.th}>Flag</th><th style={css.th}>Gemelli</th><th style={css.th}>Note</th><th style={css.th}></th>
+              <th style={css.th}>Obj</th><th style={css.th}>Top 100</th><th style={css.th}>Gemelli</th><th style={css.th}>Note</th><th style={css.th}></th>
             </tr>
           </thead>
           <tbody>
@@ -1073,7 +1115,35 @@ function ModuloCedola({ titoli, giriList, onUpdateTitolo, spalmatura, prenotato,
                   })()}
                 </td>
 
-                <td style={css.td}><div style={{ display: "flex", gap: 4 }}>{t.il_triangolo && <Badge label="▲" color={T.purple} />}{t.top_100 && <Badge label="★" color={T.accent} />}</div></td>
+                <td style={css.td}>
+                  <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                    {t.il_triangolo && <Badge label="▲" color={T.purple} />}
+                    {ruolo !== "agente" ? (
+                      <button
+                        title={t.top_100 ? "Rimuovi da Top 100" : "Aggiungi a Top 100"}
+                        onClick={() => toggleTop100(t)}
+                        disabled={savingTop100Id === t.id}
+                        style={{
+                          background: t.top_100 ? T.accent + "22" : "transparent",
+                          border: `1px solid ${t.top_100 ? T.accent : T.border}`,
+                          borderRadius: 4,
+                          color: t.top_100 ? T.accent : T.textMid,
+                          cursor: savingTop100Id === t.id ? "default" : "pointer",
+                          fontSize: "11px",
+                          padding: "2px 7px",
+                          display: "flex",
+                          alignItems: "center",
+                          gap: 4,
+                          opacity: savingTop100Id === t.id ? 0.6 : 1,
+                        }}
+                      >
+                        {t.top_100 ? "★" : "☆"} {savingTop100Id === t.id ? "..." : ""}
+                      </button>
+                    ) : (
+                      t.top_100 && <Badge label="★" color={T.accent} />
+                    )}
+                  </div>
+                </td>
                 <td style={css.td}>{t.ean_gemello_1 && <div style={{ fontSize: "10px", color: T.textMid }}><div>{t.ean_gemello_1}</div>{t.ean_gemello_2 && <div>{t.ean_gemello_2}</div>}{t.ean_gemello_3 && <div>{t.ean_gemello_3}</div>}</div>}</td>
                 <td style={{ ...css.td, maxWidth: 160 }}>{(t.note || t.note_comunicazione) && <div style={{ fontSize: "11px", color: T.textMid, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", maxWidth: 150 }} title={t.note_comunicazione || t.note}>{t.note_comunicazione || t.note}</div>}</td>
                 <td style={css.td}><button style={{ ...css.btn(), padding: "3px 9px", fontSize: "11px" }} onClick={() => setEditingId(t.id)}>Edit</button></td>
