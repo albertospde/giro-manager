@@ -2038,10 +2038,9 @@ if (!r.ok) throw new Error(await r.text());
   // Export Excel
   const exportExcel = () => {
     const XLSX = window.XLSX;
-    const headers = ["N. LANCIO","EAN","COD.ED.","EDITORE","ACCOUNT","TITOLO","AUTORE","PREZZO","CEDOLE","F.G.","P.O. MELI","AMAZON","TOT. TEORICO","FG VS TOT.TEORICO","GIORNO USCITA"];
+    const headers = ["LANCIO","CEDOLA","EAN","TITOLO","AUTORE","COD.EDITORE","EDITORE","PREZZO","F.G.","P.O. MELI","AMAZON","TOT.TEORICO","FG VS TOT","GIORNO USCITA"];
     const rows = dataFiltrata.map(r => [
-      r.num_lancio, r.ean, r.codice_editore, r.editore, r.account_editore || "", r.titolo, r.autore, r.prezzo,
-      r.cedole.join(", "), r.prenotato_iscrizione,
+      r.num_lancio, r.cedole.join(", "), r.ean, r.titolo, r.autore, r.codice_editore, r.editore, r.prezzo,
       r.pren_fine_giro, r.prenotato_trasmesso ?? "", r.pren_amazon, r.teorico, r.delta_portale, r.giorno_uscita
     ]);
     // Riepilogo editori
