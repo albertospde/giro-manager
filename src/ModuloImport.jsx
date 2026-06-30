@@ -55,22 +55,6 @@ async function fetchAnagraficaEditori(token) {
   return map;
 }
 
-// ─── Fetch posizioni esistenti per gruppo giro_label+editore (continua la numerazione) ──
-async function fetchPosizioniEsistenti(token) {
-  const res = await fetch(
-    `${SUPABASE_URL}/rest/v1/titoli?select=giro_label,editore_nome,posizione`,
-    { headers: { "apikey": SUPABASE_KEY, "Authorization": `Bearer ${token}`, "Accept": "application/json", "Range-Unit": "items", "Range": "0-499999" } }
-  );
-  if (!res.ok) { console.error("Fetch posizioni fallita:", res.status); return {}; }
-  const data = await res.json();
-  const max = {};
-  data.forEach(({ giro_label, editore_nome, posizione }) => {
-    const key = `${giro_label ?? ""}|${String(editore_nome ?? "").trim().toUpperCase()}`;
-    if (posizione && (!(key in max) || posizione > max[key])) max[key] = posizione;
-  });
-  return max;
-}
-
 // ─── Risolvi (o crea) il giro_id per ogni combinazione numero+anno+categoria presente ──
 // Usa il vincolo UNIQUE(numero, anno, sub_giro) della tabella giri per upsert idempotente.
 async function resolveGiri(token, combos) {
@@ -117,12 +101,8 @@ export default function ModuloImport({ token, onImportDone }) {
     setLoadingFile(true);
 
     let anagraficaMap = {};
-    let posizioniMax = {};
     try {
-      [anagraficaMap, posizioniMax] = await Promise.all([
-        fetchAnagraficaEditori(token),
-        fetchPosizioniEsistenti(token),
-      ]);
+      anagraficaMap = await fetchAnagraficaEditori(token);
     } catch (err) {
       alert("Impossibile caricare l'anagrafica editori dal database: " + err.message + "\nRiprova; se l'errore persiste, controlla la sessione/login.");
       setLoadingFile(false);
@@ -198,10 +178,12 @@ export default function ModuloImport({ token, onImportDone }) {
           obj.il_triangolo = null;
           obj.note_comunicazione = null;
 
-          // Posizione: sequenziale nell'ordine delle righe del file, per gruppo giro+editore.
-          // Continua dal massimo già presente in DB (vedi COALESCE lato RPC).
+          // Posizione: sequenziale nell'ordine delle righe del file, per gruppo giro+editore,
+          // sempre ripartendo da 1. Un titolo già presente mantiene la stessa posizione se l'ordine
+          // nel file non cambia; se inserisci una riga sopra di lui, si sposta di conseguenza
+          // (la RPC sovrascrive sempre la posizione con questo valore, vedi upsert_titoli).
           const keyGruppo = `${obj.giro_label ?? ""}|${nome}`;
-          if (!(keyGruppo in contatori)) contatori[keyGruppo] = posizioniMax[keyGruppo] || 0;
+          if (!(keyGruppo in contatori)) contatori[keyGruppo] = 0;
           contatori[keyGruppo] += 1;
           obj.posizione = contatori[keyGruppo];
 
