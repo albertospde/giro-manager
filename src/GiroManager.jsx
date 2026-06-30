@@ -855,8 +855,12 @@ function ModuloCedola({ titoli, giriList, onUpdateTitolo, spalmatura, prenotato,
 
   // Costruisce un foglio nello stesso formato del template ufficiale di import:
   // riga 1 = titolo (merge), riga 2 = legenda (merge), riga 3 = intestazioni, dati da riga 4.
+  // Replica ESATTAMENTE la struttura del template ufficiale di import (4 righe prima dei dati:
+  // titolo, legenda, intestazioni, riga vuota di separazione) — ModuloImport legge i dati da riga 5
+  // (data.slice(4)), quindi questa riga vuota è obbligatoria o la prima riga di dati viene scartata.
   const buildTemplateSheet = (XLSX, title, legend, headers, rows) => {
-    const ws = XLSX.utils.aoa_to_sheet([[title], [legend], headers, ...rows]);
+    const blankRow = headers.map(() => "");
+    const ws = XLSX.utils.aoa_to_sheet([[title], [legend], headers, blankRow, ...rows]);
     ws["!merges"] = [
       { s: { r: 0, c: 0 }, e: { r: 0, c: headers.length - 1 } },
       { s: { r: 1, c: 0 }, e: { r: 1, c: headers.length - 1 } },
