@@ -1438,34 +1438,36 @@ function ModuloFineGiro({ titoli, prenotato, canali, token, ruolo, spalmatura, u
 
     // Foglio DETTAGLIO PRENOTATO: dettaglio per punto vendita (come il file caricato)
     const titoloIds = righeFiltrate.map(({ titolo: t }) => t.id);
-    let dettaglioRows = [["LIBRERIA", "COD. CLIENTE", "EAN", "TITOLO", "QUANTITÀ"]];
+    let dettaglioRows = [["LIBRERIA", "COD. CLIENTE", "EAN", "TITOLO", "CANALE", "QUANTITÀ"]];
     if (titoloIds.length > 0) {
       try {
         const res = await fetch(
-          `${SUPABASE_URL}/rest/v1/prenotato_clienti?titolo_id=in.(${titoloIds.join(",")})&select=codice_cliente,nome_cliente,titolo_id,quantita&limit=100000`,
+          `${SUPABASE_URL}/rest/v1/prenotato_clienti?titolo_id=in.(${titoloIds.join(",")})&select=codice_cliente,nome_cliente,titolo_id,canale_id,quantita&limit=100000`,
           { headers: { "apikey": SUPABASE_KEY, "Authorization": `Bearer ${token}` } }
         );
         const data = await res.json();
         if (Array.isArray(data)) {
           const titoloById = {};
           righeFiltrate.forEach(({ titolo: t }) => { titoloById[t.id] = t; });
+          const canaleById = {};
+          canali.forEach(c => { canaleById[c.id] = getCanaleDisplayName(c); });
           const righe = data
             .filter(r => r.quantita > 0)
             .map(r => {
               const t = titoloById[r.titolo_id];
-              return [r.nome_cliente || "—", r.codice_cliente, t?.ean || "", t?.titolo || "", r.quantita];
+              return [r.nome_cliente || "—", r.codice_cliente, t?.ean || "", t?.titolo || "", canaleById[r.canale_id] || "—", r.quantita];
             })
             .sort((a, b) => a[0].localeCompare(b[0], "it", { sensitivity: "base" }));
-          const totQta = righe.reduce((s, r) => s + r[4], 0);
+          const totQta = righe.reduce((s, r) => s + r[5], 0);
           dettaglioRows = dettaglioRows.concat(righe);
-          dettaglioRows.push(["", "", "", "TOTALE", totQta]);
+          dettaglioRows.push(["", "", "", "", "TOTALE", totQta]);
         }
       } catch (e) {
         console.error("Errore fetch dettaglio prenotato:", e);
       }
     }
     const wsDettaglio = XLSX.utils.aoa_to_sheet(dettaglioRows);
-    wsDettaglio["!cols"] = [{ wch: 35 }, { wch: 14 }, { wch: 15 }, { wch: 40 }, { wch: 12 }];
+    wsDettaglio["!cols"] = [{ wch: 35 }, { wch: 14 }, { wch: 15 }, { wch: 40 }, { wch: 20 }, { wch: 12 }];
 
     const wb = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(wb, ws, "FINE GIRO");
