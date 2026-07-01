@@ -1997,6 +1997,16 @@ function ModuloLanciSettimanali({ token, titoli, prenotato, canali, ruolo, userA
             );
             if (!delResp.ok) console.warn("Pulizia lanci precedenti non riuscita:", await delResp.text());
           }
+
+          // Se il file ricaricato per questo stesso lancio non contiene più
+          // alcuni EAN presenti in precedenza, quei titoli sono usciti dal
+          // lancio: li rimuoviamo (sovrascrittura completa per quel lancio).
+          const cleanupResp = await fetch(`${SUPABASE_URL}/rest/v1/rpc/cleanup_lancio_orphans`, {
+            method: "POST",
+            headers: { "apikey": SUPABASE_KEY, "Authorization": `Bearer ${token}`, "Content-Type": "application/json" },
+            body: JSON.stringify({ p_anno: anno, p_num: num, p_eans: eans }),
+          });
+          if (!cleanupResp.ok) console.warn("Pulizia titoli usciti dal lancio non riuscita:", await cleanupResp.text());
         }
 
         for (let i = 0; i < payload.length; i += 500) {
