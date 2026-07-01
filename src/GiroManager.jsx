@@ -2065,7 +2065,7 @@ if (!r.ok) throw new Error(await r.text());
           const resp = await fetch(`${SUPABASE_URL}/rest/v1/lanci_settimanali?anno_lancio=eq.${anno}&num_lancio=eq.${num}&ean=eq.${encodeURIComponent(ean)}`, {
             method: "PATCH",
             headers: { "apikey": SUPABASE_KEY, "Authorization": `Bearer ${token}`, "Content-Type": "application/json", "Prefer": "return=minimal" },
-            body: JSON.stringify({ prenotato_trasmesso: qta }),
+            body: JSON.stringify({ prenotato_trasmesso: qta, trasmesso_confermato: true }),
           });
           if (resp.ok) updated++;
         }
