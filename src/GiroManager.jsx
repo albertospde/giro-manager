@@ -2198,7 +2198,12 @@ if (!r.ok) throw new Error(await r.text());
           </thead>
           <tbody>
             {dataFiltrata.map((r, i) => (
-              <tr key={r.id || i} style={{ background: i % 2 === 0 ? "transparent" : T.surface + "66" }}>
+              <tr key={r.id || i} style={{
+                background: r.prenotato_trasmesso === 0
+                  ? T.red + "22"
+                  : (i % 2 === 0 ? "transparent" : T.surface + "66"),
+                ...(r.prenotato_trasmesso === 0 ? { boxShadow: `inset 3px 0 0 ${T.red}` } : {})
+              }}>
                 <td style={{ ...css.td, fontFamily: "monospace", fontSize: "11px", color: T.textMid }}>{r.ean}</td>
                 <td style={{ ...css.td, color: T.textMid, fontSize: "11px" }}>{r.codice_editore}</td>
                 <td style={{ ...css.td, color: T.accent, fontWeight: "600", whiteSpace: "nowrap", maxWidth: 140, overflow: "hidden", textOverflow: "ellipsis" }}>{r.editore}</td>
@@ -2242,7 +2247,7 @@ if (!r.ok) throw new Error(await r.text());
                     </div>
                   )}
                 </td>
-                <td style={{ ...css.td, fontWeight: "600" }}>
+                <td style={{ ...css.td, fontWeight: "600", color: r.prenotato_trasmesso === 0 ? T.red : "inherit" }}>
                   {r.prenotato_trasmesso != null ? r.prenotato_trasmesso.toLocaleString("it") : "—"}
                 </td>
                 <td style={{ ...css.td, fontWeight: "600" }}>
