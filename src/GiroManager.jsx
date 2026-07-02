@@ -1203,6 +1203,7 @@ function ModuloFineGiro({ titoli, prenotato, canali, token, ruolo, spalmatura, u
   const [filterEditori, setFilterEditori] = useState([]);
   const [filterAccount, setFilterAccount] = useState([]);
   useEffect(() => { if (ruolo === 'agente' && userAccount) { setFilterAccount(prev => prev.length > 0 ? prev : [userAccount]); } }, [ruolo, userAccount]);
+  const [filterPromozione, setFilterPromozione] = useState([]);
   const [filterCanale, setFilterCanale] = useState([]);
   const [search, setSearch] = useState("");
   const [sortPren, setSortPren] = useState(null); // null | "asc" | "desc"
@@ -1215,7 +1216,7 @@ function ModuloFineGiro({ titoli, prenotato, canali, token, ruolo, spalmatura, u
   const [auroraEdit, setAuroraEdit] = useState({});
   const [auroraEditing, setAuroraEditing] = useState(null);
 
-  const resetFiltri = () => { setGiroLabelSel([]); setExtraSel([]); setCedolaSel([]); setFilterEditori([]); setFilterAccount([]); setFilterCanale([]); setSearch(""); setClienteSel(null); setSoloPrenotati(false); };
+  const resetFiltri = () => { setGiroLabelSel([]); setExtraSel([]); setCedolaSel([]); setFilterEditori([]); setFilterAccount([]); setFilterPromozione([]); setFilterCanale([]); setSearch(""); setClienteSel(null); setSoloPrenotati(false); };
 
   useEffect(() => {
     if (!token) return;
@@ -1263,6 +1264,8 @@ function ModuloFineGiro({ titoli, prenotato, canali, token, ruolo, spalmatura, u
   const cedole = useMemo(() => { if (giroLabelSel.length === 0) return []; return [...new Set(titoli.filter(t => giroLabelSel.includes(t.giro_label)).map(t => t.n_cedola).filter(Boolean))].sort(); }, [titoli, giroLabelSel]);
   const editori = useMemo(() => { const t = giroLabelSel.length > 0 ? titoli.filter(t => giroLabelSel.includes(t.giro_label)) : extraSel.length > 0 ? titoli.filter(t => t.giro_label === "EXTRA" && extraSel.includes(t.n_cedola)) : []; return [...new Set(t.map(t => t.editore_nome).filter(Boolean))].sort(); }, [titoli, giroLabelSel, extraSel]);
   const accounts = useMemo(() => { const t = giroLabelSel.length > 0 ? titoli.filter(t => giroLabelSel.includes(t.giro_label)) : extraSel.length > 0 ? titoli.filter(t => t.giro_label === "EXTRA" && extraSel.includes(t.n_cedola)) : []; return [...new Set(t.map(t => t.account_editore).filter(Boolean))].sort(); }, [titoli, giroLabelSel, extraSel]);
+  const normPromo = p => p ? p.trim().toUpperCase() : p;
+  const promozioni = useMemo(() => { const t = giroLabelSel.length > 0 ? titoli.filter(t => giroLabelSel.includes(t.giro_label)) : extraSel.length > 0 ? titoli.filter(t => t.giro_label === "EXTRA" && extraSel.includes(t.n_cedola)) : []; return [...new Set(t.map(t => normPromo(t.promozione)).filter(Boolean))].sort(); }, [titoli, giroLabelSel, extraSel]);
 
   const titoliSel = useMemo(() => {
     if (giroLabelSel.length === 0 && extraSel.length === 0) return [];
@@ -1271,9 +1274,10 @@ function ModuloFineGiro({ titoli, prenotato, canali, token, ruolo, spalmatura, u
       .filter(t => cedolaSel.length === 0 || cedolaSel.includes(t.n_cedola))
       .filter(t => filterEditori.length === 0 || filterEditori.includes(t.editore_nome))
       .filter(t => filterAccount.length === 0 || filterAccount.includes(t.account_editore))
+      .filter(t => filterPromozione.length === 0 || filterPromozione.includes(normPromo(t.promozione)))
       .filter(t => { if (!search) return true; const q = search.toLowerCase(); return t.titolo?.toLowerCase().includes(q) || t.ean?.includes(q); })
       .sort((a, b) => (a.ranking_editore ?? 99) - (b.ranking_editore ?? 99) || (a.ranking_titolo ?? 99) - (b.ranking_titolo ?? 99));
-  }, [titoli, giroLabelSel, extraSel, cedolaSel, filterEditori, filterAccount, search]);
+  }, [titoli, giroLabelSel, extraSel, cedolaSel, filterEditori, filterAccount, filterPromozione, search]);
 
   const macrogruppiVis = ruolo === "agente" ? MACROGRUPPI.filter(mg => mg.id === "RETE" || mg.id === "GROSSISTI") : MACROGRUPPI;
 
@@ -1515,16 +1519,17 @@ function ModuloFineGiro({ titoli, prenotato, canali, token, ruolo, spalmatura, u
     <div style={{ display: "flex", flexDirection: "column", height: "100%", overflow: "hidden" }}>
       {/* Toolbar filtri */}
       <div style={{ padding: "12px 20px", borderBottom: `1px solid ${T.border}`, display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap" }}>
-        <SearchableMultiSelect values={filterAnnoFineGiro.map(String)} onChange={v => { setFilterAnnoFineGiro(v.map(Number)); setGiroLabelSel([]); setExtraSel([]); setCedolaSel([]); setFilterEditori([]); setFilterAccount([]); setFilterCanale([]); setSearch(""); setClienteSel(null); setSoloPrenotati(false); }} options={anniDispFineGiro.map(String)} renderOption={v => v} placeholder="Anno" width={110} />
-        <SearchableMultiSelect values={giroLabelSel} onChange={v => { setGiroLabelSel(v); setExtraSel([]); setCedolaSel([]); setFilterEditori([]); setFilterAccount([]); setFilterCanale([]); setSearch(""); setClienteSel(null); setSoloPrenotati(false); }} options={giriLabel} placeholder="— Giro —" width={160} renderOption={g => `Giro ${g}`} />
+        <SearchableMultiSelect values={filterAnnoFineGiro.map(String)} onChange={v => { setFilterAnnoFineGiro(v.map(Number)); setGiroLabelSel([]); setExtraSel([]); setCedolaSel([]); setFilterEditori([]); setFilterAccount([]); setFilterPromozione([]); setFilterCanale([]); setSearch(""); setClienteSel(null); setSoloPrenotati(false); }} options={anniDispFineGiro.map(String)} renderOption={v => v} placeholder="Anno" width={110} />
+        <SearchableMultiSelect values={giroLabelSel} onChange={v => { setGiroLabelSel(v); setExtraSel([]); setCedolaSel([]); setFilterEditori([]); setFilterAccount([]); setFilterPromozione([]); setFilterCanale([]); setSearch(""); setClienteSel(null); setSoloPrenotati(false); }} options={giriLabel} placeholder="— Giro —" width={160} renderOption={g => `Giro ${g}`} />
         {cedoleExtra.length > 0 && (
-          <SearchableMultiSelect values={extraSel} onChange={v => { setExtraSel(v); setGiroLabelSel([]); setCedolaSel([]); setFilterEditori([]); setFilterAccount([]); setFilterCanale([]); setSearch(""); setClienteSel(null); setSoloPrenotati(false); }} options={cedoleExtra} placeholder="Cedole Extra" width={170} />
+          <SearchableMultiSelect values={extraSel} onChange={v => { setExtraSel(v); setGiroLabelSel([]); setCedolaSel([]); setFilterEditori([]); setFilterAccount([]); setFilterPromozione([]); setFilterCanale([]); setSearch(""); setClienteSel(null); setSoloPrenotati(false); }} options={cedoleExtra} placeholder="Cedole Extra" width={170} />
         )}
         {giroLabelSel.length > 0 && (
           <SearchableMultiSelect values={cedolaSel} onChange={setCedolaSel} options={cedole} placeholder="Tutte le cedole" width={160} />
         )}
         <SearchableMultiSelect values={filterEditori} onChange={setFilterEditori} options={editori} placeholder="Tutti gli editori" width={190} />
         <SearchableMultiSelect values={filterAccount} onChange={setFilterAccount} options={accounts} placeholder="Tutti gli account" width={160} />
+        <SearchableMultiSelect values={filterPromozione} onChange={setFilterPromozione} options={promozioni} renderOption={p => p === "PDE SERVICE" ? "PDE Service" : p === "0" ? "Nessuna" : "PDE Promozione"} placeholder="Tutte le promozioni" width={170} />
         <SearchableMultiSelect values={filterCanale} onChange={setFilterCanale} options={canali.filter(c => c.codice !== "AURORA" && c.codice !== "GDO").map(c => c.codice)} renderOption={cod => { const c = canali.find(x => x.codice === cod); return c?.nome || cod; }} placeholder="Tutti i canali" width={170} />
         <input style={{ ...css.input, width: 160 }} placeholder="Cerca EAN / titolo..." value={search} onChange={e => setSearch(e.target.value)} />
         {(filterCanale.length > 0 || clienteSel) && (
