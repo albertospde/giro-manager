@@ -1343,7 +1343,7 @@ function ModuloFineGiro({ titoli, prenotato, canali, token, ruolo, spalmatura, u
     const byCanale = {};
     // AURORA da upload va in byCanale normalmente (dentro Grossisti)
     pren.forEach(p => { const c = canali.find(c => c.id === p.canale_id); if (c) byCanale[c.codice] = p.quantita; });
-    // Dir. Stampatore: valore editabile manuale, separato
+    // Dir. Stampatore"/"Fuori lancio: valore editabile manuale, separato
     const dirStampatore = ruolo !== "agente" ? (auroraEdit[t.id] || 0) : 0;
     if (ruolo === "agente") {
       const totRete = CANALI_RETE.reduce((s, cod) => s + (byCanale[cod] || 0), 0);
@@ -1411,7 +1411,7 @@ function ModuloFineGiro({ titoli, prenotato, canali, token, ruolo, spalmatura, u
   const exportExcel = async () => {
     const XLSX = window.XLSX;
     const colCanali = canaliTabella;
-    const dirStampHeaders = ruolo !== "agente" ? ["DIR. STAMPATORE"] : [];
+    const dirStampHeaders = ruolo !== "agente" ? ["DIR. STAMPATORE"/"Fuori lancio"] : [];
     const headers = ["N° CEDOLA","EAN","TITOLO","AUTORE","COD.EDITORE","EDITORE","PREZZO","OBJ ASS.","PRENOTATO","AVANZ %",...colCanali.map(c => getCanaleDisplayName(c)),...dirStampHeaders];
     const rows = righeFiltrate.map(({ titolo: t, totPren, byCanale, dirStampatore }) => {
       const pct = t.obiettivo_assegnato > 0 ? Math.round(totPren / t.obiettivo_assegnato * 100) : 0;
@@ -1632,7 +1632,7 @@ function ModuloFineGiro({ titoli, prenotato, canali, token, ruolo, spalmatura, u
               <th style={css.th}>Autore</th><th style={css.th}>Cod.Ed.</th><th style={css.th}>Editore</th>
               <th style={css.th}>€</th><th style={css.th}>Obj</th><th style={{ ...css.th, cursor: "pointer" }} onClick={() => { setSortPren(s => s === "desc" ? "asc" : s === "asc" ? null : "desc"); setSortCanale(null); }}>Pren.{sortPren === "desc" ? " ↓" : sortPren === "asc" ? " ↑" : ""}</th><th style={css.th}>%</th>
               {canaliTabella.map(c => <th key={c.id} style={{ ...css.th, whiteSpace: "normal", maxWidth: 70, lineHeight: 1.2, cursor: "pointer" }} onClick={() => { setSortCanale(prev => prev?.codice === c.codice ? (prev.dir === "desc" ? { codice: c.codice, dir: "asc" } : null) : { codice: c.codice, dir: "desc" }); setSortPren(null); }}>{getCanaleDisplayName(c)}{sortCanale?.codice === c.codice ? (sortCanale.dir === "desc" ? " ↓" : " ↑") : ""}</th>)}
-              {ruolo !== "agente" && <th style={{ ...css.th, color: T.accent }}>Dir. Stampatore ✎</th>}
+              {ruolo !== "agente" && <th style={{ ...css.th, color: T.accent }}>Dir. Stampatore"/"Fuori lancio ✎</th>}
             </tr>
           </thead>
           <tbody>
