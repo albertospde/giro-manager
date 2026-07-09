@@ -546,7 +546,7 @@ function ModuloDashboard({ titoli, prenotato, canali, spalmatura, ruolo }) {
   );
 }
 
-// ===== MODULO CALENDARIO LANCI =====
+// ===== MODULO CALENDARIO GIRI =====
 const CAL_LANCI_COLS = [
   { key: "giro", label: "Giro", type: "number", width: 60 },
   { key: "mese_uscita", label: "Mese uscita", type: "text", width: 150 },
@@ -573,7 +573,7 @@ function CalLanciCell({ riga, col, onSave }) {
   );
 }
 
-function ModuloCalendarioLanci({ token, ruolo }) {
+function Modulocalendariogiri({ token, ruolo }) {
   const [righe, setRighe] = useState([]);
   const [loading, setLoading] = useState(true);
   const [anno, setAnno] = useState(new Date().getFullYear());
@@ -583,7 +583,7 @@ function ModuloCalendarioLanci({ token, ruolo }) {
 
   const load = useCallback(() => {
     setLoading(true);
-    sbFetch("calendario_lanci?select=*&order=inizio_giro.asc,giro.asc", token).then(data => {
+    sbFetch("calendario_giri?select=*&order=inizio_giro.asc,giro.asc", token).then(data => {
       setRighe(Array.isArray(data) ? data : []);
       setLoading(false);
     });
@@ -614,7 +614,7 @@ function ModuloCalendarioLanci({ token, ruolo }) {
 
   const saveCell = async (id, key, value) => {
     setRighe(prev => prev.map(r => r.id === id ? { ...r, [key]: value } : r));
-    const r = await fetch(`${SUPABASE_URL}/rest/v1/calendario_lanci?id=eq.${id}`, {
+    const r = await fetch(`${SUPABASE_URL}/rest/v1/calendario_giri?id=eq.${id}`, {
       method: "PATCH",
       headers: { "apikey": SUPABASE_KEY, "Authorization": `Bearer ${token}`, "Content-Type": "application/json", "Prefer": "return=minimal" },
       body: JSON.stringify({ [key]: value, updated_at: new Date().toISOString() }),
@@ -625,7 +625,7 @@ function ModuloCalendarioLanci({ token, ruolo }) {
   const aggiungiRiga = async () => {
     const maxGiro = Math.max(0, ...righeAnno.map(r => r.giro || 0));
     const body = { giro: maxGiro + 1 || 1, inizio_giro: `${anno}-01-01`, ordine: righe.length };
-    const r = await fetch(`${SUPABASE_URL}/rest/v1/calendario_lanci`, {
+    const r = await fetch(`${SUPABASE_URL}/rest/v1/calendario_giri`, {
       method: "POST",
       headers: { "apikey": SUPABASE_KEY, "Authorization": `Bearer ${token}`, "Content-Type": "application/json", "Prefer": "return=representation" },
       body: JSON.stringify(body),
@@ -637,7 +637,7 @@ function ModuloCalendarioLanci({ token, ruolo }) {
 
   const eliminaRiga = async (id) => {
     if (!confirm("Eliminare questa riga del calendario?")) return;
-    const r = await fetch(`${SUPABASE_URL}/rest/v1/calendario_lanci?id=eq.${id}`, {
+    const r = await fetch(`${SUPABASE_URL}/rest/v1/calendario_giri?id=eq.${id}`, {
       method: "DELETE",
       headers: { "apikey": SUPABASE_KEY, "Authorization": `Bearer ${token}` },
     });
@@ -2855,7 +2855,7 @@ function ModuloVerificaOrdini({ token }) {
 
 const MODULES = [
   { id: "dashboard", label: "Dashboard", icon: "◈" },
-  { id: "calendariolanci", label: "Calendario Lanci", icon: "📅" },
+  { id: "calendariogiri", label: "calendario giri", icon: "📅" },
   { id: "cedola", label: "Giri e Cedole", icon: "≡" },
   { id: "finegiro", label: "Fine Giro", icon: "⊞" },
   { id: "avanzamento", label: "Avanzamento Novità", icon: "▣" },
@@ -2975,7 +2975,7 @@ export default function App() {
         <div style={{ flex: 1, overflow: "hidden", display: "flex", flexDirection: "column" }}>
           {/* MOD 3: Passato spalmatura alla Dashboard */}
           {activeModule === "dashboard" && <ModuloDashboard titoli={titoli} prenotato={prenotato} canali={canali} spalmatura={spalmatura} ruolo={ruolo} />}
-          {activeModule === "calendariolanci" && <ModuloCalendarioLanci token={session.token} ruolo={ruolo} />}
+          {activeModule === "calendariogiri" && <Modulocalendariogiri token={session.token} ruolo={ruolo} />}
           {/* FIX 5: Passato token a ModuloCedola */}
           {activeModule === "cedola" && <ModuloCedola titoli={titoli} giriList={giriDB} onUpdateTitolo={t => { updateTitolo(t); setTitoli(prev => prev.some(x => x.id === t.id) ? prev.map(x => x.id === t.id ? t : x) : [...prev, t]); }} spalmatura={spalmatura} prenotato={prenotato} ruolo={ruolo} token={session.token} onTitoliChange={refreshDati} userAccount={userAccount} />}
           {activeModule === "prenotato" && <ModuloPrenotato token={session.token} titoli={titoli} onImportDone={() => sbFetch("prenotato?select=*&limit=100000", session.token).then(setPrenotato)} />}
