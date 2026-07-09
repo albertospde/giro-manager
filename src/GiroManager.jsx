@@ -2855,7 +2855,7 @@ function ModuloVerificaOrdini({ token }) {
 
 const MODULES = [
   { id: "dashboard", label: "Dashboard", icon: "◈" },
-  { id: "calendariogiri", label: "calendario giri", icon: "📅" },
+  { id: "calendariogiri", label: "Calendario Giri", icon: "📅" },
   { id: "cedola", label: "Giri e Cedole", icon: "≡" },
   { id: "finegiro", label: "Fine Giro", icon: "⊞" },
   { id: "avanzamento", label: "Avanzamento Novità", icon: "▣" },
