@@ -1911,7 +1911,7 @@ function ModuloFineGiro({ titoli, prenotato, canali, token, ruolo, spalmatura, u
 // ────────────────────────────────────────────────────────────────
 
 // Mesi italiani per parsing date dal CSV Tableau ("10 ottobre 2025")
-const MESI_IT = { gennaio:0, febbraio:1, marzo:2, aprile:3, maggio:4, giugno:5, luglio:6, agosto:7, settembre:8, strenne:9, ottobre:10, novembre:11, dicembre:12 };
+const MESI_IT = { gennaio:0, febbraio:1, marzo:2, aprile:3, maggio:4, giugno:5, luglio:6, agosto:7, settembre:8, ottobre:9, novembre:10, dicembre:11 };
 
 function parseDataIt(str) {
   if (!str) return null;
