@@ -546,7 +546,155 @@ function ModuloDashboard({ titoli, prenotato, canali, spalmatura, ruolo }) {
   );
 }
 
-// FIX 5: ModuloCedola ora riceve token per passarlo alla EditModal
+// ===== MODULO CALENDARIO LANCI =====
+const CAL_LANCI_COLS = [
+  { key: "giro", label: "Giro", type: "number", width: 60 },
+  { key: "mese_uscita", label: "Mese uscita", type: "text", width: 150 },
+  { key: "consegna_materiali", label: "Consegna materiali", type: "text", width: 130 },
+  { key: "riunioni", label: "Riunioni", type: "text", width: 170 },
+  { key: "inizio_giro", label: "Inizio giro", type: "date", width: 120 },
+  { key: "fine_giro", label: "Fine giro", type: "date", width: 120 },
+  { key: "dati_a_editori", label: "Dati a editori", type: "text", width: 110 },
+];
+
+function CalLanciCell({ riga, col, onSave }) {
+  const [val, setVal] = useState(riga[col.key] ?? "");
+  useEffect(() => { setVal(riga[col.key] ?? ""); }, [riga[col.key]]);
+  const dirty = (val || "") !== (riga[col.key] ?? "");
+  return (
+    <input
+      type={col.type === "date" ? "date" : col.type === "number" ? "number" : "text"}
+      value={val ?? ""}
+      onChange={e => setVal(e.target.value)}
+      onBlur={() => { if (dirty) onSave(riga.id, col.key, val === "" ? null : val); }}
+      onKeyDown={e => { if (e.key === "Enter") e.target.blur(); }}
+      style={{ ...css.input, width: "100%", boxSizing: "border-box", background: dirty ? T.accent + "14" : T.bg, borderColor: dirty ? T.accent : T.border, fontSize: "12px" }}
+    />
+  );
+}
+
+function ModuloCalendarioLanci({ token, ruolo }) {
+  const [righe, setRighe] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [anno, setAnno] = useState(new Date().getFullYear());
+  const [toast, setToast] = useState(null);
+
+  const showToast = (msg, type = "ok") => { setToast({ msg, type }); setTimeout(() => setToast(null), 2000); };
+
+  const load = useCallback(() => {
+    setLoading(true);
+    sbFetch("calendario_lanci?select=*&order=inizio_giro.asc,giro.asc", token).then(data => {
+      setRighe(Array.isArray(data) ? data : []);
+      setLoading(false);
+    });
+  }, [token]);
+
+  useEffect(() => { load(); }, [load]);
+
+  const anniDisponibili = useMemo(() => {
+    const set = new Set([new Date().getFullYear()]);
+    righe.forEach(r => {
+      if (r.inizio_giro) set.add(new Date(r.inizio_giro).getFullYear());
+      if (r.fine_giro) set.add(new Date(r.fine_giro).getFullYear());
+    });
+    set.add(anno);
+    return [...set].sort((a, b) => a - b);
+  }, [righe, anno]);
+
+  // Un giro appartiene all'anno selezionato se inizio o fine giro cadono in quell'anno
+  // (es. giro 1 dell'anno successivo, se parte a fine anno corrente, resta visibile qui)
+  const righeAnno = useMemo(() => {
+    return righe.filter(r => {
+      const yIn = r.inizio_giro ? new Date(r.inizio_giro).getFullYear() : null;
+      const yFine = r.fine_giro ? new Date(r.fine_giro).getFullYear() : null;
+      if (yIn == null && yFine == null) return false;
+      return yIn === anno || yFine === anno;
+    });
+  }, [righe, anno]);
+
+  const saveCell = async (id, key, value) => {
+    setRighe(prev => prev.map(r => r.id === id ? { ...r, [key]: value } : r));
+    const r = await fetch(`${SUPABASE_URL}/rest/v1/calendario_lanci?id=eq.${id}`, {
+      method: "PATCH",
+      headers: { "apikey": SUPABASE_KEY, "Authorization": `Bearer ${token}`, "Content-Type": "application/json", "Prefer": "return=minimal" },
+      body: JSON.stringify({ [key]: value, updated_at: new Date().toISOString() }),
+    });
+    if (!r.ok) showToast("Errore salvataggio", "err"); else showToast("Salvato");
+  };
+
+  const aggiungiRiga = async () => {
+    const maxGiro = Math.max(0, ...righeAnno.map(r => r.giro || 0));
+    const body = { giro: maxGiro + 1 || 1, inizio_giro: `${anno}-01-01`, ordine: righe.length };
+    const r = await fetch(`${SUPABASE_URL}/rest/v1/calendario_lanci`, {
+      method: "POST",
+      headers: { "apikey": SUPABASE_KEY, "Authorization": `Bearer ${token}`, "Content-Type": "application/json", "Prefer": "return=representation" },
+      body: JSON.stringify(body),
+    });
+    const data = await r.json();
+    if (Array.isArray(data) && data[0]) setRighe(prev => [...prev, data[0]]);
+    else showToast("Errore creazione riga", "err");
+  };
+
+  const eliminaRiga = async (id) => {
+    if (!confirm("Eliminare questa riga del calendario?")) return;
+    const r = await fetch(`${SUPABASE_URL}/rest/v1/calendario_lanci?id=eq.${id}`, {
+      method: "DELETE",
+      headers: { "apikey": SUPABASE_KEY, "Authorization": `Bearer ${token}` },
+    });
+    if (r.ok) { setRighe(prev => prev.filter(x => x.id !== id)); showToast("Riga eliminata"); }
+    else showToast("Errore eliminazione", "err");
+  };
+
+  if (loading) return <div style={{ padding: 40, color: T.textMid, fontSize: "13px" }}>Caricamento calendario...</div>;
+
+  return (
+    <div style={{ flex: 1, overflow: "auto", padding: 20 }}>
+      <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 16 }}>
+        <span style={{ color: T.textMid, fontSize: "11px", letterSpacing: "0.08em", textTransform: "uppercase" }}>Anno</span>
+        <select style={{ ...css.input, width: 110 }} value={anno} onChange={e => setAnno(Number(e.target.value))}>
+          {anniDisponibili.map(y => <option key={y} value={y}>{y}</option>)}
+        </select>
+        <button style={css.btn()} onClick={() => setAnno(a => a - 1)}>← {anno - 1}</button>
+        <button style={css.btn()} onClick={() => setAnno(a => a + 1)}>{anno + 1} →</button>
+        <div style={{ flex: 1 }} />
+        <span style={{ color: T.textDim, fontSize: "11px" }}>{righeAnno.length} giri visibili · un giro resta visibile nell'anno se inizio o fine giro cadono in quell'anno</span>
+        <button style={{ ...css.btn(), borderColor: T.green, color: T.green }} onClick={aggiungiRiga}>+ Giro</button>
+      </div>
+
+      <table style={css.table}>
+        <thead>
+          <tr>
+            {CAL_LANCI_COLS.map(c => <th key={c.key} style={{ ...css.th, minWidth: c.width }}>{c.label}</th>)}
+            <th style={{ ...css.th, width: 40 }}></th>
+          </tr>
+        </thead>
+        <tbody>
+          {righeAnno.map(riga => (
+            <tr key={riga.id}>
+              {CAL_LANCI_COLS.map(c => (
+                <td key={c.key} style={css.td}>
+                  <CalLanciCell riga={riga} col={c} onSave={saveCell} />
+                </td>
+              ))}
+              <td style={{ ...css.td, textAlign: "center" }}>
+                <button title="Elimina riga" style={{ ...css.btn(), padding: "2px 6px", fontSize: "11px", color: T.red, borderColor: T.red }} onClick={() => eliminaRiga(riga.id)}>✕</button>
+              </td>
+            </tr>
+          ))}
+          {righeAnno.length === 0 && (
+            <tr><td colSpan={CAL_LANCI_COLS.length + 1} style={{ ...css.td, textAlign: "center", color: T.textMid, padding: 30 }}>Nessun giro per il {anno}. Usa "+ Giro" per aggiungerne uno.</td></tr>
+          )}
+        </tbody>
+      </table>
+
+      {toast && (
+        <div style={{ position: "fixed", bottom: 24, left: "50%", transform: "translateX(-50%)", background: toast.type === "err" ? "#4a1a2a" : "#1a3a2a", border: `1px solid ${toast.type === "err" ? T.red : T.green}`, color: toast.type === "err" ? T.red : T.green, borderRadius: 6, padding: "8px 20px", fontSize: "12px", zIndex: 999, boxShadow: "0 4px 20px #0008" }}>
+          {toast.msg}
+        </div>
+      )}
+    </div>
+  );
+}
 
 // Dropdown con ricerca testuale — selezione singola
 function SearchableSelect({ value, onChange, options, placeholder = "Tutti", labelKey = null, valueKey = null, width = 180 }) {
@@ -2707,6 +2855,7 @@ function ModuloVerificaOrdini({ token }) {
 
 const MODULES = [
   { id: "dashboard", label: "Dashboard", icon: "◈" },
+  { id: "calendariolanci", label: "Calendario Lanci", icon: "📅" },
   { id: "cedola", label: "Giri e Cedole", icon: "≡" },
   { id: "finegiro", label: "Fine Giro", icon: "⊞" },
   { id: "avanzamento", label: "Avanzamento Novità", icon: "▣" },
@@ -2826,6 +2975,7 @@ export default function App() {
         <div style={{ flex: 1, overflow: "hidden", display: "flex", flexDirection: "column" }}>
           {/* MOD 3: Passato spalmatura alla Dashboard */}
           {activeModule === "dashboard" && <ModuloDashboard titoli={titoli} prenotato={prenotato} canali={canali} spalmatura={spalmatura} ruolo={ruolo} />}
+          {activeModule === "calendariolanci" && <ModuloCalendarioLanci token={session.token} ruolo={ruolo} />}
           {/* FIX 5: Passato token a ModuloCedola */}
           {activeModule === "cedola" && <ModuloCedola titoli={titoli} giriList={giriDB} onUpdateTitolo={t => { updateTitolo(t); setTitoli(prev => prev.some(x => x.id === t.id) ? prev.map(x => x.id === t.id ? t : x) : [...prev, t]); }} spalmatura={spalmatura} prenotato={prenotato} ruolo={ruolo} token={session.token} onTitoliChange={refreshDati} userAccount={userAccount} />}
           {activeModule === "prenotato" && <ModuloPrenotato token={session.token} titoli={titoli} onImportDone={() => sbFetch("prenotato?select=*&limit=100000", session.token).then(setPrenotato)} />}
