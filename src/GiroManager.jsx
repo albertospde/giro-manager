@@ -547,7 +547,7 @@ function ModuloDashboard({ titoli, prenotato, canali, spalmatura, ruolo }) {
 }
 
 // ===== MODULO CALENDARIO GIRI =====
-const MESI_LABELS = ["Gennaio", "Febbraio", "Marzo", "Aprile", "Maggio", "Giugno", "Luglio", "Agosto", "Settembre", "Ottobre", "Novembre", "Dicembre"];
+const MESI_LABELS = ["Gennaio", "Febbraio", "Marzo", "Aprile", "Maggio", "Giugno", "Luglio", "Agosto", "Settembre", "Strenne", "Ottobre", "Novembre", "Dicembre"];
 
 // Ricostruisce l'elenco dei mesi selezionati a partire dal testo salvato (case/separatori variabili)
 function parseMesiSelezionati(testo) {
@@ -1911,7 +1911,7 @@ function ModuloFineGiro({ titoli, prenotato, canali, token, ruolo, spalmatura, u
 // ────────────────────────────────────────────────────────────────
 
 // Mesi italiani per parsing date dal CSV Tableau ("10 ottobre 2025")
-const MESI_IT = { gennaio:0, febbraio:1, marzo:2, aprile:3, maggio:4, giugno:5, luglio:6, agosto:7, settembre:8, ottobre:9, novembre:10, dicembre:11 };
+const MESI_IT = { gennaio:0, febbraio:1, marzo:2, aprile:3, maggio:4, giugno:5, luglio:6, agosto:7, settembre:8, strenne:9, ottobre:10, novembre:11, dicembre:12 };
 
 function parseDataIt(str) {
   if (!str) return null;
