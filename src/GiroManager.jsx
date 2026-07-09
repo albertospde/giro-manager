@@ -547,39 +547,34 @@ function ModuloDashboard({ titoli, prenotato, canali, spalmatura, ruolo }) {
 }
 
 // ===== MODULO CALENDARIO GIRI =====
-const CAL_LANCI_COLS = [
-  { key: "giro", label: "Giro", type: "number", width: 60 },
-  { key: "mese_uscita", label: "Mese uscita", type: "text", width: 150 },
-  { key: "consegna_materiali", label: "Consegna materiali", type: "text", width: 130 },
-  { key: "riunioni", label: "Riunioni", type: "text", width: 170 },
-  { key: "inizio_giro", label: "Inizio giro", type: "date", width: 120 },
-  { key: "fine_giro", label: "Fine giro", type: "date", width: 120 },
-  { key: "dati_a_editori", label: "Dati a editori", type: "text", width: 110 },
-];
+const MESI_LABELS = ["Gennaio", "Febbraio", "Marzo", "Aprile", "Maggio", "Giugno", "Luglio", "Agosto", "Settembre", "Ottobre", "Novembre", "Dicembre"];
 
-function CalLanciCell({ riga, col, onSave }) {
-  const [val, setVal] = useState(riga[col.key] ?? "");
-  useEffect(() => { setVal(riga[col.key] ?? ""); }, [riga[col.key]]);
-  const dirty = (val || "") !== (riga[col.key] ?? "");
-  return (
-    <input
-      type={col.type === "date" ? "date" : col.type === "number" ? "number" : "text"}
-      value={val ?? ""}
-      onChange={e => setVal(e.target.value)}
-      onBlur={() => { if (dirty) onSave(riga.id, col.key, val === "" ? null : val); }}
-      onKeyDown={e => { if (e.key === "Enter") e.target.blur(); }}
-      style={{ ...css.input, width: "100%", boxSizing: "border-box", background: dirty ? T.accent + "14" : T.bg, borderColor: dirty ? T.accent : T.border, fontSize: "12px" }}
-    />
-  );
+// Ricostruisce l'elenco dei mesi selezionati a partire dal testo salvato (case/separatori variabili)
+function parseMesiSelezionati(testo) {
+  if (!testo) return [];
+  const norm = s => s.toLowerCase().replace(/[^a-zàèéìòù]/g, "");
+  const trovati = testo.split(/[,\s]+/).map(norm).filter(Boolean);
+  return MESI_LABELS.filter(m => trovati.includes(norm(m)));
 }
+
+function fmtDataIt(iso) {
+  if (!iso) return "—";
+  const [y, m, d] = iso.split("-");
+  if (!y || !m || !d) return iso;
+  return `${d}/${m}/${y}`;
+}
+
+const CAL_GIRI_EMPTY_FORM = { id: null, anno: null, giro: "", mesi: [], consegna_materiali: "", riunioni: "", inizio_giro: "", fine_giro: "", dati_a_editori: "" };
 
 function Modulocalendariogiri({ token, ruolo }) {
   const [righe, setRighe] = useState([]);
   const [loading, setLoading] = useState(true);
   const [anno, setAnno] = useState(new Date().getFullYear());
   const [toast, setToast] = useState(null);
+  const [form, setForm] = useState({ ...CAL_GIRI_EMPTY_FORM, anno: new Date().getFullYear() });
+  const [saving, setSaving] = useState(false);
 
-  const showToast = (msg, type = "ok") => { setToast({ msg, type }); setTimeout(() => setToast(null), 2000); };
+  const showToast = (msg, type = "ok") => { setToast({ msg, type }); setTimeout(() => setToast(null), 2500); };
 
   const load = useCallback(() => {
     setLoading(true);
@@ -599,31 +594,63 @@ function Modulocalendariogiri({ token, ruolo }) {
   }, [righe, anno]);
 
   // Anno assegnato manualmente riga per riga: nessuna logica automatica sulle date,
-  // decide tutto Alberto in fase di compilazione (es. può mettere il "giro 1" dell'anno
-  // successivo come ultima riga dell'anno corrente, se lo ritiene utile per continuità).
-  const righeAnno = useMemo(() => righe.filter(r => r.anno === anno), [righe, anno]);
+  // decide tutto Alberto in fase di compilazione.
+  const righeAnno = useMemo(() => righe.filter(r => r.anno === anno).sort((a, b) => (a.giro || 0) - (b.giro || 0)), [righe, anno]);
 
-  const saveCell = async (id, key, value) => {
-    setRighe(prev => prev.map(r => r.id === id ? { ...r, [key]: value } : r));
-    const r = await fetch(`${SUPABASE_URL}/rest/v1/calendario_giri?id=eq.${id}`, {
-      method: "PATCH",
-      headers: { "apikey": SUPABASE_KEY, "Authorization": `Bearer ${token}`, "Content-Type": "application/json", "Prefer": "return=minimal" },
-      body: JSON.stringify({ [key]: value, updated_at: new Date().toISOString() }),
+  const resetForm = () => setForm({ ...CAL_GIRI_EMPTY_FORM, anno });
+  useEffect(() => { if (form.id === null) setForm(f => ({ ...f, anno })); }, [anno]);
+
+  const startEdit = (riga) => {
+    setForm({
+      id: riga.id,
+      anno: riga.anno ?? anno,
+      giro: riga.giro ?? "",
+      mesi: parseMesiSelezionati(riga.mese_uscita),
+      consegna_materiali: riga.consegna_materiali ?? "",
+      riunioni: riga.riunioni ?? "",
+      inizio_giro: riga.inizio_giro ?? "",
+      fine_giro: riga.fine_giro ?? "",
+      dati_a_editori: riga.dati_a_editori ?? "",
     });
-    if (!r.ok) showToast("Errore salvataggio", "err"); else showToast("Salvato");
+    window.scrollTo({ top: 0, behavior: "smooth" });
   };
 
-  const aggiungiRiga = async () => {
-    const maxGiro = Math.max(0, ...righeAnno.map(r => r.giro || 0));
-    const body = { giro: maxGiro + 1 || 1, anno, ordine: righe.length };
-    const r = await fetch(`${SUPABASE_URL}/rest/v1/calendario_giri`, {
-      method: "POST",
-      headers: { "apikey": SUPABASE_KEY, "Authorization": `Bearer ${token}`, "Content-Type": "application/json", "Prefer": "return=representation" },
-      body: JSON.stringify(body),
-    });
-    const data = await r.json();
-    if (Array.isArray(data) && data[0]) setRighe(prev => [...prev, data[0]]);
-    else showToast("Errore creazione riga", "err");
+  const toggleMese = (mese) => setForm(f => ({ ...f, mesi: f.mesi.includes(mese) ? f.mesi.filter(m => m !== mese) : [...f.mesi, mese] }));
+
+  const salvaForm = async () => {
+    if (!form.anno) { showToast("Anno obbligatorio", "err"); return; }
+    setSaving(true);
+    const payload = {
+      anno: Number(form.anno),
+      giro: form.giro === "" ? null : Number(form.giro),
+      mese_uscita: form.mesi.length > 0 ? form.mesi.join(", ") : null,
+      consegna_materiali: form.consegna_materiali || null,
+      riunioni: form.riunioni || null,
+      inizio_giro: form.inizio_giro || null,
+      fine_giro: form.fine_giro || null,
+      dati_a_editori: form.dati_a_editori || null,
+      updated_at: new Date().toISOString(),
+    };
+    if (form.id) {
+      const r = await fetch(`${SUPABASE_URL}/rest/v1/calendario_giri?id=eq.${form.id}`, {
+        method: "PATCH",
+        headers: { "apikey": SUPABASE_KEY, "Authorization": `Bearer ${token}`, "Content-Type": "application/json", "Prefer": "return=representation" },
+        body: JSON.stringify(payload),
+      });
+      const data = await r.json();
+      if (r.ok && data?.[0]) { setRighe(prev => prev.map(x => x.id === form.id ? data[0] : x)); showToast("Riga aggiornata"); resetForm(); }
+      else showToast("Errore salvataggio", "err");
+    } else {
+      const r = await fetch(`${SUPABASE_URL}/rest/v1/calendario_giri`, {
+        method: "POST",
+        headers: { "apikey": SUPABASE_KEY, "Authorization": `Bearer ${token}`, "Content-Type": "application/json", "Prefer": "return=representation" },
+        body: JSON.stringify({ ...payload, ordine: righe.length }),
+      });
+      const data = await r.json();
+      if (r.ok && data?.[0]) { setRighe(prev => [...prev, data[0]]); showToast("Giro aggiunto"); resetForm(); }
+      else showToast("Errore creazione riga", "err");
+    }
+    setSaving(false);
   };
 
   const eliminaRiga = async (id) => {
@@ -632,15 +659,56 @@ function Modulocalendariogiri({ token, ruolo }) {
       method: "DELETE",
       headers: { "apikey": SUPABASE_KEY, "Authorization": `Bearer ${token}` },
     });
-    if (r.ok) { setRighe(prev => prev.filter(x => x.id !== id)); showToast("Riga eliminata"); }
+    if (r.ok) { setRighe(prev => prev.filter(x => x.id !== id)); if (form.id === id) resetForm(); showToast("Riga eliminata"); }
     else showToast("Errore eliminazione", "err");
   };
 
   if (loading) return <div style={{ padding: 40, color: T.textMid, fontSize: "13px" }}>Caricamento calendario...</div>;
 
+  const campo = (label, children) => (
+    <div>
+      <label style={{ color: T.textMid, fontSize: "10px", letterSpacing: "0.08em", textTransform: "uppercase", display: "block", marginBottom: 4 }}>{label}</label>
+      {children}
+    </div>
+  );
+
   return (
     <div style={{ flex: 1, overflow: "auto", padding: 20 }}>
-      <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 16 }}>
+      {/* FORM DI INSERIMENTO / MODIFICA */}
+      <div style={{ background: T.surface, border: `1px solid ${form.id ? T.accent : T.border}`, borderRadius: 6, padding: 20, marginBottom: 24 }}>
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 16 }}>
+          <span style={{ color: T.accent, fontWeight: "700", fontSize: "13px" }}>{form.id ? "✎ MODIFICA GIRO" : "+ NUOVO GIRO"}</span>
+          {form.id && <button style={{ ...css.btn(), fontSize: "11px", padding: "3px 10px" }} onClick={resetForm}>Annulla modifica</button>}
+        </div>
+        <div style={{ display: "grid", gridTemplateColumns: "80px 80px 1fr 1fr 1fr", gap: 12, marginBottom: 14 }}>
+          {campo("Anno", <input type="number" style={{ ...css.input, width: "100%", boxSizing: "border-box" }} value={form.anno ?? ""} onChange={e => setForm(f => ({ ...f, anno: e.target.value === "" ? null : Number(e.target.value) }))} />)}
+          {campo("Giro", <input type="number" style={{ ...css.input, width: "100%", boxSizing: "border-box" }} value={form.giro} onChange={e => setForm(f => ({ ...f, giro: e.target.value }))} placeholder="es. 1" />)}
+          {campo("Consegna materiali", <input type="date" style={{ ...css.input, width: "100%", boxSizing: "border-box" }} value={form.consegna_materiali} onChange={e => setForm(f => ({ ...f, consegna_materiali: e.target.value }))} />)}
+          {campo("Inizio giro", <input type="date" style={{ ...css.input, width: "100%", boxSizing: "border-box" }} value={form.inizio_giro} onChange={e => setForm(f => ({ ...f, inizio_giro: e.target.value }))} />)}
+          {campo("Fine giro", <input type="date" style={{ ...css.input, width: "100%", boxSizing: "border-box" }} value={form.fine_giro} onChange={e => setForm(f => ({ ...f, fine_giro: e.target.value }))} />)}
+        </div>
+        <div style={{ display: "grid", gridTemplateColumns: "2fr 1fr", gap: 12, marginBottom: 14 }}>
+          {campo("Riunioni", <input style={{ ...css.input, width: "100%", boxSizing: "border-box" }} value={form.riunioni} onChange={e => setForm(f => ({ ...f, riunioni: e.target.value }))} placeholder="es. 29-30 settembre + 1-3 ottobre" />)}
+          {campo("Dati a editori", <input type="date" style={{ ...css.input, width: "100%", boxSizing: "border-box" }} value={form.dati_a_editori} onChange={e => setForm(f => ({ ...f, dati_a_editori: e.target.value }))} />)}
+        </div>
+        <div style={{ marginBottom: 16 }}>
+          <label style={{ color: T.textMid, fontSize: "10px", letterSpacing: "0.08em", textTransform: "uppercase", display: "block", marginBottom: 6 }}>Mese uscita</label>
+          <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
+            {MESI_LABELS.map(m => (
+              <label key={m} style={{ display: "flex", alignItems: "center", gap: 5, cursor: "pointer", padding: "4px 10px", borderRadius: 4, border: `1px solid ${form.mesi.includes(m) ? T.accent : T.border}`, background: form.mesi.includes(m) ? T.accent + "18" : "transparent" }}>
+                <input type="checkbox" checked={form.mesi.includes(m)} onChange={() => toggleMese(m)} style={{ accentColor: T.accent }} />
+                <span style={{ fontSize: "12px", color: form.mesi.includes(m) ? T.accent : T.textMid }}>{m}</span>
+              </label>
+            ))}
+          </div>
+        </div>
+        <div style={{ display: "flex", justifyContent: "flex-end", gap: 8 }}>
+          <button style={css.btn("accent")} onClick={salvaForm} disabled={saving}>{saving ? "Salvataggio..." : form.id ? "💾 Salva modifiche" : "+ Aggiungi Giro"}</button>
+        </div>
+      </div>
+
+      {/* TABELLA DI CONSULTAZIONE */}
+      <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 12 }}>
         <span style={{ color: T.textMid, fontSize: "11px", letterSpacing: "0.08em", textTransform: "uppercase" }}>Anno</span>
         <select style={{ ...css.input, width: 110 }} value={anno} onChange={e => setAnno(Number(e.target.value))}>
           {anniDisponibili.map(y => <option key={y} value={y}>{y}</option>)}
@@ -648,36 +716,40 @@ function Modulocalendariogiri({ token, ruolo }) {
         <button style={css.btn()} onClick={() => setAnno(a => a - 1)}>← {anno - 1}</button>
         <button style={css.btn()} onClick={() => setAnno(a => a + 1)}>{anno + 1} →</button>
         <div style={{ flex: 1 }} />
-        <span style={{ color: T.textDim, fontSize: "11px" }}>{righeAnno.length} giri visibili · l'anno di ogni riga si imposta manualmente nella prima colonna</span>
-        <button style={{ ...css.btn(), borderColor: T.green, color: T.green }} onClick={aggiungiRiga}>+ Giro</button>
+        <span style={{ color: T.textDim, fontSize: "11px" }}>{righeAnno.length} giri</span>
       </div>
 
       <table style={css.table}>
         <thead>
           <tr>
-            <th style={{ ...css.th, minWidth: 70 }}>Anno</th>
-            {CAL_LANCI_COLS.map(c => <th key={c.key} style={{ ...css.th, minWidth: c.width }}>{c.label}</th>)}
-            <th style={{ ...css.th, width: 40 }}></th>
+            <th style={{ ...css.th, width: 60 }}>Giro</th>
+            <th style={css.th}>Mese uscita</th>
+            <th style={css.th}>Consegna materiali</th>
+            <th style={css.th}>Riunioni</th>
+            <th style={css.th}>Inizio giro</th>
+            <th style={css.th}>Fine giro</th>
+            <th style={css.th}>Dati a editori</th>
+            <th style={{ ...css.th, width: 60 }}></th>
           </tr>
         </thead>
         <tbody>
           {righeAnno.map(riga => (
             <tr key={riga.id}>
-              <td style={css.td}>
-                <CalLanciCell riga={riga} col={{ key: "anno", type: "number" }} onSave={saveCell} />
-              </td>
-              {CAL_LANCI_COLS.map(c => (
-                <td key={c.key} style={css.td}>
-                  <CalLanciCell riga={riga} col={c} onSave={saveCell} />
-                </td>
-              ))}
-              <td style={{ ...css.td, textAlign: "center" }}>
+              <td style={{ ...css.td, fontWeight: "600", color: T.accent }}>{riga.giro ?? "—"}</td>
+              <td style={css.td}>{riga.mese_uscita || "—"}</td>
+              <td style={css.td}>{fmtDataIt(riga.consegna_materiali)}</td>
+              <td style={css.td}>{riga.riunioni || "—"}</td>
+              <td style={css.td}>{fmtDataIt(riga.inizio_giro)}</td>
+              <td style={css.td}>{fmtDataIt(riga.fine_giro)}</td>
+              <td style={css.td}>{fmtDataIt(riga.dati_a_editori)}</td>
+              <td style={{ ...css.td, textAlign: "center", whiteSpace: "nowrap" }}>
+                <button title="Modifica riga" style={{ ...css.btn(), padding: "2px 6px", fontSize: "11px", marginRight: 4 }} onClick={() => startEdit(riga)}>✎</button>
                 <button title="Elimina riga" style={{ ...css.btn(), padding: "2px 6px", fontSize: "11px", color: T.red, borderColor: T.red }} onClick={() => eliminaRiga(riga.id)}>✕</button>
               </td>
             </tr>
           ))}
           {righeAnno.length === 0 && (
-            <tr><td colSpan={CAL_LANCI_COLS.length + 2} style={{ ...css.td, textAlign: "center", color: T.textMid, padding: 30 }}>Nessun giro per il {anno}. Usa "+ Giro" per aggiungerne uno.</td></tr>
+            <tr><td colSpan={8} style={{ ...css.td, textAlign: "center", color: T.textMid, padding: 30 }}>Nessun giro per il {anno}. Usa il form sopra per aggiungerne uno.</td></tr>
           )}
         </tbody>
       </table>
