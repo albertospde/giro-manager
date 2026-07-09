@@ -583,7 +583,7 @@ function Modulocalendariogiri({ token, ruolo }) {
 
   const load = useCallback(() => {
     setLoading(true);
-    sbFetch("calendario_giri?select=*&order=inizio_giro.asc,giro.asc", token).then(data => {
+    sbFetch("calendario_giri?select=*&order=anno.asc,giro.asc", token).then(data => {
       setRighe(Array.isArray(data) ? data : []);
       setLoading(false);
     });
@@ -593,24 +593,15 @@ function Modulocalendariogiri({ token, ruolo }) {
 
   const anniDisponibili = useMemo(() => {
     const set = new Set([new Date().getFullYear()]);
-    righe.forEach(r => {
-      if (r.inizio_giro) set.add(new Date(r.inizio_giro).getFullYear());
-      if (r.fine_giro) set.add(new Date(r.fine_giro).getFullYear());
-    });
+    righe.forEach(r => { if (r.anno != null) set.add(r.anno); });
     set.add(anno);
     return [...set].sort((a, b) => a - b);
   }, [righe, anno]);
 
-  // Un giro appartiene all'anno selezionato se inizio o fine giro cadono in quell'anno
-  // (es. giro 1 dell'anno successivo, se parte a fine anno corrente, resta visibile qui)
-  const righeAnno = useMemo(() => {
-    return righe.filter(r => {
-      const yIn = r.inizio_giro ? new Date(r.inizio_giro).getFullYear() : null;
-      const yFine = r.fine_giro ? new Date(r.fine_giro).getFullYear() : null;
-      if (yIn == null && yFine == null) return false;
-      return yIn === anno || yFine === anno;
-    });
-  }, [righe, anno]);
+  // Anno assegnato manualmente riga per riga: nessuna logica automatica sulle date,
+  // decide tutto Alberto in fase di compilazione (es. può mettere il "giro 1" dell'anno
+  // successivo come ultima riga dell'anno corrente, se lo ritiene utile per continuità).
+  const righeAnno = useMemo(() => righe.filter(r => r.anno === anno), [righe, anno]);
 
   const saveCell = async (id, key, value) => {
     setRighe(prev => prev.map(r => r.id === id ? { ...r, [key]: value } : r));
@@ -624,7 +615,7 @@ function Modulocalendariogiri({ token, ruolo }) {
 
   const aggiungiRiga = async () => {
     const maxGiro = Math.max(0, ...righeAnno.map(r => r.giro || 0));
-    const body = { giro: maxGiro + 1 || 1, inizio_giro: `${anno}-01-01`, ordine: righe.length };
+    const body = { giro: maxGiro + 1 || 1, anno, ordine: righe.length };
     const r = await fetch(`${SUPABASE_URL}/rest/v1/calendario_giri`, {
       method: "POST",
       headers: { "apikey": SUPABASE_KEY, "Authorization": `Bearer ${token}`, "Content-Type": "application/json", "Prefer": "return=representation" },
@@ -657,13 +648,14 @@ function Modulocalendariogiri({ token, ruolo }) {
         <button style={css.btn()} onClick={() => setAnno(a => a - 1)}>← {anno - 1}</button>
         <button style={css.btn()} onClick={() => setAnno(a => a + 1)}>{anno + 1} →</button>
         <div style={{ flex: 1 }} />
-        <span style={{ color: T.textDim, fontSize: "11px" }}>{righeAnno.length} giri visibili · un giro resta visibile nell'anno se inizio o fine giro cadono in quell'anno</span>
+        <span style={{ color: T.textDim, fontSize: "11px" }}>{righeAnno.length} giri visibili · l'anno di ogni riga si imposta manualmente nella prima colonna</span>
         <button style={{ ...css.btn(), borderColor: T.green, color: T.green }} onClick={aggiungiRiga}>+ Giro</button>
       </div>
 
       <table style={css.table}>
         <thead>
           <tr>
+            <th style={{ ...css.th, minWidth: 70 }}>Anno</th>
             {CAL_LANCI_COLS.map(c => <th key={c.key} style={{ ...css.th, minWidth: c.width }}>{c.label}</th>)}
             <th style={{ ...css.th, width: 40 }}></th>
           </tr>
@@ -671,6 +663,9 @@ function Modulocalendariogiri({ token, ruolo }) {
         <tbody>
           {righeAnno.map(riga => (
             <tr key={riga.id}>
+              <td style={css.td}>
+                <CalLanciCell riga={riga} col={{ key: "anno", type: "number" }} onSave={saveCell} />
+              </td>
               {CAL_LANCI_COLS.map(c => (
                 <td key={c.key} style={css.td}>
                   <CalLanciCell riga={riga} col={c} onSave={saveCell} />
@@ -682,7 +677,7 @@ function Modulocalendariogiri({ token, ruolo }) {
             </tr>
           ))}
           {righeAnno.length === 0 && (
-            <tr><td colSpan={CAL_LANCI_COLS.length + 1} style={{ ...css.td, textAlign: "center", color: T.textMid, padding: 30 }}>Nessun giro per il {anno}. Usa "+ Giro" per aggiungerne uno.</td></tr>
+            <tr><td colSpan={CAL_LANCI_COLS.length + 2} style={{ ...css.td, textAlign: "center", color: T.textMid, padding: 30 }}>Nessun giro per il {anno}. Usa "+ Giro" per aggiungerne uno.</td></tr>
           )}
         </tbody>
       </table>
