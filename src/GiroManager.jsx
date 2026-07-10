@@ -2612,7 +2612,13 @@ if (!r.ok) throw new Error(await r.text());
         <select style={{ ...css.input, fontSize: "13px", fontWeight: "600", color: T.accent }} value={filterAnno || ""} onChange={e => { setFilterAnno(Number(e.target.value)); setFilterLancio([]); }}>
           {anniDisponibili.map(a => <option key={a} value={a}>{a}</option>)}
         </select>
-        <SearchableMultiSelect values={filterLancio.map(String)} onChange={v => setFilterLancio(viewMode === "verifica" ? v.slice(-1).map(Number) : v.map(Number))} options={lanciPerAnno.map(String)} renderOption={v => `Lancio ${v}`} placeholder="Seleziona lancio" width={170} />
+        {viewMode === "verifica" ? (
+          <select style={{ ...css.input, fontSize: "13px", fontWeight: "600", color: T.accent }} value={filterLancio[0] || ""} onChange={e => setFilterLancio([Number(e.target.value)])}>
+            {lanciPerAnno.map(n => <option key={n} value={n}>Lancio {n}</option>)}
+          </select>
+        ) : (
+          <SearchableMultiSelect values={filterLancio.map(String)} onChange={v => setFilterLancio(v.map(Number))} options={lanciPerAnno.map(String)} renderOption={v => `Lancio ${v}`} placeholder="Seleziona lancio" width={170} />
+        )}
         <input style={{ ...css.input, width: 180 }} placeholder="Cerca EAN / titolo..." value={search} onChange={e => setSearch(e.target.value)} />
         <SearchableMultiSelect values={filterAccount} onChange={setFilterAccount} options={accountsDisponibili} placeholder="Tutti gli account" width={160} />
         {/* Riepilogo giorni */}
