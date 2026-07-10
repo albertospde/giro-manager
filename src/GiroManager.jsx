@@ -2364,7 +2364,8 @@ function ModuloLanciSettimanali({ token, titoli, prenotato, canali, ruolo, userA
       const mailRow = mailByEan[r.ean];
       if (mailRow) {
         // Sempre in sovrascrittura: aggiorna Copie con "restituito Amazon", zero compreso (0 = Amazon non ha prenotato)
-        await saveVerificaAmazon(r.anno_lancio, r.num_lancio, r.ean, { copie: mailRow.restituito });
+        // Sempre in sovrascrittura: sia Proposta Amaz che Copie prendono "restituito Amazon", zero compreso (0 = Amazon non ha prenotato)
+        await saveVerificaAmazon(r.anno_lancio, r.num_lancio, r.ean, { proposta_amaz: mailRow.restituito, copie: mailRow.restituito });
         doneMail++;
       } else {
         // Nessuna differenza segnalata da Messaggerie: Amazon ha confermato la proposta iniziale di PDE (Amazon Cedola)
@@ -2717,7 +2718,7 @@ if (!r.ok) throw new Error(await r.text());
             <>
               <div style={{ fontSize: "12px", color: T.textMid, marginBottom: 10 }}>
                 Carica il file <b>.msg</b> della mail "DIFFERENZA PRENOTAZIONI AMAZON" di Messaggerie, oppure incolla qui sotto il testo del corpo mail.
-                I titoli presenti nella mail aggiornano <b>Copie</b> con il valore "restituito Amazon" (anche se è zero: significa che Amazon non ha prenotato). Tutti gli altri titoli del lancio (senza differenza segnalata) vengono confermati in automatico con la <b>proposta iniziale PDE</b> (Amazon Cedola), sia in Proposta Amaz che in Copie. Ogni caricamento sovrascrive i dati esistenti.
+                I titoli presenti nella mail aggiornano sia <b>Proposta Amaz</b> che <b>Copie</b> con il valore "restituito Amazon" (anche se è zero: significa che Amazon non ha prenotato). Tutti gli altri titoli del lancio (senza differenza segnalata) vengono confermati in automatico con la <b>proposta iniziale PDE</b> (Amazon Cedola), sia in Proposta Amaz che in Copie. Ogni caricamento sovrascrive i dati esistenti.
               </div>
               <div style={{ display: "flex", gap: 10, alignItems: "flex-start", flexWrap: "wrap" }}>
                 <label
