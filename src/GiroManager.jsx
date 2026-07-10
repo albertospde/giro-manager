@@ -1977,6 +1977,10 @@ function ModuloLanciSettimanali({ token, titoli, prenotato, canali, ruolo, userA
 
   const [editCell, setEditCell] = useState(null); // { id, field, value }
 
+  const [viewMode, setViewMode] = useState("lanci"); // "lanci" | "verifica"
+  const [verificaData, setVerificaData] = useState([]);
+  const [editCellVA, setEditCellVA] = useState(null); // { ean, field, value }
+
   const showToast = (msg, type = "ok") => { setToast({ msg, type }); setTimeout(() => setToast(null), 4000); };
 
   const loadData = useCallback(async () => {
@@ -1988,6 +1992,14 @@ function ModuloLanciSettimanali({ token, titoli, prenotato, canali, ruolo, userA
   }, [token]);
 
   useEffect(() => { loadData(); }, [loadData]);
+
+  const loadVerifica = useCallback(async () => {
+    if (!token) return;
+    const d = await sbFetch("verifica_amazon?select=*", token);
+    if (Array.isArray(d)) setVerificaData(d);
+  }, [token]);
+
+  useEffect(() => { loadVerifica(); }, [loadVerifica]);
 
   // Anni e lanci
   const anniDisponibili = useMemo(() => [...new Set(data.map(r => r.anno_lancio))].sort((a, b) => b - a), [data]);
@@ -2170,6 +2182,79 @@ function ModuloLanciSettimanali({ token, titoli, prenotato, canali, ruolo, userA
   };
   const sortIcon = (key) => sortKey === key ? (sortDir === "asc" ? " ↑" : " ↓") : "";
 
+  // ── Verifica Amazon: mappa record per EAN (lancio/anno correnti) + calcolo formule ──
+  const verificaByEan = useMemo(() => {
+    const anno = filterAnno || anniDisponibili[0];
+    const map = {};
+    verificaData.forEach(v => {
+      if (v.anno_lancio === anno && (filterLancio.length === 0 || filterLancio.includes(v.num_lancio))) {
+        map[v.ean] = v;
+      }
+    });
+    return map;
+  }, [verificaData, filterAnno, filterLancio, anniDisponibili]);
+
+  const dataVerifica = useMemo(() => {
+    return dataFiltrata.map(r => {
+      const v = verificaByEan[r.ean] || {};
+      const F = r.pren_amazon || 0;          // AMAZON IN CEDOLA (attuale, da fine giro)
+      const E = r.teorico || 0;              // TOTALE teorico
+      const G = v.proposta_amaz ?? null;      // Proposta fatta ad Amazon
+      const I = v.proposta_pde ?? null;       // Proposta PDE
+      const J = v.copie ?? null;              // Copie effettivamente inserite da Amazon
+      const K = v.evaso ?? null;
+      const L = v.inevaso ?? null;
+      const U = v.preorder ?? 0;
+      const H = (G != null && F) ? (G - F) / F : null;
+      const M = (J != null && L != null) ? J - L : (J != null ? J : null); // Netto confermato
+      const N = M != null ? M - F : null;
+      const O = (M != null && G != null) ? M - G : null;
+      const P = (M != null && I != null) ? M - I : null;
+      const Q = (N != null && F) ? N / F : null;
+      const R = (O != null && G) ? O / G : null;
+      const S = (P != null && I) ? P / I : null;
+      const V = M != null ? M - U : null;
+      const W = (V != null && M) ? U / M : null;
+      // Amazon "effettivo": se confermato da Amazon (Netto), sostituisce il teorico proposto
+      const amazonEffettivo = M != null ? M : F;
+      return { ...r, va: v, vF: F, vE: E, vG: G, vH: H, vI: I, vJ: J, vK: K, vL: L, vM: M, vN: N, vO: O, vP: P, vQ: Q, vR: R, vS: S, vNote: v.note || "", vU: U, vV: V, vW: W, vX: !!v.richiesta_rifornimento, vY: !!v.rottura_stock, amazonEffettivo, haConferma: M != null };
+    });
+  }, [dataFiltrata, verificaByEan]);
+
+  const kpiVerifica = useMemo(() => {
+    const totProposto = dataVerifica.reduce((s, r) => s + (r.vG || 0), 0);
+    const totConfermato = dataVerifica.reduce((s, r) => s + (r.vM || 0), 0);
+    const nConfermati = dataVerifica.filter(r => r.haConferma).length;
+    const nInAttesa = dataVerifica.length - nConfermati;
+    const scostamento = totConfermato - totProposto;
+    return { totProposto, totConfermato, nConfermati, nInAttesa, scostamento };
+  }, [dataVerifica]);
+
+  // Upsert su tabella verifica_amazon (chiave: anno_lancio + num_lancio + ean)
+  const saveVerificaAmazon = async (annoLancio, numLancio, ean, fields) => {
+    const body = { anno_lancio: annoLancio, num_lancio: numLancio, ean, ...fields };
+    try {
+      const resp = await fetch(`${SUPABASE_URL}/rest/v1/verifica_amazon?on_conflict=anno_lancio,num_lancio,ean`, {
+        method: "POST",
+        headers: {
+          "apikey": SUPABASE_KEY, "Authorization": `Bearer ${token}`, "Content-Type": "application/json",
+          "Prefer": "resolution=merge-duplicates,return=representation",
+        },
+        body: JSON.stringify(body),
+      });
+      if (!resp.ok) throw new Error(await resp.text());
+      const saved = (await resp.json())[0];
+      setVerificaData(prev => {
+        const idx = prev.findIndex(x => x.anno_lancio === annoLancio && x.num_lancio === numLancio && x.ean === ean);
+        if (idx >= 0) { const copy = [...prev]; copy[idx] = saved; return copy; }
+        return [...prev, saved];
+      });
+    } catch (err) {
+      showToast("Errore salvataggio Verifica Amazon: " + err.message, "err");
+    }
+    setEditCellVA(null);
+  };
+
   // Salva giorno uscita override
   const saveGiornoUscita = async (id, value) => {
     const payload = { giorno_uscita_override: value || null };
@@ -2317,20 +2402,53 @@ if (!r.ok) throw new Error(await r.text());
   // Export Excel
   const exportExcel = () => {
     const XLSX = window.XLSX;
+
+    // Foglio 1: LANCI — AMAZON e TOT.TEORICO usano il dato confermato (Netto) quando presente,
+    // altrimenti restano sul teorico proposto (cascata da Verifica Amazon).
     const headers = ["LANCIO","CEDOLA","EAN","TITOLO","AUTORE","COD.EDITORE","EDITORE","PREZZO","F.G.","P.O. MELI","AMAZON","TOT.TEORICO","FG VS TOT","GIORNO USCITA"];
-    const rows = dataFiltrata.map(r => [
-      r.num_lancio, r.cedole.join(", "), r.ean, r.titolo, r.autore, r.codice_editore, r.editore, r.prezzo,
-      r.pren_fine_giro, r.prenotato_trasmesso ?? "", r.pren_amazon, r.teorico, r.delta_portale, r.giorno_uscita
+    const rows = dataVerifica.map(r => {
+      const amazon = r.amazonEffettivo;
+      const base = r.teorico - r.pren_amazon;
+      const teoricoEff = base + amazon;
+      const deltaEff = teoricoEff - r.pren_fine_giro;
+      return [
+        r.num_lancio, r.cedole.join(", "), r.ean, r.titolo, r.autore, r.codice_editore, r.editore, r.prezzo,
+        r.pren_fine_giro, r.prenotato_trasmesso ?? "", amazon, teoricoEff, deltaEff, r.giorno_uscita
+      ];
+    });
+
+    // Foglio 2: VERIFICA AMAZON — analisi proposta vs confermato
+    const vHeaders = ["EAN","Descr. editore","Titolo","Autore","TOTALE","AMAZON IN CEDOLA","Proposta Amaz","Taglio prenotazione","Proposta PDE","Copie","Evaso","Inevaso","Netto","diff da FINE GIRO","diff da TAGLIO AMZ","diff da PROPOSTA PDE","diff % da FG","Diff % da amz","diff % da PDE","NOTE x Amazon","Preorder","Residuo lancio","% usata","Richiesta Rifornimento","ROTTURA DI STOCK"];
+    const vRows = dataVerifica.map(r => [
+      r.ean, r.editore, r.titolo, r.autore, r.vE, r.vF,
+      r.vG ?? "", r.vH ?? "", r.vI ?? "", r.vJ ?? "", r.vK ?? "", r.vL ?? "", r.vM ?? "",
+      r.vN ?? "", r.vO ?? "", r.vP ?? "", r.vQ ?? "", r.vR ?? "", r.vS ?? "",
+      r.vNote, r.vU, r.vV ?? "", r.vW ?? "", r.vX ? "SI" : "", r.vY ? "SI" : ""
     ]);
-    // Riepilogo editori
+
+    // Foglio 3: RIEPILOGO EDITORI — colonna AMAZON/VALORE ricalcolata con effettivo confermato
+    const byEditoreEff = {};
+    dataVerifica.forEach(r => {
+      const amazon = r.amazonEffettivo;
+      if (!byEditoreEff[r.editore]) byEditoreEff[r.editore] = { titoli: 0, lanciate: 0, trasmesse: 0, fineGiro: 0, amazon: 0, valore: 0 };
+      byEditoreEff[r.editore].titoli++;
+      byEditoreEff[r.editore].lanciate += r.prenotato_iscrizione || 0;
+      byEditoreEff[r.editore].trasmesse += r.prenotato_trasmesso ?? 0;
+      byEditoreEff[r.editore].fineGiro += r.pren_fine_giro || 0;
+      byEditoreEff[r.editore].amazon += amazon;
+      byEditoreEff[r.editore].valore += (r.prezzo || 0) * (r.prenotato_iscrizione || 0);
+    });
     const rH = ["EDITORE","TITOLI","LANCIATE","TRASMESSE","FINE GIRO","AMAZON","VALORE"];
-    const rR = Object.entries(kpi.byEditore).sort((a, b) => b[1].lanciate - a[1].lanciate).map(([ed, v]) => [
+    const rR = Object.entries(byEditoreEff).sort((a, b) => b[1].lanciate - a[1].lanciate).map(([ed, v]) => [
       ed, v.titoli, v.lanciate, v.trasmesse, v.fineGiro, v.amazon, Math.round(v.valore)
     ]);
+
     const ws = XLSX.utils.aoa_to_sheet([headers, ...rows]);
+    const wsV = XLSX.utils.aoa_to_sheet([vHeaders, ...vRows]);
     const wsR = XLSX.utils.aoa_to_sheet([rH, ...rR]);
     const wb = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(wb, ws, `Lanci ${filterLancio.join("-")}`);
+    XLSX.utils.book_append_sheet(wb, wsV, "Verifica Amazon");
     XLSX.utils.book_append_sheet(wb, wsR, "Riepilogo Editori");
     XLSX.writeFile(wb, `Lancio_${filterLancio.join("-")}_${filterAnno}.xlsx`);
   };
@@ -2374,10 +2492,18 @@ if (!r.ok) throw new Error(await r.text());
             {uploading && uploadMode === "iscrizione" ? "..." : "Upload File Lancio"}
             <input type="file" accept=".xlsx,.xls,.csv" style={{ display: "none" }} onChange={(e) => handleUpload(e, "iscrizione")} disabled={uploading} />
           </label>
+          <button
+            style={{ ...css.btn(viewMode === "verifica" ? "accent" : undefined), display: "inline-flex", alignItems: "center", gap: 6 }}
+            onClick={() => setViewMode(m => m === "lanci" ? "verifica" : "lanci")}
+          >
+            🔍 Verifica Amazon{kpiVerifica.nInAttesa > 0 ? ` (${kpiVerifica.nInAttesa} in attesa)` : ""}
+          </button>
           <button style={css.btn()} onClick={exportExcel}>Download Excel</button>
         </div>
       </div>
 
+      {viewMode === "lanci" ? (
+      <>
       {/* KPI */}
       <div style={{ padding: "16px 20px", borderBottom: `1px solid ${T.border}` }}>
         <div style={{ display: "flex", gap: 12, flexWrap: "wrap", marginBottom: 16 }}>
@@ -2409,9 +2535,108 @@ if (!r.ok) throw new Error(await r.text());
           ))}
         </div>
       </div>
+      </>
+      ) : (
+      /* KPI VERIFICA AMAZON */
+      <div style={{ padding: "16px 20px", borderBottom: `1px solid ${T.border}` }}>
+        <div style={{ display: "flex", gap: 12, flexWrap: "wrap" }}>
+          <KpiCard label="Proposto ad Amazon" value={kpiVerifica.totProposto.toLocaleString("it")} color="#e8a838" />
+          <KpiCard label="Confermato (Netto)" value={kpiVerifica.totConfermato.toLocaleString("it")} color={T.green} />
+          <KpiCard label="Scostamento vs proposta" value={(kpiVerifica.scostamento > 0 ? "+" : "") + kpiVerifica.scostamento.toLocaleString("it")} color={kpiVerifica.scostamento < 0 ? T.red : T.green} />
+          <KpiCard label="Titoli confermati" value={kpiVerifica.nConfermati} color={T.text} />
+          <KpiCard label="In attesa di conferma" value={kpiVerifica.nInAttesa} color={kpiVerifica.nInAttesa > 0 ? "#e8a838" : T.textMid} />
+        </div>
+      </div>
+      )}
 
       {/* TABELLA */}
       <div style={{ flex: 1, overflowY: "auto", overflowX: "auto" }}>
+      {viewMode === "verifica" ? (
+        <table style={css.table}>
+          <thead>
+            <tr>
+              <th style={css.th}>Editore</th>
+              <th style={css.th}>Titolo</th>
+              <th style={css.th} title="Totale teorico (F.G. trasmesso + Amazon)">Totale</th>
+              <th style={{ ...css.th, color: "#e8a838" }} title="Amazon in cedola (attuale)">Amazon cedola</th>
+              <th style={css.th} title="Quantità proposta ad Amazon">Proposta Amaz</th>
+              <th style={css.th} title="Taglio prenotazione = (Proposta-Cedola)/Cedola">Taglio %</th>
+              <th style={css.th} title="Proposta interna PDE">Proposta PDE</th>
+              <th style={css.th} title="Copie effettivamente inserite da Amazon">Copie</th>
+              <th style={css.th}>Evaso</th>
+              <th style={css.th}>Inevaso</th>
+              <th style={css.th} title="Netto = Copie - Inevaso">Netto</th>
+              <th style={css.th} title="Netto - Amazon cedola">Diff FG</th>
+              <th style={css.th} title="Netto - Proposta Amaz">Diff Amz</th>
+              <th style={css.th} title="Netto - Proposta PDE">Diff PDE</th>
+              <th style={css.th}>Note</th>
+              <th style={css.th}>Preorder</th>
+              <th style={css.th} title="Netto - Preorder">Residuo</th>
+              <th style={css.th}>Rifornim.</th>
+              <th style={css.th}>Rottura stock</th>
+            </tr>
+          </thead>
+          <tbody>
+            {dataVerifica.map((r, i) => {
+              const editVACell = (field, type = "number") => {
+                const isEditing = editCellVA?.ean === r.ean && editCellVA?.field === field;
+                const rawVal = { proposta_amaz: r.vG, proposta_pde: r.vI, copie: r.vJ, evaso: r.vK, inevaso: r.vL, note: r.va.note, preorder: r.vU }[field];
+                if (isEditing) {
+                  return (
+                    <div style={{ display: "flex", gap: 3, alignItems: "center" }}>
+                      <input
+                        type={type} style={{ ...css.input, width: type === "text" ? 120 : 65, padding: "2px 5px", fontSize: "11px" }}
+                        value={editCellVA.value} autoFocus
+                        onChange={e => setEditCellVA(p => ({ ...p, value: e.target.value }))}
+                        onKeyDown={e => {
+                          if (e.key === "Enter") saveVerificaAmazon(r.anno_lancio, r.num_lancio, r.ean, { [field]: type === "number" ? (editCellVA.value === "" ? null : parseInt(editCellVA.value)) : editCellVA.value });
+                          if (e.key === "Escape") setEditCellVA(null);
+                        }}
+                      />
+                      <button style={{ ...css.btn("accent"), padding: "1px 5px", fontSize: "10px" }}
+                        onClick={() => saveVerificaAmazon(r.anno_lancio, r.num_lancio, r.ean, { [field]: type === "number" ? (editCellVA.value === "" ? null : parseInt(editCellVA.value)) : editCellVA.value })}>✓</button>
+                    </div>
+                  );
+                }
+                return (
+                  <div style={{ cursor: "pointer", display: "flex", alignItems: "center", gap: 4 }}
+                    onClick={() => setEditCellVA({ ean: r.ean, field, value: rawVal != null ? String(rawVal) : "" })}>
+                    <span style={{ color: rawVal != null && rawVal !== "" ? T.text : T.textDim }}>{rawVal != null && rawVal !== "" ? rawVal : "—"}</span>
+                    <span style={{ color: T.accent, fontSize: "10px" }}>✎</span>
+                  </div>
+                );
+              };
+              return (
+                <tr key={r.ean} style={{ background: r.haConferma ? T.green + "14" : (i % 2 === 0 ? "transparent" : T.surface + "66") }}>
+                  <td style={{ ...css.td, color: T.accent, fontWeight: "600", whiteSpace: "nowrap", maxWidth: 130, overflow: "hidden", textOverflow: "ellipsis" }}>{r.editore}</td>
+                  <td style={{ ...css.td, maxWidth: 200 }}><div style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", fontWeight: "600" }}>{r.titolo}</div></td>
+                  <td style={css.td}>{r.vE.toLocaleString("it")}</td>
+                  <td style={{ ...css.td, color: "#e8a838", fontWeight: "600" }}>{r.vF.toLocaleString("it")}</td>
+                  <td style={css.td}>{editVACell("proposta_amaz")}</td>
+                  <td style={{ ...css.td, color: r.vH == null ? T.textDim : r.vH < 0 ? T.red : T.green }}>{r.vH != null ? (r.vH * 100).toFixed(1) + "%" : "—"}</td>
+                  <td style={css.td}>{editVACell("proposta_pde")}</td>
+                  <td style={css.td}>{editVACell("copie")}</td>
+                  <td style={css.td}>{editVACell("evaso")}</td>
+                  <td style={css.td}>{editVACell("inevaso")}</td>
+                  <td style={{ ...css.td, fontWeight: "700", color: r.haConferma ? T.green : T.textDim }}>{r.vM != null ? r.vM.toLocaleString("it") : "—"}</td>
+                  <td style={{ ...css.td, color: r.vN == null ? T.textDim : r.vN < 0 ? T.red : T.green }}>{r.vN != null ? (r.vN > 0 ? "+" : "") + r.vN.toLocaleString("it") : "—"}</td>
+                  <td style={{ ...css.td, color: r.vO == null ? T.textDim : r.vO < 0 ? T.red : T.green }}>{r.vO != null ? (r.vO > 0 ? "+" : "") + r.vO.toLocaleString("it") : "—"}</td>
+                  <td style={{ ...css.td, color: r.vP == null ? T.textDim : r.vP < 0 ? T.red : T.green }}>{r.vP != null ? (r.vP > 0 ? "+" : "") + r.vP.toLocaleString("it") : "—"}</td>
+                  <td style={{ ...css.td, fontSize: "11px", maxWidth: 140 }}>{editVACell("note", "text")}</td>
+                  <td style={css.td}>{editVACell("preorder")}</td>
+                  <td style={css.td}>{r.vV != null ? r.vV.toLocaleString("it") : "—"}</td>
+                  <td style={{ ...css.td, textAlign: "center", cursor: "pointer" }} onClick={() => saveVerificaAmazon(r.anno_lancio, r.num_lancio, r.ean, { richiesta_rifornimento: !r.vX })}>
+                    {r.vX ? <span style={{ color: "#e8a838" }}>⚠️</span> : <span style={{ color: T.textDim }}>—</span>}
+                  </td>
+                  <td style={{ ...css.td, textAlign: "center", cursor: "pointer" }} onClick={() => saveVerificaAmazon(r.anno_lancio, r.num_lancio, r.ean, { rottura_stock: !r.vY })}>
+                    {r.vY ? <span style={{ color: T.red }}>🔴</span> : <span style={{ color: T.textDim }}>—</span>}
+                  </td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+      ) : (
         <table style={css.table}>
           <thead>
             <tr>
@@ -2533,6 +2758,7 @@ if (!r.ok) throw new Error(await r.text());
             ))}
           </tbody>
         </table>
+      )}
         {dataFiltrata.length === 0 && (
           <div style={{ padding: 40, textAlign: "center", color: T.textDim }}>Nessun titolo per questo lancio.</div>
         )}
