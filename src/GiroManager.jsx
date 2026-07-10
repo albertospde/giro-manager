@@ -2258,6 +2258,7 @@ function ModuloLanciSettimanali({ token, titoli, prenotato, canali, ruolo, userA
 
   // ── Upload mail "Differenza prenotazioni Amazon" (Messaggerie) ──
   const [showMailUpload, setShowMailUpload] = useState(false);
+  const [showRiepilogoEditori, setShowRiepilogoEditori] = useState(false);
   const [mailPasteText, setMailPasteText] = useState("");
   const [mailParseResult, setMailParseResult] = useState(null);
   const [mailProcessing, setMailProcessing] = useState(false);
@@ -2772,9 +2773,16 @@ if (!r.ok) throw new Error(await r.text());
       )}
 
       {/* RIEPILOGO PER EDITORE */}
-      <div style={{ padding: "16px 20px", borderBottom: `1px solid ${T.border}` }}>
-        <div style={{ color: T.textMid, fontSize: "10px", letterSpacing: "0.1em", textTransform: "uppercase", marginBottom: 10 }}>Riepilogo per editore</div>
-        <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+      <div style={{ padding: "10px 20px", borderBottom: `1px solid ${T.border}` }}>
+        <div
+          style={{ color: T.textMid, fontSize: "10px", letterSpacing: "0.1em", textTransform: "uppercase", cursor: "pointer", display: "inline-flex", alignItems: "center", gap: 6, userSelect: "none" }}
+          onClick={() => setShowRiepilogoEditori(s => !s)}
+        >
+          <span style={{ transform: showRiepilogoEditori ? "rotate(90deg)" : "none", transition: "transform 0.15s", display: "inline-block", fontSize: "9px" }}>▶</span>
+          Riepilogo per editore ({riepilogoEditoriVerifica.length})
+        </div>
+        {showRiepilogoEditori && (
+        <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginTop: 10 }}>
           {riepilogoEditoriVerifica.map(e => (
             <div key={e.editore} style={{ background: T.bg, border: `1px solid ${T.border}`, borderRadius: 4, padding: "8px 12px", minWidth: 150, flex: "1 1 150px", maxWidth: 220 }}>
               <div style={{ fontSize: "11px", fontWeight: "600", color: T.text, marginBottom: 4, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{e.editore}</div>
@@ -2791,6 +2799,7 @@ if (!r.ok) throw new Error(await r.text());
             </div>
           ))}
         </div>
+        )}
       </div>
       </>
       )}
