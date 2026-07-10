@@ -18,16 +18,21 @@ const css = {
 
 // Template ridotto — solo i campi essenziali del carico semplice.
 // Colonne nel template "CARICO":
-// 0=giro_label, 1=ean, 2=titolo, 3=autore, 4=editore_nome, 5=prezzo, 6=uscita,
-// 7=obiettivo_assegnato, 8=note, 9=ean_gemello_1, 10=titolo_gemello_1,
-// 11=ean_gemello_2, 12=titolo_gemello_2, 13=ean_gemello_3, 14=titolo_gemello_3
+// 0=giro_label (es. "5 2026", o "EXTRA 2026" per una cedola extra),
+// 1=n_cedola (nome cedola, facoltativo per giri normali, obbligatorio per EXTRA),
+// 2=ean, 3=titolo, 4=autore, 5=editore_nome, 6=prezzo, 7=uscita,
+// 8=obiettivo_assegnato, 9=note, 10=ean_gemello_1, 11=titolo_gemello_1,
+// 12=ean_gemello_2, 13=titolo_gemello_2, 14=ean_gemello_3, 15=titolo_gemello_3
 const COL_MAP = {
-  0: "giro_label", 1: "ean", 2: "titolo", 3: "autore", 4: "editore_nome",
-  5: "prezzo", 6: "uscita", 7: "obiettivo_assegnato", 8: "note",
-  9: "ean_gemello_1", 10: "titolo_gemello_1",
-  11: "ean_gemello_2", 12: "titolo_gemello_2",
-  13: "ean_gemello_3", 14: "titolo_gemello_3",
+  0: "giro_label", 1: "n_cedola", 2: "ean", 3: "titolo", 4: "autore", 5: "editore_nome",
+  6: "prezzo", 7: "uscita", 8: "obiettivo_assegnato", 9: "note",
+  10: "ean_gemello_1", 11: "titolo_gemello_1",
+  12: "ean_gemello_2", 13: "titolo_gemello_2",
+  14: "ean_gemello_3", 15: "titolo_gemello_3",
 };
+
+// Riconosce "EXTRA", "EXTRA 2026", ecc. nella colonna GIRO
+const EXTRA_RE = /^EXTRA\s*(\d{4})?$/i;
 
 const REQUIRED = ["giro_label", "ean", "titolo", "editore_nome", "prezzo"];
 const FORMATO_DEFAULT = "Cover";
@@ -106,13 +111,31 @@ export default function ModuloCaricoSemplice({ giriList, titoliEsistenti, token,
             if (field === "prezzo") val = parseFloat(String(val).replace(",", ".")) || null;
             if (field === "obiettivo_assegnato") val = parseInt(val) || 0;
             if (field === "giro_label") val = val ? String(val) : null;
-            const CAMPI_TESTO = ["titolo","autore","editore_nome","uscita","note","giro_label","titolo_gemello_1","titolo_gemello_2","titolo_gemello_3"];
+            const CAMPI_TESTO = ["titolo","autore","editore_nome","uscita","note","giro_label","n_cedola","titolo_gemello_1","titolo_gemello_2","titolo_gemello_3"];
             if (CAMPI_TESTO.includes(field) && typeof val === "string" && val !== "") val = val.trim().toUpperCase();
             obj[field] = val === "" ? null : val;
           });
 
-          obj.giro_id = null;        // assegnato all'import dal selettore Giro
-          obj.n_cedola = null;       // non usato nel carico semplice
+          const rowErrsExtra = [];
+
+          // Riconosce "EXTRA" / "EXTRA 2026" nella colonna GIRO → normalizza giro_label a "EXTRA"
+          // esatto (convenzione usata ovunque nell'app) e usa l'anno per completare il nome cedola,
+          // così l'anno resta disponibile per i filtri (es. Avanzamento Novità).
+          const giroRaw = String(obj.giro_label ?? "").trim();
+          const extraMatch = giroRaw.match(EXTRA_RE);
+          if (extraMatch) {
+            obj.giro_label = "EXTRA";
+            const annoExtra = extraMatch[1] || null;
+            if (!obj.n_cedola) {
+              rowErrsExtra.push("N. Cedola obbligatorio per le cedole EXTRA");
+            } else if (annoExtra && !/\b20\d{2}\b/.test(obj.n_cedola)) {
+              obj.n_cedola = `${obj.n_cedola} ${annoExtra}`;
+            }
+          }
+
+          // giro_id: assegnato dal selettore "Giro di destinazione" per i giri normali in handleImport;
+          // le righe EXTRA non sono legate a un giro numerato, quindi restano sempre senza giro_id.
+          obj._isExtra = !!extraMatch;
           obj.formato = FORMATO_DEFAULT;
 
           // Risolvi codice_editore / ranking_editore / account_editore / promozione dal DB
@@ -144,7 +167,7 @@ export default function ModuloCaricoSemplice({ giriList, titoliEsistenti, token,
           obj.posizione = contatori[keyGruppo];
 
           // Validazione campi obbligatori
-          const rowErrs = [];
+          const rowErrs = [...rowErrsExtra];
           REQUIRED.forEach(f => { if (!obj[f]) rowErrs.push(f); });
           if (obj.ean && String(obj.ean).replace(/\D/g,"").length !== 13) rowErrs.push("EAN non valido");
           if (rowErrs.length) errs.push({ row: idx + 5, fields: rowErrs });
@@ -166,7 +189,7 @@ export default function ModuloCaricoSemplice({ giriList, titoliEsistenti, token,
   const handleImport = async () => {
     if (!giroSel) return;
     setImporting(true);
-    const payload = rows.map(r => ({ ...r, giro_id: giroSel }));
+    const payload = rows.map(({ _isExtra, ...r }) => ({ ...r, giro_id: _isExtra ? null : giroSel }));
     try {
       const res = await fetch(`${SUPABASE_URL}/rest/v1/rpc/upsert_titoli`, {
         method: "POST",
@@ -271,7 +294,7 @@ export default function ModuloCaricoSemplice({ giriList, titoliEsistenti, token,
               <table style={{ width: "100%", borderCollapse: "collapse" }}>
                 <thead>
                   <tr>
-                    {["Pos.","EAN","Titolo","Autore","Editore","Cod.Ed.","Account","Promo","Prezzo","Uscita","Obj","Gemelli"].map(h => <th key={h} style={css.th}>{h}</th>)}
+                    {["Giro","Cedola","Pos.","EAN","Titolo","Autore","Editore","Cod.Ed.","Account","Promo","Prezzo","Uscita","Obj","Gemelli"].map(h => <th key={h} style={css.th}>{h}</th>)}
                   </tr>
                 </thead>
                 <tbody>
@@ -279,6 +302,8 @@ export default function ModuloCaricoSemplice({ giriList, titoliEsistenti, token,
                     const hasErr = errors.find(e => e.row === i + 5);
                     return (
                       <tr key={i} style={{ background: hasErr ? T.red + "11" : i % 2 === 0 ? "transparent" : T.surface + "66" }}>
+                        <td style={{ ...css.td, color: r._isExtra ? T.accent : T.textMid, fontWeight: r._isExtra ? "700" : "400", fontSize: "11px" }}>{r.giro_label ?? "—"}</td>
+                        <td style={{ ...css.td, color: r.n_cedola ? T.text : T.textMid, fontSize: "11px" }}>{r.n_cedola ?? "—"}</td>
                         <td style={{ ...css.td, color: T.accent, fontWeight: "700", textAlign: "center" }}>{r.posizione}</td>
                         <td style={{ ...css.td, fontFamily: "monospace", fontSize: "11px", color: T.textMid }}>{r.ean}</td>
                         <td style={{ ...css.td, maxWidth: 200, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", fontWeight: "600" }}>{r.titolo}</td>
