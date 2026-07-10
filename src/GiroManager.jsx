@@ -1,5 +1,6 @@
 import { useState, useEffect, useMemo, useCallback } from "react";
 import ModuloImport from "./ModuloImport.jsx";
+import ModuloCaricoSemplice from "./ModuloCaricoSemplice.jsx";
 import ModuloPrenotato from "./ModuloPrenotato.jsx";
 import ModuloAvanzamento from "./ModuloAvanzamento.jsx";
 
@@ -857,6 +858,7 @@ function ModuloCedola({ titoli, giriList, onUpdateTitolo, spalmatura, prenotato,
   const [sortKey, setSortKey] = useState("n_cedola");
   const [showNuovoGiro, setShowNuovoGiro] = useState(false);
   const [showNuovoTitolo, setShowNuovoTitolo] = useState(false);
+  const [showCaricoSemplice, setShowCaricoSemplice] = useState(false);
   const [toastCedola, setToastCedola] = useState(null);
   const showToastCedola = (msg, type = "ok") => { setToastCedola({ msg, type }); setTimeout(() => setToastCedola(null), 3000); };
 
@@ -1244,6 +1246,17 @@ function ModuloCedola({ titoli, giriList, onUpdateTitolo, spalmatura, prenotato,
         </div>
       )}
 
+      {/* MODALE CARICO SEMPLICE */}
+      {showCaricoSemplice && (
+        <ModuloCaricoSemplice
+          giriList={giriList}
+          titoliEsistenti={titoli}
+          token={token}
+          onClose={() => setShowCaricoSemplice(false)}
+          onImportDone={() => { onTitoliChange && onTitoliChange(); showToastCedola("Carico completato"); }}
+        />
+      )}
+
       {/* TOAST LOCALE */}
       {toastCedola && (
         <div style={{ position: "fixed", bottom: 24, left: "50%", transform: "translateX(-50%)", background: toastCedola.type === "err" ? "#4a1a2a" : "#1a3a2a", border: `1px solid ${toastCedola.type === "err" ? T.red : T.green}`, color: toastCedola.type === "err" ? T.red : T.green, borderRadius: 6, padding: "8px 20px", fontSize: "12px", zIndex: 999, boxShadow: "0 4px 20px #0008" }}>
@@ -1270,6 +1283,7 @@ function ModuloCedola({ titoli, giriList, onUpdateTitolo, spalmatura, prenotato,
         {ruolo !== "agente" && <>
           <button style={{ ...css.btn(), borderColor: T.green, color: T.green }} onClick={() => setShowNuovoGiro(true)}>+ Giro</button>
           <button style={{ ...css.btn(), borderColor: T.green, color: T.green }} onClick={() => setShowNuovoTitolo(true)}>+ Titolo</button>
+          <button style={{ ...css.btn(), borderColor: T.blue, color: T.blue }} onClick={() => setShowCaricoSemplice(true)} title="Carica più titoli da file Excel — supporta anche cedole EXTRA">+ Carico</button>
         </>}
         <button style={css.btn("accent")} onClick={exportAgenti}>↓ Download Agenti</button>
         {ruolo !== "agente" && <button style={css.btn("accent")} onClick={exportDirezionale}>↓ Download Direzionali</button>}
