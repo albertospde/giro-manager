@@ -2234,16 +2234,17 @@ function ModuloLanciSettimanali({ token, titoli, prenotato, canali, ruolo, userA
   const riepilogoEditoriVerifica = useMemo(() => {
     const byEd = {};
     dataVerifica.forEach(r => {
-      if (!byEd[r.editore]) byEd[r.editore] = { editore: r.editore, titoli: 0, proposto: 0, confermato: 0, confermati: 0, inAttesa: 0 };
+      if (!byEd[r.editore]) byEd[r.editore] = { editore: r.editore, titoli: 0, proposto: 0, confermato: 0, confermati: 0, inAttesa: 0, valore: 0 };
       const e = byEd[r.editore];
       e.titoli++;
       e.proposto += r.vG || 0;
       e.confermato += r.vM || 0;
+      e.valore += (r.prezzo || 0) * (r.vM || 0);
       if (r.haConferma) e.confermati++; else e.inAttesa++;
     });
     return Object.values(byEd)
       .map(e => ({ ...e, scostamento: e.confermato - e.proposto }))
-      .sort((a, b) => b.titoli - a.titoli);
+      .sort((a, b) => b.confermato - a.confermato);
   }, [dataVerifica]);
 
   // ── Upload mail "Differenza prenotazioni Amazon" (Messaggerie) ──
@@ -2269,9 +2270,21 @@ function ModuloLanciSettimanali({ token, titoli, prenotato, canali, ruolo, userA
     return rows;
   };
 
+  // Estrae il numero di lancio (es. "LANCIO NR. 29.0 2026" / "lancio n. 29.0") dal testo mail
+  const parseLancioFromMail = (text) => {
+    const m = text.match(/lancio\s*(?:nr\.?|n\.)?\s*(\d{1,3})[.,](\d)(?:\D{0,10}(\d{4}))?/i);
+    if (!m) return null;
+    const numLancio = parseInt(m[1], 10) * 10 + parseInt(m[2], 10);
+    const anno = m[3] ? parseInt(m[3], 10) : null;
+    return { numLancio, anno };
+  };
+
+  const [mailLancioInfo, setMailLancioInfo] = useState(null);
+
   const runMailParse = (text) => {
     let rows = parseMessaggerieMail(text);
     if (rows.length === 0) showToast("Nessuna riga riconosciuta nel testo/file caricato", "err");
+    setMailLancioInfo(parseLancioFromMail(text));
     setMailParseResult(rows);
   };
 
@@ -2304,8 +2317,24 @@ function ModuloLanciSettimanali({ token, titoli, prenotato, canali, ruolo, userA
     return { daMail, autoConfermati };
   }, [mailParseResult, mailByEan, dataVerifica]);
 
+  // Blocco di sicurezza: la mail deve riferirsi esattamente al lancio/anno selezionati in app
+  const mailLancioMismatch = useMemo(() => {
+    if (!mailParseResult) return null;
+    const annoSel = filterAnno || anniDisponibili[0];
+    if (!mailLancioInfo) {
+      return { tipo: "non_rilevato", msg: "Non sono riuscito a capire a quale lancio si riferisce la mail. Verifica manualmente prima di procedere." };
+    }
+    if (filterLancio.length !== 1) {
+      return { tipo: "selezione_multipla", msg: `Per caricare la mail devi avere selezionato un solo lancio (ora ne hai selezionati ${filterLancio.length}). La mail si riferisce al lancio ${mailLancioInfo.numLancio}${mailLancioInfo.anno ? "/" + mailLancioInfo.anno : ""}.` };
+    }
+    if (filterLancio[0] !== mailLancioInfo.numLancio || (mailLancioInfo.anno && annoSel !== mailLancioInfo.anno)) {
+      return { tipo: "mismatch", msg: `La mail si riferisce al lancio ${mailLancioInfo.numLancio}${mailLancioInfo.anno ? "/" + mailLancioInfo.anno : ""}, ma qui hai selezionato il lancio ${filterLancio[0]}/${annoSel}. Seleziona il lancio corretto prima di continuare.` };
+    }
+    return null;
+  }, [mailParseResult, mailLancioInfo, filterLancio, filterAnno, anniDisponibili]);
+
   const confirmApplyMail = async () => {
-    if (!mailParseResult) return;
+    if (!mailParseResult || mailLancioMismatch) return;
     setMailProcessing(true);
     let doneMail = 0, doneAuto = 0;
     for (const r of dataVerifica) {
@@ -2320,6 +2349,7 @@ function ModuloLanciSettimanali({ token, titoli, prenotato, canali, ruolo, userA
     }
     showToast(`Mail applicata: ${doneMail} titoli da mail, ${doneAuto} confermati su Proposta PDE`);
     setMailParseResult(null);
+    setMailLancioInfo(null);
     setMailPasteText("");
     setShowMailUpload(false);
     setMailProcessing(false);
@@ -2677,6 +2707,15 @@ if (!r.ok) throw new Error(await r.text());
             </>
           ) : (
             <>
+              {mailLancioMismatch ? (
+                <div style={{ background: T.red + "18", border: `1px solid ${T.red}`, borderRadius: 4, padding: "10px 14px", marginBottom: 12, color: T.red, fontSize: "12px", fontWeight: "600" }}>
+                  🚫 {mailLancioMismatch.msg}
+                </div>
+              ) : mailLancioInfo && (
+                <div style={{ background: T.green + "18", border: `1px solid ${T.green}`, borderRadius: 4, padding: "8px 14px", marginBottom: 12, color: T.green, fontSize: "12px" }}>
+                  ✓ La mail si riferisce al lancio {mailLancioInfo.numLancio}{mailLancioInfo.anno ? "/" + mailLancioInfo.anno : ""}, corrispondente al lancio selezionato.
+                </div>
+              )}
               <div style={{ fontSize: "12px", color: T.text, marginBottom: 10 }}>
                 Trovati <b style={{ color: "#e8a838" }}>{mailParseResult.length}</b> titoli nella mail. Gli altri <b style={{ color: T.green }}>{mailPreview?.autoConfermati ?? 0}</b> titoli del lancio (senza differenza) verranno confermati in automatico sul valore di Proposta PDE.
               </div>
@@ -2705,10 +2744,10 @@ if (!r.ok) throw new Error(await r.text());
                 </table>
               )}
               <div style={{ display: "flex", gap: 10 }}>
-                <button style={css.btn("accent")} disabled={mailProcessing} onClick={confirmApplyMail}>
+                <button style={css.btn("accent")} disabled={mailProcessing || !!mailLancioMismatch} title={mailLancioMismatch ? "Seleziona il lancio corretto per procedere" : ""} onClick={confirmApplyMail}>
                   {mailProcessing ? "Applico..." : "✓ Conferma e applica"}
                 </button>
-                <button style={css.btn()} disabled={mailProcessing} onClick={() => { setMailParseResult(null); setMailPasteText(""); }}>Annulla</button>
+                <button style={css.btn()} disabled={mailProcessing} onClick={() => { setMailParseResult(null); setMailLancioInfo(null); setMailPasteText(""); }}>Annulla</button>
               </div>
             </>
           )}
@@ -2718,33 +2757,22 @@ if (!r.ok) throw new Error(await r.text());
       {/* RIEPILOGO PER EDITORE */}
       <div style={{ padding: "16px 20px", borderBottom: `1px solid ${T.border}` }}>
         <div style={{ color: T.textMid, fontSize: "10px", letterSpacing: "0.1em", textTransform: "uppercase", marginBottom: 10 }}>Riepilogo per editore</div>
-        <div style={{ overflowX: "auto" }}>
-          <table style={css.table}>
-            <thead>
-              <tr>
-                <th style={css.th}>Editore</th>
-                <th style={css.th}>Titoli</th>
-                <th style={css.th}>Proposto</th>
-                <th style={css.th}>Confermato</th>
-                <th style={css.th}>Scostamento</th>
-                <th style={css.th}>Confermati</th>
-                <th style={css.th}>In attesa</th>
-              </tr>
-            </thead>
-            <tbody>
-              {riepilogoEditoriVerifica.map(e => (
-                <tr key={e.editore}>
-                  <td style={{ ...css.td, color: T.accent, fontWeight: "600" }}>{e.editore}</td>
-                  <td style={css.td}>{e.titoli}</td>
-                  <td style={{ ...css.td, color: "#e8a838" }}>{e.proposto.toLocaleString("it")}</td>
-                  <td style={{ ...css.td, color: T.green, fontWeight: "600" }}>{e.confermato.toLocaleString("it")}</td>
-                  <td style={{ ...css.td, color: e.scostamento < 0 ? T.red : e.scostamento > 0 ? T.green : T.textMid }}>{(e.scostamento > 0 ? "+" : "") + e.scostamento.toLocaleString("it")}</td>
-                  <td style={css.td}>{e.confermati}</td>
-                  <td style={{ ...css.td, color: e.inAttesa > 0 ? "#e8a838" : T.textMid }}>{e.inAttesa}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
+        <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+          {riepilogoEditoriVerifica.map(e => (
+            <div key={e.editore} style={{ background: T.bg, border: `1px solid ${T.border}`, borderRadius: 4, padding: "8px 12px", minWidth: 150, flex: "1 1 150px", maxWidth: 220 }}>
+              <div style={{ fontSize: "11px", fontWeight: "600", color: T.text, marginBottom: 4, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{e.editore}</div>
+              <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 3 }}>
+                <div style={{ flex: 1, height: 4, background: T.borderHi, borderRadius: 2, overflow: "hidden" }}>
+                  <div style={{ width: `${Math.round(e.confermato / (riepilogoEditoriVerifica[0]?.confermato || 1) * 100)}%`, height: "100%", background: T.green }} />
+                </div>
+                <span style={{ fontSize: "11px", fontWeight: "700", color: T.green, minWidth: 40, textAlign: "right" }}>{e.confermato.toLocaleString("it")}</span>
+              </div>
+              {e.proposto > 0 && (
+                <div style={{ fontSize: "9px", color: "#e8a838" }}>🎯 {e.proposto.toLocaleString("it")}</div>
+              )}
+              <div style={{ fontSize: "9px", color: T.textDim, marginTop: 2 }}>{e.titoli} titoli · € {Math.round(e.valore).toLocaleString("it")}</div>
+            </div>
+          ))}
         </div>
       </div>
       </>
