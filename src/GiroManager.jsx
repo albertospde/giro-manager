@@ -2231,7 +2231,7 @@ function ModuloLanciSettimanali({ token, titoli, prenotato, canali, ruolo, userA
   }, [dataFiltrata, verificaByEan]);
 
   const kpiVerifica = useMemo(() => {
-    const totProposto = dataVerifica.reduce((s, r) => s + (r.vG || 0), 0);
+    const totProposto = dataVerifica.reduce((s, r) => s + (r.vF || 0), 0);
     const totConfermato = dataVerifica.reduce((s, r) => s + (r.vM || 0), 0);
     const nConfermati = dataVerifica.filter(r => r.haConferma).length;
     const nInAttesa = dataVerifica.length - nConfermati;
@@ -2246,7 +2246,7 @@ function ModuloLanciSettimanali({ token, titoli, prenotato, canali, ruolo, userA
       if (!byEd[r.editore]) byEd[r.editore] = { editore: r.editore, titoli: 0, proposto: 0, confermato: 0, confermati: 0, inAttesa: 0, valore: 0 };
       const e = byEd[r.editore];
       e.titoli++;
-      e.proposto += r.vG || 0;
+      e.proposto += r.vF || 0;
       e.confermato += r.vM || 0;
       e.valore += (r.prezzo || 0) * (r.vM || 0);
       if (r.haConferma) e.confermati++; else e.inAttesa++;
