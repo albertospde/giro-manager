@@ -2233,22 +2233,26 @@ function ModuloLanciSettimanali({ token, titoli, prenotato, canali, ruolo, userA
   const kpiVerifica = useMemo(() => {
     const totProposto = dataVerifica.reduce((s, r) => s + (r.vF || 0), 0);
     const totConfermato = dataVerifica.reduce((s, r) => s + (r.vM || 0), 0);
+    const valoreProposto = dataVerifica.reduce((s, r) => s + (r.prezzo || 0) * (r.vF || 0), 0);
+    const valoreConfermato = dataVerifica.reduce((s, r) => s + (r.prezzo || 0) * (r.vM || 0), 0);
     const nConfermati = dataVerifica.filter(r => r.haConferma).length;
     const nInAttesa = dataVerifica.length - nConfermati;
     const scostamento = totConfermato - totProposto;
-    return { totProposto, totConfermato, nConfermati, nInAttesa, scostamento };
+    const valoreScostamento = valoreConfermato - valoreProposto;
+    return { totProposto, totConfermato, valoreProposto, valoreConfermato, nConfermati, nInAttesa, scostamento, valoreScostamento };
   }, [dataVerifica]);
 
   // Riepilogo Verifica Amazon per editore (proposto/confermato/scostamento)
   const riepilogoEditoriVerifica = useMemo(() => {
     const byEd = {};
     dataVerifica.forEach(r => {
-      if (!byEd[r.editore]) byEd[r.editore] = { editore: r.editore, titoli: 0, proposto: 0, confermato: 0, confermati: 0, inAttesa: 0, valore: 0 };
+      if (!byEd[r.editore]) byEd[r.editore] = { editore: r.editore, titoli: 0, proposto: 0, confermato: 0, confermati: 0, inAttesa: 0, valore: 0, valoreProposto: 0 };
       const e = byEd[r.editore];
       e.titoli++;
       e.proposto += r.vF || 0;
       e.confermato += r.vM || 0;
       e.valore += (r.prezzo || 0) * (r.vM || 0);
+      e.valoreProposto += (r.prezzo || 0) * (r.vF || 0);
       if (r.haConferma) e.confermati++; else e.inAttesa++;
     });
     return Object.values(byEd)
@@ -2703,9 +2707,9 @@ if (!r.ok) throw new Error(await r.text());
       {/* KPI VERIFICA AMAZON */}
       <div style={{ padding: "16px 20px", borderBottom: `1px solid ${T.border}` }}>
         <div style={{ display: "flex", gap: 12, flexWrap: "wrap" }}>
-          <KpiCard label="Proposto ad Amazon" value={kpiVerifica.totProposto.toLocaleString("it")} color="#e8a838" />
-          <KpiCard label="Confermato (Netto)" value={kpiVerifica.totConfermato.toLocaleString("it")} color={T.green} />
-          <KpiCard label="Scostamento vs proposta" value={(kpiVerifica.scostamento > 0 ? "+" : "") + kpiVerifica.scostamento.toLocaleString("it")} color={kpiVerifica.scostamento < 0 ? T.red : T.green} />
+          <KpiCard label="Proposto ad Amazon" value={kpiVerifica.totProposto.toLocaleString("it")} color="#e8a838" sub={`€ ${kpiVerifica.valoreProposto.toLocaleString("it", { maximumFractionDigits: 0 })}`} />
+          <KpiCard label="Confermato (Netto)" value={kpiVerifica.totConfermato.toLocaleString("it")} color={T.green} sub={`€ ${kpiVerifica.valoreConfermato.toLocaleString("it", { maximumFractionDigits: 0 })}`} />
+          <KpiCard label="Scostamento vs proposta" value={(kpiVerifica.scostamento > 0 ? "+" : "") + kpiVerifica.scostamento.toLocaleString("it")} color={kpiVerifica.scostamento < 0 ? T.red : T.green} sub={`${kpiVerifica.valoreScostamento > 0 ? "+" : ""}€ ${kpiVerifica.valoreScostamento.toLocaleString("it", { maximumFractionDigits: 0 })}`} />
           <KpiCard label="Titoli confermati" value={kpiVerifica.nConfermati} color={T.text} />
           <KpiCard label="In attesa di conferma" value={kpiVerifica.nInAttesa} color={kpiVerifica.nInAttesa > 0 ? "#e8a838" : T.textMid} />
         </div>
@@ -2818,7 +2822,7 @@ if (!r.ok) throw new Error(await r.text());
                 <span style={{ fontSize: "11px", fontWeight: "700", color: T.green, minWidth: 40, textAlign: "right" }}>{e.confermato.toLocaleString("it")}</span>
               </div>
               {e.proposto > 0 && (
-                <div style={{ fontSize: "9px", color: "#e8a838" }}>🎯 {e.proposto.toLocaleString("it")}</div>
+                <div style={{ fontSize: "9px", color: "#e8a838" }}>🎯 {e.proposto.toLocaleString("it")} · € {Math.round(e.valoreProposto).toLocaleString("it")}</div>
               )}
               <div style={{ fontSize: "9px", color: T.textDim, marginTop: 2 }}>{e.titoli} titoli · € {Math.round(e.valore).toLocaleString("it")}</div>
             </div>
