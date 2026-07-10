@@ -2298,8 +2298,7 @@ function ModuloLanciSettimanali({ token, titoli, prenotato, canali, ruolo, userA
     setMailParseResult(rows);
   };
 
-  const handleMailFile = async (e) => {
-    const file = e.target.files?.[0];
+  const processMailFile = async (file) => {
     if (!file) return;
     const buf = await file.arrayBuffer();
     let text = "";
@@ -2311,7 +2310,21 @@ function ModuloLanciSettimanali({ token, titoli, prenotato, canali, ruolo, userA
       text = new TextDecoder("utf-8").decode(buf);
     }
     runMailParse(text);
+  };
+
+  const handleMailFile = async (e) => {
+    const file = e.target.files?.[0];
+    await processMailFile(file);
     e.target.value = "";
+  };
+
+  const [mailDragOver, setMailDragOver] = useState(false);
+  const handleMailDrop = async (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setMailDragOver(false);
+    const file = e.dataTransfer.files?.[0];
+    await processMailFile(file);
   };
 
   const mailByEan = useMemo(() => {
@@ -2707,8 +2720,19 @@ if (!r.ok) throw new Error(await r.text());
                 I titoli presenti nella mail aggiornano <b>Copie</b> con il valore "restituito Amazon" (anche se è zero: significa che Amazon non ha prenotato). Tutti gli altri titoli del lancio (senza differenza segnalata) vengono confermati in automatico con la <b>proposta iniziale PDE</b> (Amazon Cedola), sia in Proposta Amaz che in Copie. Ogni caricamento sovrascrive i dati esistenti.
               </div>
               <div style={{ display: "flex", gap: 10, alignItems: "flex-start", flexWrap: "wrap" }}>
-                <label style={{ ...css.btn("accent"), cursor: "pointer" }}>
-                  ↑ Carica file .msg / .txt
+                <label
+                  style={{
+                    ...css.btn(mailDragOver ? "accent" : undefined),
+                    cursor: "pointer", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center",
+                    width: 200, minHeight: 70, border: `2px dashed ${mailDragOver ? T.accent : T.borderHi}`,
+                    background: mailDragOver ? T.accent + "18" : T.surface, textAlign: "center", padding: "8px",
+                  }}
+                  onDragOver={e => { e.preventDefault(); e.stopPropagation(); setMailDragOver(true); }}
+                  onDragLeave={e => { e.preventDefault(); e.stopPropagation(); setMailDragOver(false); }}
+                  onDrop={handleMailDrop}
+                >
+                  <span>↑ Trascina qui il file .msg</span>
+                  <span style={{ fontSize: "10px", color: T.textDim, marginTop: 3 }}>oppure clicca per sceglierlo</span>
                   <input type="file" accept=".msg,.txt,.eml" style={{ display: "none" }} onChange={handleMailFile} />
                 </label>
                 <div style={{ display: "flex", flexDirection: "column", gap: 6, flex: 1, minWidth: 280 }}>
