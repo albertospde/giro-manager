@@ -1981,6 +1981,15 @@ function ModuloLanciSettimanali({ token, titoli, prenotato, canali, ruolo, userA
   const [verificaData, setVerificaData] = useState([]);
   const [editCellVA, setEditCellVA] = useState(null); // { ean, field, value }
 
+  // Sicurezza: Verifica Amazon deve sempre operare su UN SOLO lancio per volta,
+  // altrimenti titoli ri-lanciati su più cedole (stesso EAN, lanci diversi) si mescolano nella vista.
+  useEffect(() => {
+    if (viewMode === "verifica" && filterLancio.length > 1) {
+      showToast(`Avevi ${filterLancio.length} lanci selezionati: ho lasciato solo "Lancio ${filterLancio[0]}" per evitare di mescolare i dati`, "err");
+      setFilterLancio([filterLancio[0]]);
+    }
+  }, [viewMode]);
+
   const showToast = (msg, type = "ok") => { setToast({ msg, type }); setTimeout(() => setToast(null), 4000); };
 
   const loadData = useCallback(async () => {
@@ -2603,7 +2612,7 @@ if (!r.ok) throw new Error(await r.text());
         <select style={{ ...css.input, fontSize: "13px", fontWeight: "600", color: T.accent }} value={filterAnno || ""} onChange={e => { setFilterAnno(Number(e.target.value)); setFilterLancio([]); }}>
           {anniDisponibili.map(a => <option key={a} value={a}>{a}</option>)}
         </select>
-        <SearchableMultiSelect values={filterLancio.map(String)} onChange={v => setFilterLancio(v.map(Number))} options={lanciPerAnno.map(String)} renderOption={v => `Lancio ${v}`} placeholder="Seleziona lancio" width={170} />
+        <SearchableMultiSelect values={filterLancio.map(String)} onChange={v => setFilterLancio(viewMode === "verifica" ? v.slice(-1).map(Number) : v.map(Number))} options={lanciPerAnno.map(String)} renderOption={v => `Lancio ${v}`} placeholder="Seleziona lancio" width={170} />
         <input style={{ ...css.input, width: 180 }} placeholder="Cerca EAN / titolo..." value={search} onChange={e => setSearch(e.target.value)} />
         <SearchableMultiSelect values={filterAccount} onChange={setFilterAccount} options={accountsDisponibili} placeholder="Tutti gli account" width={160} />
         {/* Riepilogo giorni */}
