@@ -2313,7 +2313,7 @@ function ModuloLanciSettimanali({ token, titoli, prenotato, canali, ruolo, userA
   const mailPreview = useMemo(() => {
     if (!mailParseResult) return null;
     const daMail = mailParseResult.length;
-    const autoConfermati = dataVerifica.filter(r => !mailByEan[r.ean] && !r.haConferma).length;
+    const autoConfermati = dataVerifica.filter(r => !mailByEan[r.ean]).length;
     return { daMail, autoConfermati };
   }, [mailParseResult, mailByEan, dataVerifica]);
 
@@ -2340,14 +2340,16 @@ function ModuloLanciSettimanali({ token, titoli, prenotato, canali, ruolo, userA
     for (const r of dataVerifica) {
       const mailRow = mailByEan[r.ean];
       if (mailRow) {
+        // Sempre in sovrascrittura: aggiorna Copie con "restituito Amazon", zero compreso (0 = Amazon non ha prenotato)
         await saveVerificaAmazon(r.anno_lancio, r.num_lancio, r.ean, { copie: mailRow.restituito });
         doneMail++;
-      } else if (!r.haConferma) {
-        await saveVerificaAmazon(r.anno_lancio, r.num_lancio, r.ean, { copie: r.vI });
+      } else {
+        // Nessuna differenza segnalata da Messaggerie: Amazon ha confermato la proposta iniziale di PDE (Amazon Cedola)
+        await saveVerificaAmazon(r.anno_lancio, r.num_lancio, r.ean, { proposta_amaz: r.vF, copie: r.vF });
         doneAuto++;
       }
     }
-    showToast(`Mail applicata: ${doneMail} titoli da mail, ${doneAuto} confermati su Proposta PDE`);
+    showToast(`Mail applicata: ${doneMail} titoli da mail, ${doneAuto} confermati sulla proposta iniziale PDE`);
     setMailParseResult(null);
     setMailLancioInfo(null);
     setMailPasteText("");
@@ -2686,7 +2688,7 @@ if (!r.ok) throw new Error(await r.text());
             <>
               <div style={{ fontSize: "12px", color: T.textMid, marginBottom: 10 }}>
                 Carica il file <b>.msg</b> della mail "DIFFERENZA PRENOTAZIONI AMAZON" di Messaggerie, oppure incolla qui sotto il testo del corpo mail.
-                I titoli presenti nella mail aggiornano <b>Copie</b> con il valore "restituito Amazon"; tutti gli altri titoli del lancio (senza differenza segnalata) vengono confermati in automatico con il valore di <b>Proposta PDE</b>.
+                I titoli presenti nella mail aggiornano <b>Copie</b> con il valore "restituito Amazon" (anche se è zero: significa che Amazon non ha prenotato). Tutti gli altri titoli del lancio (senza differenza segnalata) vengono confermati in automatico con la <b>proposta iniziale PDE</b> (Amazon Cedola), sia in Proposta Amaz che in Copie. Ogni caricamento sovrascrive i dati esistenti.
               </div>
               <div style={{ display: "flex", gap: 10, alignItems: "flex-start", flexWrap: "wrap" }}>
                 <label style={{ ...css.btn("accent"), cursor: "pointer" }}>
@@ -2717,7 +2719,7 @@ if (!r.ok) throw new Error(await r.text());
                 </div>
               )}
               <div style={{ fontSize: "12px", color: T.text, marginBottom: 10 }}>
-                Trovati <b style={{ color: "#e8a838" }}>{mailParseResult.length}</b> titoli nella mail. Gli altri <b style={{ color: T.green }}>{mailPreview?.autoConfermati ?? 0}</b> titoli del lancio (senza differenza) verranno confermati in automatico sul valore di Proposta PDE.
+                Trovati <b style={{ color: "#e8a838" }}>{mailParseResult.length}</b> titoli nella mail. Gli altri <b style={{ color: T.green }}>{mailPreview?.autoConfermati ?? 0}</b> titoli del lancio (senza differenza) verranno confermati in automatico sulla proposta iniziale PDE (Amazon Cedola). Tutti i valori esistenti verranno sovrascritti.
               </div>
               {mailParseResult.length > 0 && (
                 <table style={{ ...css.table, marginBottom: 12 }}>
