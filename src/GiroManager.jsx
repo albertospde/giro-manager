@@ -2340,7 +2340,7 @@ function ModuloLanciSettimanali({ token, titoli, prenotato, canali, ruolo, userA
     for (const r of dataVerifica) {
       const mailRow = mailByEan[r.ean];
       if (mailRow) {
-        await saveVerificaAmazon(r.anno_lancio, r.num_lancio, r.ean, { proposta_amaz: mailRow.proposto, copie: mailRow.restituito });
+        await saveVerificaAmazon(r.anno_lancio, r.num_lancio, r.ean, { copie: mailRow.restituito });
         doneMail++;
       } else if (!r.haConferma) {
         await saveVerificaAmazon(r.anno_lancio, r.num_lancio, r.ean, { copie: r.vI });
@@ -2686,7 +2686,7 @@ if (!r.ok) throw new Error(await r.text());
             <>
               <div style={{ fontSize: "12px", color: T.textMid, marginBottom: 10 }}>
                 Carica il file <b>.msg</b> della mail "DIFFERENZA PRENOTAZIONI AMAZON" di Messaggerie, oppure incolla qui sotto il testo del corpo mail.
-                I titoli presenti nella mail aggiornano <b>Proposta Amaz</b> e <b>Copie</b>; tutti gli altri titoli del lancio (senza differenza segnalata) vengono confermati in automatico con il valore di <b>Proposta PDE</b>.
+                I titoli presenti nella mail aggiornano <b>Copie</b> con il valore "restituito Amazon"; tutti gli altri titoli del lancio (senza differenza segnalata) vengono confermati in automatico con il valore di <b>Proposta PDE</b>.
               </div>
               <div style={{ display: "flex", gap: 10, alignItems: "flex-start", flexWrap: "wrap" }}>
                 <label style={{ ...css.btn("accent"), cursor: "pointer" }}>
