@@ -2418,9 +2418,9 @@ if (!r.ok) throw new Error(await r.text());
     });
 
     // Foglio 2: VERIFICA AMAZON — analisi proposta vs confermato
-    const vHeaders = ["EAN","Descr. editore","Titolo","Autore","TOTALE","AMAZON IN CEDOLA","Proposta Amaz","Taglio prenotazione","Proposta PDE","Copie","Evaso","Inevaso","Netto","diff da FINE GIRO","diff da TAGLIO AMZ","diff da PROPOSTA PDE","diff % da FG","Diff % da amz","diff % da PDE","NOTE x Amazon","Preorder","Residuo lancio","% usata","Richiesta Rifornimento","ROTTURA DI STOCK"];
+    const vHeaders = ["EAN","Titolo","Autore","Editore","Prezzo","TOTALE","AMAZON IN CEDOLA","Proposta Amaz","Taglio prenotazione","Proposta PDE","Copie","Evaso","Inevaso","Netto","diff da FINE GIRO","diff da TAGLIO AMZ","diff da PROPOSTA PDE","diff % da FG","Diff % da amz","diff % da PDE","NOTE x Amazon","Preorder","Residuo lancio","% usata","Richiesta Rifornimento","ROTTURA DI STOCK"];
     const vRows = dataVerifica.map(r => [
-      r.ean, r.editore, r.titolo, r.autore, r.vE, r.vF,
+      r.ean, r.titolo, r.autore, r.editore, r.prezzo, r.vE, r.vF,
       r.vG ?? "", r.vH ?? "", r.vI ?? "", r.vJ ?? "", r.vK ?? "", r.vL ?? "", r.vM ?? "",
       r.vN ?? "", r.vO ?? "", r.vP ?? "", r.vQ ?? "", r.vR ?? "", r.vS ?? "",
       r.vNote, r.vU, r.vV ?? "", r.vW ?? "", r.vX ? "SI" : "", r.vY ? "SI" : ""
@@ -2555,8 +2555,11 @@ if (!r.ok) throw new Error(await r.text());
         <table style={css.table}>
           <thead>
             <tr>
-              <th style={css.th}>Editore</th>
+              <th style={css.th}>EAN</th>
               <th style={css.th}>Titolo</th>
+              <th style={css.th}>Autore</th>
+              <th style={css.th}>Editore</th>
+              <th style={css.th}>Prezzo</th>
               <th style={css.th} title="Totale teorico (F.G. trasmesso + Amazon)">Totale</th>
               <th style={{ ...css.th, color: "#e8a838" }} title="Amazon in cedola (attuale)">Amazon cedola</th>
               <th style={css.th} title="Quantità proposta ad Amazon">Proposta Amaz</th>
@@ -2608,8 +2611,11 @@ if (!r.ok) throw new Error(await r.text());
               };
               return (
                 <tr key={r.ean} style={{ background: r.haConferma ? T.green + "14" : (i % 2 === 0 ? "transparent" : T.surface + "66") }}>
-                  <td style={{ ...css.td, color: T.accent, fontWeight: "600", whiteSpace: "nowrap", maxWidth: 130, overflow: "hidden", textOverflow: "ellipsis" }}>{r.editore}</td>
+                  <td style={{ ...css.td, fontFamily: "monospace", fontSize: "11px", color: T.textMid }}>{r.ean}</td>
                   <td style={{ ...css.td, maxWidth: 200 }}><div style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", fontWeight: "600" }}>{r.titolo}</div></td>
+                  <td style={{ ...css.td, color: T.textMid, maxWidth: 130, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{r.autore}</td>
+                  <td style={{ ...css.td, color: T.accent, fontWeight: "600", whiteSpace: "nowrap", maxWidth: 130, overflow: "hidden", textOverflow: "ellipsis" }}>{r.editore}</td>
+                  <td style={{ ...css.td, whiteSpace: "nowrap" }}>€ {(r.prezzo || 0).toFixed(2)}</td>
                   <td style={css.td}>{r.vE.toLocaleString("it")}</td>
                   <td style={{ ...css.td, color: "#e8a838", fontWeight: "600" }}>{r.vF.toLocaleString("it")}</td>
                   <td style={css.td}>{editVACell("proposta_amaz")}</td>
