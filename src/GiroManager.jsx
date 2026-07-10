@@ -2230,6 +2230,101 @@ function ModuloLanciSettimanali({ token, titoli, prenotato, canali, ruolo, userA
     return { totProposto, totConfermato, nConfermati, nInAttesa, scostamento };
   }, [dataVerifica]);
 
+  // Riepilogo Verifica Amazon per editore (proposto/confermato/scostamento)
+  const riepilogoEditoriVerifica = useMemo(() => {
+    const byEd = {};
+    dataVerifica.forEach(r => {
+      if (!byEd[r.editore]) byEd[r.editore] = { editore: r.editore, titoli: 0, proposto: 0, confermato: 0, confermati: 0, inAttesa: 0 };
+      const e = byEd[r.editore];
+      e.titoli++;
+      e.proposto += r.vG || 0;
+      e.confermato += r.vM || 0;
+      if (r.haConferma) e.confermati++; else e.inAttesa++;
+    });
+    return Object.values(byEd)
+      .map(e => ({ ...e, scostamento: e.confermato - e.proposto }))
+      .sort((a, b) => b.titoli - a.titoli);
+  }, [dataVerifica]);
+
+  // ── Upload mail "Differenza prenotazioni Amazon" (Messaggerie) ──
+  const [showMailUpload, setShowMailUpload] = useState(false);
+  const [mailPasteText, setMailPasteText] = useState("");
+  const [mailParseResult, setMailParseResult] = useState(null);
+  const [mailProcessing, setMailProcessing] = useState(false);
+
+  // Estrae righe EAN/Titolo/Prezzo/Proposto/Restituito dal testo della mail Messaggerie
+  const parseMessaggerieMail = (text) => {
+    const pattern = /(\d{9,14})\s*(?:\r?\n\s*)+([^\r\n\d][^\r\n]*?)\s*(?:\r?\n\s*)+(\d{1,4}[.,]\d{2})\s*€\s*(?:\r?\n\s*)+(-?\d+)\s*(?:\r?\n\s*)+(-?\d+)/g;
+    const rows = [];
+    let m;
+    while ((m = pattern.exec(text)) !== null) {
+      rows.push({
+        ean: m[1].trim(),
+        titolo: m[2].trim(),
+        prezzo: parseFloat(m[3].replace(",", ".")),
+        proposto: parseInt(m[4], 10),
+        restituito: parseInt(m[5], 10),
+      });
+    }
+    return rows;
+  };
+
+  const runMailParse = (text) => {
+    let rows = parseMessaggerieMail(text);
+    if (rows.length === 0) showToast("Nessuna riga riconosciuta nel testo/file caricato", "err");
+    setMailParseResult(rows);
+  };
+
+  const handleMailFile = async (e) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    const buf = await file.arrayBuffer();
+    let text = "";
+    if (/\.msg$/i.test(file.name)) {
+      // I file .msg (Outlook, formato OLE) contengono il corpo testo in UTF-16LE
+      text = new TextDecoder("utf-16le").decode(buf);
+      if (parseMessaggerieMail(text).length === 0) text = new TextDecoder("latin1").decode(buf);
+    } else {
+      text = new TextDecoder("utf-8").decode(buf);
+    }
+    runMailParse(text);
+    e.target.value = "";
+  };
+
+  const mailByEan = useMemo(() => {
+    const map = {};
+    (mailParseResult || []).forEach(r => { map[r.ean] = r; });
+    return map;
+  }, [mailParseResult]);
+
+  const mailPreview = useMemo(() => {
+    if (!mailParseResult) return null;
+    const daMail = mailParseResult.length;
+    const autoConfermati = dataVerifica.filter(r => !mailByEan[r.ean] && !r.haConferma).length;
+    return { daMail, autoConfermati };
+  }, [mailParseResult, mailByEan, dataVerifica]);
+
+  const confirmApplyMail = async () => {
+    if (!mailParseResult) return;
+    setMailProcessing(true);
+    let doneMail = 0, doneAuto = 0;
+    for (const r of dataVerifica) {
+      const mailRow = mailByEan[r.ean];
+      if (mailRow) {
+        await saveVerificaAmazon(r.anno_lancio, r.num_lancio, r.ean, { proposta_amaz: mailRow.proposto, copie: mailRow.restituito });
+        doneMail++;
+      } else if (!r.haConferma) {
+        await saveVerificaAmazon(r.anno_lancio, r.num_lancio, r.ean, { copie: r.vI });
+        doneAuto++;
+      }
+    }
+    showToast(`Mail applicata: ${doneMail} titoli da mail, ${doneAuto} confermati su Proposta PDE`);
+    setMailParseResult(null);
+    setMailPasteText("");
+    setShowMailUpload(false);
+    setMailProcessing(false);
+  };
+
   // Upsert su tabella verifica_amazon (chiave: anno_lancio + num_lancio + ean)
   const saveVerificaAmazon = async (annoLancio, numLancio, ean, fields) => {
     const body = { anno_lancio: annoLancio, num_lancio: numLancio, ean, ...fields };
@@ -2498,6 +2593,11 @@ if (!r.ok) throw new Error(await r.text());
           >
             🔍 Verifica Amazon{kpiVerifica.nInAttesa > 0 ? ` (${kpiVerifica.nInAttesa} in attesa)` : ""}
           </button>
+          {viewMode === "verifica" && (
+            <button style={{ ...css.btn(showMailUpload ? "accent" : undefined) }} onClick={() => setShowMailUpload(s => !s)}>
+              📧 Carica mail Messaggerie
+            </button>
+          )}
           <button style={css.btn()} onClick={exportExcel}>Download Excel</button>
         </div>
       </div>
@@ -2537,7 +2637,8 @@ if (!r.ok) throw new Error(await r.text());
       </div>
       </>
       ) : (
-      /* KPI VERIFICA AMAZON */
+      <>
+      {/* KPI VERIFICA AMAZON */}
       <div style={{ padding: "16px 20px", borderBottom: `1px solid ${T.border}` }}>
         <div style={{ display: "flex", gap: 12, flexWrap: "wrap" }}>
           <KpiCard label="Proposto ad Amazon" value={kpiVerifica.totProposto.toLocaleString("it")} color="#e8a838" />
@@ -2547,6 +2648,106 @@ if (!r.ok) throw new Error(await r.text());
           <KpiCard label="In attesa di conferma" value={kpiVerifica.nInAttesa} color={kpiVerifica.nInAttesa > 0 ? "#e8a838" : T.textMid} />
         </div>
       </div>
+
+      {/* UPLOAD MAIL MESSAGGERIE */}
+      {showMailUpload && (
+        <div style={{ padding: "16px 20px", borderBottom: `1px solid ${T.border}`, background: T.bg }}>
+          {!mailParseResult ? (
+            <>
+              <div style={{ fontSize: "12px", color: T.textMid, marginBottom: 10 }}>
+                Carica il file <b>.msg</b> della mail "DIFFERENZA PRENOTAZIONI AMAZON" di Messaggerie, oppure incolla qui sotto il testo del corpo mail.
+                I titoli presenti nella mail aggiornano <b>Proposta Amaz</b> e <b>Copie</b>; tutti gli altri titoli del lancio (senza differenza segnalata) vengono confermati in automatico con il valore di <b>Proposta PDE</b>.
+              </div>
+              <div style={{ display: "flex", gap: 10, alignItems: "flex-start", flexWrap: "wrap" }}>
+                <label style={{ ...css.btn("accent"), cursor: "pointer" }}>
+                  ↑ Carica file .msg / .txt
+                  <input type="file" accept=".msg,.txt,.eml" style={{ display: "none" }} onChange={handleMailFile} />
+                </label>
+                <div style={{ display: "flex", flexDirection: "column", gap: 6, flex: 1, minWidth: 280 }}>
+                  <textarea
+                    style={{ ...css.input, minHeight: 70, fontFamily: "inherit", fontSize: "11px", resize: "vertical" }}
+                    placeholder="...oppure incolla qui il testo della mail Messaggerie"
+                    value={mailPasteText}
+                    onChange={e => setMailPasteText(e.target.value)}
+                  />
+                  <button style={{ ...css.btn(), alignSelf: "flex-start" }} disabled={!mailPasteText.trim()} onClick={() => runMailParse(mailPasteText)}>Estrai dati dal testo incollato</button>
+                </div>
+                <button style={{ ...css.btn(), alignSelf: "flex-start" }} onClick={() => setShowMailUpload(false)}>Annulla</button>
+              </div>
+            </>
+          ) : (
+            <>
+              <div style={{ fontSize: "12px", color: T.text, marginBottom: 10 }}>
+                Trovati <b style={{ color: "#e8a838" }}>{mailParseResult.length}</b> titoli nella mail. Gli altri <b style={{ color: T.green }}>{mailPreview?.autoConfermati ?? 0}</b> titoli del lancio (senza differenza) verranno confermati in automatico sul valore di Proposta PDE.
+              </div>
+              {mailParseResult.length > 0 && (
+                <table style={{ ...css.table, marginBottom: 12 }}>
+                  <thead>
+                    <tr>
+                      <th style={css.th}>EAN</th>
+                      <th style={css.th}>Titolo</th>
+                      <th style={css.th}>Prezzo</th>
+                      <th style={css.th}>Proposto</th>
+                      <th style={css.th}>Restituito</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {mailParseResult.map((r, i) => (
+                      <tr key={i}>
+                        <td style={{ ...css.td, fontFamily: "monospace", fontSize: "11px", color: T.textMid }}>{r.ean}</td>
+                        <td style={css.td}>{r.titolo}</td>
+                        <td style={css.td}>€ {r.prezzo.toFixed(2)}</td>
+                        <td style={css.td}>{r.proposto}</td>
+                        <td style={{ ...css.td, color: r.restituito < r.proposto ? T.red : T.green, fontWeight: "700" }}>{r.restituito}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              )}
+              <div style={{ display: "flex", gap: 10 }}>
+                <button style={css.btn("accent")} disabled={mailProcessing} onClick={confirmApplyMail}>
+                  {mailProcessing ? "Applico..." : "✓ Conferma e applica"}
+                </button>
+                <button style={css.btn()} disabled={mailProcessing} onClick={() => { setMailParseResult(null); setMailPasteText(""); }}>Annulla</button>
+              </div>
+            </>
+          )}
+        </div>
+      )}
+
+      {/* RIEPILOGO PER EDITORE */}
+      <div style={{ padding: "16px 20px", borderBottom: `1px solid ${T.border}` }}>
+        <div style={{ color: T.textMid, fontSize: "10px", letterSpacing: "0.1em", textTransform: "uppercase", marginBottom: 10 }}>Riepilogo per editore</div>
+        <div style={{ overflowX: "auto" }}>
+          <table style={css.table}>
+            <thead>
+              <tr>
+                <th style={css.th}>Editore</th>
+                <th style={css.th}>Titoli</th>
+                <th style={css.th}>Proposto</th>
+                <th style={css.th}>Confermato</th>
+                <th style={css.th}>Scostamento</th>
+                <th style={css.th}>Confermati</th>
+                <th style={css.th}>In attesa</th>
+              </tr>
+            </thead>
+            <tbody>
+              {riepilogoEditoriVerifica.map(e => (
+                <tr key={e.editore}>
+                  <td style={{ ...css.td, color: T.accent, fontWeight: "600" }}>{e.editore}</td>
+                  <td style={css.td}>{e.titoli}</td>
+                  <td style={{ ...css.td, color: "#e8a838" }}>{e.proposto.toLocaleString("it")}</td>
+                  <td style={{ ...css.td, color: T.green, fontWeight: "600" }}>{e.confermato.toLocaleString("it")}</td>
+                  <td style={{ ...css.td, color: e.scostamento < 0 ? T.red : e.scostamento > 0 ? T.green : T.textMid }}>{(e.scostamento > 0 ? "+" : "") + e.scostamento.toLocaleString("it")}</td>
+                  <td style={css.td}>{e.confermati}</td>
+                  <td style={{ ...css.td, color: e.inAttesa > 0 ? "#e8a838" : T.textMid }}>{e.inAttesa}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </div>
+      </>
       )}
 
       {/* TABELLA */}
