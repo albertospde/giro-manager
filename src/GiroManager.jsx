@@ -2767,7 +2767,8 @@ if (!r.ok) throw new Error(await r.text());
                 Trovati <b style={{ color: "#e8a838" }}>{mailParseResult.length}</b> titoli nella mail. Gli altri <b style={{ color: T.green }}>{mailPreview?.autoConfermati ?? 0}</b> titoli del lancio (senza differenza) verranno confermati in automatico sulla proposta iniziale PDE (Amazon Cedola). Tutti i valori esistenti verranno sovrascritti.
               </div>
               {mailParseResult.length > 0 && (
-                <table style={{ ...css.table, marginBottom: 12 }}>
+                <div style={{ maxHeight: 260, overflowY: "auto", marginBottom: 12, border: `1px solid ${T.border}`, borderRadius: 4 }}>
+                <table style={css.table}>
                   <thead>
                     <tr>
                       <th style={css.th}>EAN</th>
@@ -2789,6 +2790,7 @@ if (!r.ok) throw new Error(await r.text());
                     ))}
                   </tbody>
                 </table>
+                </div>
               )}
               <div style={{ display: "flex", gap: 10 }}>
                 <button style={css.btn("accent")} disabled={mailProcessing || !!mailLancioMismatch} title={mailLancioMismatch ? "Seleziona il lancio corretto per procedere" : ""} onClick={confirmApplyMail}>
