@@ -2649,6 +2649,8 @@ function ModuloVerificaLanciAmazon({ token, titoli, prenotato, canali }) {
       const J = v.copie ?? null;              // Copie effettivamente inserite da Amazon
       const K = v.evaso ?? null;
       const L = v.inevaso ?? null;
+      const Pr = v.prenotato ?? null;
+      const Im = v.impegnato ?? null;
       const U = v.preorder ?? 0;
       const H = (G != null && F) ? (G - F) / F : null;
       const M = (J != null && L != null) ? J - L : (J != null ? J : null); // Netto confermato
@@ -2660,7 +2662,7 @@ function ModuloVerificaLanciAmazon({ token, titoli, prenotato, canali }) {
       const S = (P != null && I) ? P / I : null;
       const V = M != null ? M - U : null;
       const W = (V != null && M) ? U / M : null;
-      return { ...r, va: v, vF: F, vE: E, vG: G, vH: H, vI: I, vIauto: v.proposta_pde == null, vJ: J, vK: K, vL: L, vM: M, vN: N, vO: O, vP: P, vQ: Q, vR: R, vS: S, vNote: v.note || "", vU: U, vV: V, vW: W, vX: !!v.richiesta_rifornimento, vY: !!v.rottura_stock, haConferma: M != null };
+      return { ...r, va: v, vF: F, vE: E, vG: G, vH: H, vI: I, vIauto: v.proposta_pde == null, vJ: J, vK: K, vL: L, vPren: Pr, vImp: Im, vM: M, vN: N, vO: O, vP: P, vQ: Q, vR: R, vS: S, vNote: v.note || "", vU: U, vV: V, vW: W, vX: !!v.richiesta_rifornimento, vY: !!v.rottura_stock, haConferma: M != null };
     });
   }, [dataFiltrata, verificaByEan]);
 
@@ -2789,6 +2791,97 @@ function ModuloVerificaLanciAmazon({ token, titoli, prenotato, canali }) {
     return null;
   }, [mailParseResult, mailLancioInfo, filterLancio, filterAnno, anniDisponibili]);
 
+  // ── Upload "Ordini Amazon" (file Dettaglio cliente: aggrega Copie/Prenotato/Impegnato/Evaso per EAN) ──
+  const [showOrdiniUpload, setShowOrdiniUpload] = useState(false);
+  const [ordiniParseResult, setOrdiniParseResult] = useState(null);
+  const [ordiniProcessing, setOrdiniProcessing] = useState(false);
+  const [ordiniDragOver, setOrdiniDragOver] = useState(false);
+
+  const parseNumIt = (s) => {
+    if (s == null || s === "") return 0;
+    const n = parseInt(String(s).trim().replace(/\./g, ""), 10);
+    return isNaN(n) ? 0 : n;
+  };
+
+  // Estrae e aggrega per EAN le colonne Copie/Prenotato/Impegnato/Evaso dal file "Dettaglio cliente" (righe = righe ordine, un EAN può ripetersi su più righe/ordini)
+  const parseOrdiniAmazon = (text) => {
+    const lines = text.replace(/^\uFEFF/, "").split(/\r?\n/).filter(l => l.trim() !== "");
+    if (lines.length < 2) return [];
+    const agg = {};
+    for (let i = 1; i < lines.length; i++) {
+      const cols = lines[i].split("\t");
+      if (cols.length < 13) continue;
+      const ordine = (cols[0] || "").trim();
+      if (!ordine || /^totale/i.test(ordine)) continue; // salta riga "Totale complessivo"
+      const ean = (cols[2] || "").trim();
+      if (!/^\d{9,14}$/.test(ean)) continue;
+      const titolo = (cols[3] || "").trim();
+      if (!agg[ean]) agg[ean] = { ean, titolo, copie: 0, prenotato: 0, impegnato: 0, evaso: 0 };
+      agg[ean].copie += parseNumIt(cols[9]);
+      agg[ean].prenotato += parseNumIt(cols[10]);
+      agg[ean].impegnato += parseNumIt(cols[11]);
+      agg[ean].evaso += parseNumIt(cols[12]);
+      if (titolo) agg[ean].titolo = titolo;
+    }
+    return Object.values(agg);
+  };
+
+  const processOrdiniFile = async (file) => {
+    if (!file) return;
+    const buf = await file.arrayBuffer();
+    let text = new TextDecoder("utf-16le").decode(buf);
+    let rows = parseOrdiniAmazon(text);
+    if (rows.length === 0) {
+      text = new TextDecoder("utf-8").decode(buf);
+      rows = parseOrdiniAmazon(text);
+    }
+    if (rows.length === 0) showToast("Nessuna riga riconosciuta nel file caricato", "err");
+    setOrdiniParseResult(rows);
+  };
+
+  const handleOrdiniFile = async (e) => {
+    const file = e.target.files?.[0];
+    await processOrdiniFile(file);
+    e.target.value = "";
+  };
+
+  const handleOrdiniDrop = async (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setOrdiniDragOver(false);
+    const file = e.dataTransfer.files?.[0];
+    await processOrdiniFile(file);
+  };
+
+  const ordiniByEan = useMemo(() => {
+    const map = {};
+    (ordiniParseResult || []).forEach(r => { map[r.ean] = r; });
+    return map;
+  }, [ordiniParseResult]);
+
+  const ordiniPreview = useMemo(() => {
+    if (!ordiniParseResult) return null;
+    const matched = dataVerifica.filter(r => ordiniByEan[r.ean]).length;
+    return { totRighe: ordiniParseResult.length, matched, nonMatchedNelFile: ordiniParseResult.length - matched };
+  }, [ordiniParseResult, ordiniByEan, dataVerifica]);
+
+  const confirmApplyOrdini = async () => {
+    if (!ordiniParseResult) return;
+    setOrdiniProcessing(true);
+    let done = 0;
+    for (const r of dataVerifica) {
+      const o = ordiniByEan[r.ean];
+      if (o) {
+        await saveVerificaAmazon(r.anno_lancio, r.num_lancio, r.ean, { copie: o.copie, prenotato: o.prenotato, impegnato: o.impegnato, evaso: o.evaso });
+        done++;
+      }
+    }
+    showToast(`Ordini applicati: ${done} titoli del lancio aggiornati (Copie/Prenotato/Impegnato/Evaso)`);
+    setOrdiniParseResult(null);
+    setShowOrdiniUpload(false);
+    setOrdiniProcessing(false);
+  };
+
   // Upsert su tabella verifica_amazon (chiave: anno_lancio + num_lancio + ean)
   const saveVerificaAmazon = async (annoLancio, numLancio, ean, fields) => {
     const body = { anno_lancio: annoLancio, num_lancio: numLancio, ean, ...fields };
@@ -2840,10 +2933,10 @@ function ModuloVerificaLanciAmazon({ token, titoli, prenotato, canali }) {
 
   const exportExcel = () => {
     const XLSX = window.XLSX;
-    const vHeaders = ["EAN","Titolo","Autore","Editore","Prezzo","TOTALE","AMAZON IN CEDOLA","Proposta Amaz","Taglio prenotazione","Proposta PDE","Copie","Evaso","Inevaso","Netto","diff da FINE GIRO","diff da TAGLIO AMZ","diff da PROPOSTA PDE","diff % da FG","Diff % da amz","diff % da PDE","NOTE x Amazon","Preorder","Residuo lancio","% usata","Richiesta Rifornimento","ROTTURA DI STOCK"];
+    const vHeaders = ["EAN","Titolo","Autore","Editore","Prezzo","TOTALE","AMAZON IN CEDOLA","Proposta Amaz","Taglio prenotazione","Proposta PDE","Copie","Prenotato","Impegnato","Evaso","Inevaso","Netto","diff da FINE GIRO","diff da TAGLIO AMZ","diff da PROPOSTA PDE","diff % da FG","Diff % da amz","diff % da PDE","NOTE x Amazon","Preorder","Residuo lancio","% usata","Richiesta Rifornimento","ROTTURA DI STOCK"];
     const vRows = dataVerifica.map(r => [
       r.ean, r.titolo, r.autore, r.editore, r.prezzo, r.vE, r.vF,
-      r.vG ?? "", r.vH ?? "", r.vI ?? "", r.vJ ?? "", r.vK ?? "", r.vL ?? "", r.vM ?? "",
+      r.vG ?? "", r.vH ?? "", r.vI ?? "", r.vJ ?? "", r.vPren ?? "", r.vImp ?? "", r.vK ?? "", r.vL ?? "", r.vM ?? "",
       r.vN ?? "", r.vO ?? "", r.vP ?? "", r.vQ ?? "", r.vR ?? "", r.vS ?? "",
       r.vNote, r.vU, r.vV ?? "", r.vW ?? "", r.vX ? "SI" : "", r.vY ? "SI" : ""
     ]);
@@ -2876,6 +2969,9 @@ function ModuloVerificaLanciAmazon({ token, titoli, prenotato, canali }) {
         <div style={{ marginLeft: "auto", display: "flex", gap: 10 }}>
           <button style={{ ...css.btn(showMailUpload ? "accent" : undefined) }} onClick={() => setShowMailUpload(s => !s)}>
             📧 Carica mail Messaggerie
+          </button>
+          <button style={{ ...css.btn(showOrdiniUpload ? "accent" : undefined) }} onClick={() => setShowOrdiniUpload(s => !s)}>
+            📥 Carica ordini Amazon
           </button>
           <button style={css.btn()} onClick={exportExcel}>Download Excel</button>
         </div>
@@ -2980,6 +3076,79 @@ function ModuloVerificaLanciAmazon({ token, titoli, prenotato, canali }) {
         </div>
       )}
 
+      {/* UPLOAD ORDINI AMAZON */}
+      {showOrdiniUpload && (
+        <div style={{ padding: "16px 20px", borderBottom: `1px solid ${T.border}`, background: T.bg }}>
+          {!ordiniParseResult ? (
+            <>
+              <div style={{ fontSize: "12px", color: T.textMid, marginBottom: 10 }}>
+                Carica il file <b>Dettaglio cliente</b> (export ordini Amazon). Le righe vengono aggregate per EAN e aggiornano <b>Copie</b>, <b>Prenotato</b>, <b>Impegnato</b> ed <b>Evaso</b>. Solo i titoli presenti nel file e nel lancio selezionato vengono toccati; gli altri restano invariati. Ogni caricamento sovrascrive i valori esistenti per i titoli coinvolti.
+              </div>
+              <div style={{ display: "flex", gap: 10, alignItems: "flex-start", flexWrap: "wrap" }}>
+                <label
+                  style={{
+                    ...css.btn(ordiniDragOver ? "accent" : undefined),
+                    cursor: "pointer", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center",
+                    width: 200, minHeight: 70, border: `2px dashed ${ordiniDragOver ? T.accent : T.borderHi}`,
+                    background: ordiniDragOver ? T.accent + "18" : T.surface, textAlign: "center", padding: "8px",
+                  }}
+                  onDragOver={e => { e.preventDefault(); e.stopPropagation(); setOrdiniDragOver(true); }}
+                  onDragLeave={e => { e.preventDefault(); e.stopPropagation(); setOrdiniDragOver(false); }}
+                  onDrop={handleOrdiniDrop}
+                >
+                  <span>↑ Trascina qui il file</span>
+                  <span style={{ fontSize: "10px", color: T.textDim, marginTop: 3 }}>oppure clicca per sceglierlo (.csv)</span>
+                  <input type="file" accept=".csv,.txt" style={{ display: "none" }} onChange={handleOrdiniFile} />
+                </label>
+                <button style={{ ...css.btn(), alignSelf: "flex-start" }} onClick={() => setShowOrdiniUpload(false)}>Annulla</button>
+              </div>
+            </>
+          ) : (
+            <>
+              <div style={{ fontSize: "12px", color: T.text, marginBottom: 10 }}>
+                Trovati <b style={{ color: "#e8a838" }}>{ordiniPreview?.totRighe ?? 0}</b> EAN nel file, di cui <b style={{ color: T.green }}>{ordiniPreview?.matched ?? 0}</b> corrispondono a titoli del lancio {filterLancio}/{filterAnno} selezionato. Verranno aggiornati solo questi.
+              </div>
+              {ordiniParseResult.length > 0 && (
+                <div style={{ maxHeight: 260, overflowY: "auto", marginBottom: 12, border: `1px solid ${T.border}`, borderRadius: 4 }}>
+                <table style={css.table}>
+                  <thead>
+                    <tr>
+                      <th style={css.th}>EAN</th>
+                      <th style={css.th}>Titolo</th>
+                      <th style={css.th}>Copie</th>
+                      <th style={css.th}>Prenotato</th>
+                      <th style={css.th}>Impegnato</th>
+                      <th style={css.th}>Evaso</th>
+                      <th style={css.th}>Nel lancio</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {ordiniParseResult.map((r, i) => (
+                      <tr key={i} style={{ opacity: dataVerifica.some(d => d.ean === r.ean) ? 1 : 0.5 }}>
+                        <td style={{ ...css.td, fontFamily: "monospace", fontSize: "11px", color: T.textMid }}>{r.ean}</td>
+                        <td style={css.td}>{r.titolo}</td>
+                        <td style={css.td}>{r.copie.toLocaleString("it")}</td>
+                        <td style={css.td}>{r.prenotato.toLocaleString("it")}</td>
+                        <td style={css.td}>{r.impegnato.toLocaleString("it")}</td>
+                        <td style={css.td}>{r.evaso.toLocaleString("it")}</td>
+                        <td style={{ ...css.td, textAlign: "center" }}>{dataVerifica.some(d => d.ean === r.ean) ? <span style={{ color: T.green }}>✓</span> : <span style={{ color: T.textDim }}>—</span>}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+                </div>
+              )}
+              <div style={{ display: "flex", gap: 10 }}>
+                <button style={css.btn("accent")} disabled={ordiniProcessing} onClick={confirmApplyOrdini}>
+                  {ordiniProcessing ? "Applico..." : "✓ Conferma e applica"}
+                </button>
+                <button style={css.btn()} disabled={ordiniProcessing} onClick={() => setOrdiniParseResult(null)}>Annulla</button>
+              </div>
+            </>
+          )}
+        </div>
+      )}
+
       {/* RIEPILOGO PER EDITORE */}
       <div style={{ padding: "10px 20px", borderBottom: `1px solid ${T.border}` }}>
         <div
@@ -3026,6 +3195,8 @@ function ModuloVerificaLanciAmazon({ token, titoli, prenotato, canali }) {
               <th style={css.th} title="Taglio prenotazione = (Proposta-Cedola)/Cedola">Taglio %</th>
               <th style={css.th} title="Proposta interna PDE">Proposta PDE</th>
               <th style={css.th} title="Copie effettivamente inserite da Amazon">Copie</th>
+              <th style={css.th}>Prenotato</th>
+              <th style={css.th}>Impegnato</th>
               <th style={css.th}>Evaso</th>
               <th style={css.th}>Inevaso</th>
               <th style={css.th} title="Netto = Copie - Inevaso">Netto</th>
@@ -3043,7 +3214,7 @@ function ModuloVerificaLanciAmazon({ token, titoli, prenotato, canali }) {
             {dataVerifica.map((r, i) => {
               const editVACell = (field, type = "number") => {
                 const isEditing = editCellVA?.ean === r.ean && editCellVA?.field === field;
-                const rawVal = { proposta_amaz: r.vG, proposta_pde: r.vI, copie: r.vJ, evaso: r.vK, inevaso: r.vL, note: r.va.note, preorder: r.vU }[field];
+                const rawVal = { proposta_amaz: r.vG, proposta_pde: r.vI, copie: r.vJ, prenotato: r.vPren, impegnato: r.vImp, evaso: r.vK, inevaso: r.vL, note: r.va.note, preorder: r.vU }[field];
                 if (isEditing) {
                   return (
                     <div style={{ display: "flex", gap: 3, alignItems: "center" }}>
@@ -3082,6 +3253,8 @@ function ModuloVerificaLanciAmazon({ token, titoli, prenotato, canali }) {
                   <td style={{ ...css.td, color: r.vH == null ? T.textDim : r.vH < 0 ? T.red : T.green }}>{r.vH != null ? (r.vH * 100).toFixed(1) + "%" : "—"}</td>
                   <td style={css.td}>{editVACell("proposta_pde")}</td>
                   <td style={css.td}>{editVACell("copie")}</td>
+                  <td style={css.td}>{editVACell("prenotato")}</td>
+                  <td style={css.td}>{editVACell("impegnato")}</td>
                   <td style={css.td}>{editVACell("evaso")}</td>
                   <td style={css.td}>{editVACell("inevaso")}</td>
                   <td style={{ ...css.td, fontWeight: "700", color: r.haConferma ? T.green : T.textDim }}>{r.vM != null ? r.vM.toLocaleString("it") : "—"}</td>
