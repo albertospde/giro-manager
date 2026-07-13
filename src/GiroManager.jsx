@@ -2645,7 +2645,7 @@ function ModuloVerificaLanciAmazon({ token, titoli, prenotato, canali }) {
       const F = r.pren_amazon || 0;          // AMAZON IN CEDOLA (attuale, da fine giro)
       const E = r.teorico || 0;              // TOTALE teorico
       const G = v.proposta_amaz ?? null;      // Proposta fatta ad Amazon
-      const I = v.proposta_pde ?? F;          // Proposta PDE — auto = Amazon cedola, modificabile
+      const I = v.proposta_pde ?? null;       // Proposta PDE — resta vuota finché non caricata manualmente/da upload dedicato
       const J = v.copie ?? null;              // Copie effettivamente inserite da Amazon
       const K = v.evaso ?? null;
       const L = v.inevaso ?? null;
@@ -2662,7 +2662,7 @@ function ModuloVerificaLanciAmazon({ token, titoli, prenotato, canali }) {
       const S = (P != null && I) ? P / I : null;
       const V = M != null ? M - U : null;
       const W = (V != null && M) ? U / M : null;
-      return { ...r, va: v, vF: F, vE: E, vG: G, vH: H, vI: I, vIauto: v.proposta_pde == null, vJ: J, vK: K, vL: L, vPren: Pr, vImp: Im, vM: M, vN: N, vO: O, vP: P, vQ: Q, vR: R, vS: S, vNote: v.note || "", vU: U, vV: V, vW: W, vX: !!v.richiesta_rifornimento, vY: !!v.rottura_stock, haConferma: M != null };
+      return { ...r, va: v, vF: F, vE: E, vG: G, vH: H, vI: I, vJ: J, vK: K, vL: L, vPren: Pr, vImp: Im, vM: M, vN: N, vO: O, vP: P, vQ: Q, vR: R, vS: S, vNote: v.note || "", vU: U, vV: V, vW: W, vX: !!v.richiesta_rifornimento, vY: !!v.rottura_stock, haConferma: M != null };
     });
   }, [dataFiltrata, verificaByEan]);
 
@@ -3235,7 +3235,7 @@ function ModuloVerificaLanciAmazon({ token, titoli, prenotato, canali }) {
                 return (
                   <div style={{ cursor: "pointer", display: "flex", alignItems: "center", gap: 4 }}
                     onClick={() => setEditCellVA({ ean: r.ean, field, value: rawVal != null ? String(rawVal) : "" })}>
-                    <span style={{ color: rawVal == null || rawVal === "" ? T.textDim : (field === "proposta_pde" && r.vIauto) ? "#e8a838" : T.text }}>{rawVal != null && rawVal !== "" ? rawVal : "—"}</span>
+                    <span style={{ color: rawVal == null || rawVal === "" ? T.textDim : T.text }}>{rawVal != null && rawVal !== "" ? rawVal : "—"}</span>
                     <span style={{ color: T.accent, fontSize: "10px" }}>✎</span>
                   </div>
                 );
