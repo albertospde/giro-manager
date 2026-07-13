@@ -2918,8 +2918,8 @@ function ModuloVerificaLanciAmazon({ token, titoli, prenotato, canali }) {
         await saveVerificaAmazon(r.anno_lancio, r.num_lancio, r.ean, { copie: mailRow.restituito });
         doneMail++;
       } else {
-        // Nessuna differenza segnalata da Messaggerie: Amazon ha confermato la proposta iniziale di PDE (Amazon Cedola)
-        await saveVerificaAmazon(r.anno_lancio, r.num_lancio, r.ean, { proposta_amaz: r.vF, copie: r.vF });
+        // Nessuna differenza segnalata da Messaggerie: Amazon ha confermato la proposta iniziale di PDE (Amazon Cedola). Proposta Amaz non viene toccata (verrà popolata da un upload dedicato).
+        await saveVerificaAmazon(r.anno_lancio, r.num_lancio, r.ean, { copie: r.vF });
         doneAuto++;
       }
     }
@@ -2995,7 +2995,7 @@ function ModuloVerificaLanciAmazon({ token, titoli, prenotato, canali }) {
             <>
               <div style={{ fontSize: "12px", color: T.textMid, marginBottom: 10 }}>
                 Carica il file <b>.msg</b> della mail "DIFFERENZA PRENOTAZIONI AMAZON" di Messaggerie, oppure incolla qui sotto il testo del corpo mail.
-                I titoli presenti nella mail aggiornano <b>Copie</b> con il valore "restituito Amazon" (anche se è zero: significa che Amazon non ha prenotato). Tutti gli altri titoli del lancio (senza differenza segnalata) vengono confermati in automatico con la <b>proposta iniziale PDE</b> (Amazon Cedola), sia in Proposta Amaz che in Copie. Ogni caricamento sovrascrive i dati esistenti.
+                I titoli presenti nella mail aggiornano <b>Copie</b> con il valore "restituito Amazon" (anche se è zero: significa che Amazon non ha prenotato). Tutti gli altri titoli del lancio (senza differenza segnalata) vengono confermati in automatico con la <b>proposta iniziale PDE</b> (Amazon Cedola) in <b>Copie</b>. La colonna <b>Proposta Amaz</b> non viene mai toccata da questo caricamento. Ogni caricamento sovrascrive i dati esistenti.
               </div>
               <div style={{ display: "flex", gap: 10, alignItems: "flex-start", flexWrap: "wrap" }}>
                 <label
