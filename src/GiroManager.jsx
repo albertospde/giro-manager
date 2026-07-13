@@ -1977,19 +1977,6 @@ function ModuloLanciSettimanali({ token, titoli, prenotato, canali, ruolo, userA
 
   const [editCell, setEditCell] = useState(null); // { id, field, value }
 
-  const [viewMode, setViewMode] = useState("lanci"); // "lanci" | "verifica"
-  const [verificaData, setVerificaData] = useState([]);
-  const [editCellVA, setEditCellVA] = useState(null); // { ean, field, value }
-
-  // Sicurezza: Verifica Amazon deve sempre operare su UN SOLO lancio per volta,
-  // altrimenti titoli ri-lanciati su più cedole (stesso EAN, lanci diversi) si mescolano nella vista.
-  useEffect(() => {
-    if (viewMode === "verifica" && filterLancio.length > 1) {
-      showToast(`Avevi ${filterLancio.length} lanci selezionati: ho lasciato solo "Lancio ${filterLancio[0]}" per evitare di mescolare i dati`, "err");
-      setFilterLancio([filterLancio[0]]);
-    }
-  }, [viewMode]);
-
   const showToast = (msg, type = "ok") => { setToast({ msg, type }); setTimeout(() => setToast(null), 4000); };
 
   const loadData = useCallback(async () => {
@@ -2001,14 +1988,6 @@ function ModuloLanciSettimanali({ token, titoli, prenotato, canali, ruolo, userA
   }, [token]);
 
   useEffect(() => { loadData(); }, [loadData]);
-
-  const loadVerifica = useCallback(async () => {
-    if (!token) return;
-    const d = await sbFetch("verifica_amazon?select=*", token);
-    if (Array.isArray(d)) setVerificaData(d);
-  }, [token]);
-
-  useEffect(() => { loadVerifica(); }, [loadVerifica]);
 
   // Anni e lanci
   const anniDisponibili = useMemo(() => [...new Set(data.map(r => r.anno_lancio))].sort((a, b) => b - a), [data]);
@@ -2191,225 +2170,6 @@ function ModuloLanciSettimanali({ token, titoli, prenotato, canali, ruolo, userA
   };
   const sortIcon = (key) => sortKey === key ? (sortDir === "asc" ? " ↑" : " ↓") : "";
 
-  // ── Verifica Amazon: mappa record per EAN (lancio/anno correnti) + calcolo formule ──
-  const verificaByEan = useMemo(() => {
-    const anno = filterAnno || anniDisponibili[0];
-    const map = {};
-    verificaData.forEach(v => {
-      if (v.anno_lancio === anno && (filterLancio.length === 0 || filterLancio.includes(v.num_lancio))) {
-        map[v.ean] = v;
-      }
-    });
-    return map;
-  }, [verificaData, filterAnno, filterLancio, anniDisponibili]);
-
-  const dataVerifica = useMemo(() => {
-    return dataFiltrata.map(r => {
-      const v = verificaByEan[r.ean] || {};
-      const F = r.pren_amazon || 0;          // AMAZON IN CEDOLA (attuale, da fine giro)
-      const E = r.teorico || 0;              // TOTALE teorico
-      const G = v.proposta_amaz ?? null;      // Proposta fatta ad Amazon
-      const I = v.proposta_pde ?? F;          // Proposta PDE — auto = Amazon cedola, modificabile
-      const J = v.copie ?? null;              // Copie effettivamente inserite da Amazon
-      const K = v.evaso ?? null;
-      const L = v.inevaso ?? null;
-      const U = v.preorder ?? 0;
-      const H = (G != null && F) ? (G - F) / F : null;
-      const M = (J != null && L != null) ? J - L : (J != null ? J : null); // Netto confermato
-      const N = M != null ? M - F : null;
-      const O = (M != null && G != null) ? M - G : null;
-      const P = (M != null && I != null) ? M - I : null;
-      const Q = (N != null && F) ? N / F : null;
-      const R = (O != null && G) ? O / G : null;
-      const S = (P != null && I) ? P / I : null;
-      const V = M != null ? M - U : null;
-      const W = (V != null && M) ? U / M : null;
-      // Amazon "effettivo": se confermato da Amazon (Netto), sostituisce il teorico proposto
-      const amazonEffettivo = M != null ? M : F;
-      return { ...r, va: v, vF: F, vE: E, vG: G, vH: H, vI: I, vIauto: v.proposta_pde == null, vJ: J, vK: K, vL: L, vM: M, vN: N, vO: O, vP: P, vQ: Q, vR: R, vS: S, vNote: v.note || "", vU: U, vV: V, vW: W, vX: !!v.richiesta_rifornimento, vY: !!v.rottura_stock, amazonEffettivo, haConferma: M != null };
-    });
-  }, [dataFiltrata, verificaByEan]);
-
-  const kpiVerifica = useMemo(() => {
-    const totProposto = dataVerifica.reduce((s, r) => s + (r.vF || 0), 0);
-    const totConfermato = dataVerifica.reduce((s, r) => s + (r.vM || 0), 0);
-    const valoreProposto = dataVerifica.reduce((s, r) => s + (r.prezzo || 0) * (r.vF || 0), 0);
-    const valoreConfermato = dataVerifica.reduce((s, r) => s + (r.prezzo || 0) * (r.vM || 0), 0);
-    const nConfermati = dataVerifica.filter(r => r.haConferma).length;
-    const nInAttesa = dataVerifica.length - nConfermati;
-    const scostamento = totConfermato - totProposto;
-    const valoreScostamento = valoreConfermato - valoreProposto;
-    return { totProposto, totConfermato, valoreProposto, valoreConfermato, nConfermati, nInAttesa, scostamento, valoreScostamento };
-  }, [dataVerifica]);
-
-  // Riepilogo Verifica Amazon per editore (proposto/confermato/scostamento)
-  const riepilogoEditoriVerifica = useMemo(() => {
-    const byEd = {};
-    dataVerifica.forEach(r => {
-      if (!byEd[r.editore]) byEd[r.editore] = { editore: r.editore, titoli: 0, proposto: 0, confermato: 0, confermati: 0, inAttesa: 0, valore: 0, valoreProposto: 0 };
-      const e = byEd[r.editore];
-      e.titoli++;
-      e.proposto += r.vF || 0;
-      e.confermato += r.vM || 0;
-      e.valore += (r.prezzo || 0) * (r.vM || 0);
-      e.valoreProposto += (r.prezzo || 0) * (r.vF || 0);
-      if (r.haConferma) e.confermati++; else e.inAttesa++;
-    });
-    return Object.values(byEd)
-      .map(e => ({ ...e, scostamento: e.confermato - e.proposto }))
-      .sort((a, b) => b.confermato - a.confermato);
-  }, [dataVerifica]);
-
-  // ── Upload mail "Differenza prenotazioni Amazon" (Messaggerie) ──
-  const [showMailUpload, setShowMailUpload] = useState(false);
-  const [showRiepilogoEditori, setShowRiepilogoEditori] = useState(false);
-  const [mailPasteText, setMailPasteText] = useState("");
-  const [mailParseResult, setMailParseResult] = useState(null);
-  const [mailProcessing, setMailProcessing] = useState(false);
-
-  // Estrae righe EAN/Titolo/Prezzo/Proposto/Restituito dal testo della mail Messaggerie
-  const parseMessaggerieMail = (text) => {
-    const pattern = /(\d{9,14})\s*(?:\r?\n\s*)+([^\r\n\d][^\r\n]*?)\s*(?:\r?\n\s*)+(\d{1,4}[.,]\d{2})\s*€\s*(?:\r?\n\s*)+(-?\d+)\s*(?:\r?\n\s*)+(-?\d+)/g;
-    const rows = [];
-    let m;
-    while ((m = pattern.exec(text)) !== null) {
-      rows.push({
-        ean: m[1].trim(),
-        titolo: m[2].trim(),
-        prezzo: parseFloat(m[3].replace(",", ".")),
-        proposto: parseInt(m[4], 10),
-        restituito: parseInt(m[5], 10),
-      });
-    }
-    return rows;
-  };
-
-  // Estrae il numero di lancio (es. "LANCIO NR. 29.0 2026" / "lancio n. 29.0") dal testo mail
-  const parseLancioFromMail = (text) => {
-    const m = text.match(/lancio\s*(?:nr\.?|n\.)?\s*(\d{1,3})[.,](\d)(?:\D{0,10}(\d{4}))?/i);
-    if (!m) return null;
-    const numLancio = parseInt(m[1], 10) * 10 + parseInt(m[2], 10);
-    const anno = m[3] ? parseInt(m[3], 10) : null;
-    return { numLancio, anno };
-  };
-
-  const [mailLancioInfo, setMailLancioInfo] = useState(null);
-
-  const runMailParse = (text) => {
-    let rows = parseMessaggerieMail(text);
-    if (rows.length === 0) showToast("Nessuna riga riconosciuta nel testo/file caricato", "err");
-    setMailLancioInfo(parseLancioFromMail(text));
-    setMailParseResult(rows);
-  };
-
-  const processMailFile = async (file) => {
-    if (!file) return;
-    const buf = await file.arrayBuffer();
-    let text = "";
-    if (/\.msg$/i.test(file.name)) {
-      // I file .msg (Outlook, formato OLE) contengono il corpo testo in UTF-16LE
-      text = new TextDecoder("utf-16le").decode(buf);
-      if (parseMessaggerieMail(text).length === 0) text = new TextDecoder("latin1").decode(buf);
-    } else {
-      text = new TextDecoder("utf-8").decode(buf);
-    }
-    runMailParse(text);
-  };
-
-  const handleMailFile = async (e) => {
-    const file = e.target.files?.[0];
-    await processMailFile(file);
-    e.target.value = "";
-  };
-
-  const [mailDragOver, setMailDragOver] = useState(false);
-  const handleMailDrop = async (e) => {
-    e.preventDefault();
-    e.stopPropagation();
-    setMailDragOver(false);
-    const file = e.dataTransfer.files?.[0];
-    await processMailFile(file);
-  };
-
-  const mailByEan = useMemo(() => {
-    const map = {};
-    (mailParseResult || []).forEach(r => { map[r.ean] = r; });
-    return map;
-  }, [mailParseResult]);
-
-  const mailPreview = useMemo(() => {
-    if (!mailParseResult) return null;
-    const daMail = mailParseResult.length;
-    const autoConfermati = dataVerifica.filter(r => !mailByEan[r.ean]).length;
-    return { daMail, autoConfermati };
-  }, [mailParseResult, mailByEan, dataVerifica]);
-
-  // Blocco di sicurezza: la mail deve riferirsi esattamente al lancio/anno selezionati in app
-  const mailLancioMismatch = useMemo(() => {
-    if (!mailParseResult) return null;
-    const annoSel = filterAnno || anniDisponibili[0];
-    if (!mailLancioInfo) {
-      return { tipo: "non_rilevato", msg: "Non sono riuscito a capire a quale lancio si riferisce la mail. Verifica manualmente prima di procedere." };
-    }
-    if (filterLancio.length !== 1) {
-      return { tipo: "selezione_multipla", msg: `Per caricare la mail devi avere selezionato un solo lancio (ora ne hai selezionati ${filterLancio.length}). La mail si riferisce al lancio ${mailLancioInfo.numLancio}${mailLancioInfo.anno ? "/" + mailLancioInfo.anno : ""}.` };
-    }
-    if (filterLancio[0] !== mailLancioInfo.numLancio || (mailLancioInfo.anno && annoSel !== mailLancioInfo.anno)) {
-      return { tipo: "mismatch", msg: `La mail si riferisce al lancio ${mailLancioInfo.numLancio}${mailLancioInfo.anno ? "/" + mailLancioInfo.anno : ""}, ma qui hai selezionato il lancio ${filterLancio[0]}/${annoSel}. Seleziona il lancio corretto prima di continuare.` };
-    }
-    return null;
-  }, [mailParseResult, mailLancioInfo, filterLancio, filterAnno, anniDisponibili]);
-
-  const confirmApplyMail = async () => {
-    if (!mailParseResult || mailLancioMismatch) return;
-    setMailProcessing(true);
-    let doneMail = 0, doneAuto = 0;
-    for (const r of dataVerifica) {
-      const mailRow = mailByEan[r.ean];
-      if (mailRow) {
-        // Sempre in sovrascrittura: aggiorna Copie con "restituito Amazon", zero compreso (0 = Amazon non ha prenotato)
-        // Sempre in sovrascrittura: sia Proposta Amaz che Copie prendono "restituito Amazon", zero compreso (0 = Amazon non ha prenotato)
-        await saveVerificaAmazon(r.anno_lancio, r.num_lancio, r.ean, { proposta_amaz: mailRow.restituito, copie: mailRow.restituito });
-        doneMail++;
-      } else {
-        // Nessuna differenza segnalata da Messaggerie: Amazon ha confermato la proposta iniziale di PDE (Amazon Cedola)
-        await saveVerificaAmazon(r.anno_lancio, r.num_lancio, r.ean, { proposta_amaz: r.vF, copie: r.vF });
-        doneAuto++;
-      }
-    }
-    showToast(`Mail applicata: ${doneMail} titoli da mail, ${doneAuto} confermati sulla proposta iniziale PDE`);
-    setMailParseResult(null);
-    setMailLancioInfo(null);
-    setMailPasteText("");
-    setShowMailUpload(false);
-    setMailProcessing(false);
-  };
-
-  // Upsert su tabella verifica_amazon (chiave: anno_lancio + num_lancio + ean)
-  const saveVerificaAmazon = async (annoLancio, numLancio, ean, fields) => {
-    const body = { anno_lancio: annoLancio, num_lancio: numLancio, ean, ...fields };
-    try {
-      const resp = await fetch(`${SUPABASE_URL}/rest/v1/verifica_amazon?on_conflict=anno_lancio,num_lancio,ean`, {
-        method: "POST",
-        headers: {
-          "apikey": SUPABASE_KEY, "Authorization": `Bearer ${token}`, "Content-Type": "application/json",
-          "Prefer": "resolution=merge-duplicates,return=representation",
-        },
-        body: JSON.stringify(body),
-      });
-      if (!resp.ok) throw new Error(await resp.text());
-      const saved = (await resp.json())[0];
-      setVerificaData(prev => {
-        const idx = prev.findIndex(x => x.anno_lancio === annoLancio && x.num_lancio === numLancio && x.ean === ean);
-        if (idx >= 0) { const copy = [...prev]; copy[idx] = saved; return copy; }
-        return [...prev, saved];
-      });
-    } catch (err) {
-      showToast("Errore salvataggio Verifica Amazon: " + err.message, "err");
-    }
-    setEditCellVA(null);
-  };
-
   // Salva giorno uscita override
   const saveGiornoUscita = async (id, value) => {
     const payload = { giorno_uscita_override: value || null };
@@ -2557,53 +2317,20 @@ if (!r.ok) throw new Error(await r.text());
   // Export Excel
   const exportExcel = () => {
     const XLSX = window.XLSX;
-
-    // Foglio 1: LANCI — AMAZON e TOT.TEORICO usano il dato confermato (Netto) quando presente,
-    // altrimenti restano sul teorico proposto (cascata da Verifica Amazon).
     const headers = ["LANCIO","CEDOLA","EAN","TITOLO","AUTORE","COD.EDITORE","EDITORE","PREZZO","F.G.","P.O. MELI","AMAZON","TOT.TEORICO","FG VS TOT","GIORNO USCITA"];
-    const rows = dataVerifica.map(r => {
-      const amazon = r.amazonEffettivo;
-      const base = r.teorico - r.pren_amazon;
-      const teoricoEff = base + amazon;
-      const deltaEff = teoricoEff - r.pren_fine_giro;
-      return [
-        r.num_lancio, r.cedole.join(", "), r.ean, r.titolo, r.autore, r.codice_editore, r.editore, r.prezzo,
-        r.pren_fine_giro, r.prenotato_trasmesso ?? "", amazon, teoricoEff, deltaEff, r.giorno_uscita
-      ];
-    });
-
-    // Foglio 2: VERIFICA AMAZON — analisi proposta vs confermato
-    const vHeaders = ["EAN","Titolo","Autore","Editore","Prezzo","TOTALE","AMAZON IN CEDOLA","Proposta Amaz","Taglio prenotazione","Proposta PDE","Copie","Evaso","Inevaso","Netto","diff da FINE GIRO","diff da TAGLIO AMZ","diff da PROPOSTA PDE","diff % da FG","Diff % da amz","diff % da PDE","NOTE x Amazon","Preorder","Residuo lancio","% usata","Richiesta Rifornimento","ROTTURA DI STOCK"];
-    const vRows = dataVerifica.map(r => [
-      r.ean, r.titolo, r.autore, r.editore, r.prezzo, r.vE, r.vF,
-      r.vG ?? "", r.vH ?? "", r.vI ?? "", r.vJ ?? "", r.vK ?? "", r.vL ?? "", r.vM ?? "",
-      r.vN ?? "", r.vO ?? "", r.vP ?? "", r.vQ ?? "", r.vR ?? "", r.vS ?? "",
-      r.vNote, r.vU, r.vV ?? "", r.vW ?? "", r.vX ? "SI" : "", r.vY ? "SI" : ""
+    const rows = dataFiltrata.map(r => [
+      r.num_lancio, r.cedole.join(", "), r.ean, r.titolo, r.autore, r.codice_editore, r.editore, r.prezzo,
+      r.pren_fine_giro, r.prenotato_trasmesso ?? "", r.pren_amazon, r.teorico, r.delta_portale, r.giorno_uscita
     ]);
-
-    // Foglio 3: RIEPILOGO EDITORI — colonna AMAZON/VALORE ricalcolata con effettivo confermato
-    const byEditoreEff = {};
-    dataVerifica.forEach(r => {
-      const amazon = r.amazonEffettivo;
-      if (!byEditoreEff[r.editore]) byEditoreEff[r.editore] = { titoli: 0, lanciate: 0, trasmesse: 0, fineGiro: 0, amazon: 0, valore: 0 };
-      byEditoreEff[r.editore].titoli++;
-      byEditoreEff[r.editore].lanciate += r.prenotato_iscrizione || 0;
-      byEditoreEff[r.editore].trasmesse += r.prenotato_trasmesso ?? 0;
-      byEditoreEff[r.editore].fineGiro += r.pren_fine_giro || 0;
-      byEditoreEff[r.editore].amazon += amazon;
-      byEditoreEff[r.editore].valore += (r.prezzo || 0) * (r.prenotato_iscrizione || 0);
-    });
+    // Riepilogo editori
     const rH = ["EDITORE","TITOLI","LANCIATE","TRASMESSE","FINE GIRO","AMAZON","VALORE"];
-    const rR = Object.entries(byEditoreEff).sort((a, b) => b[1].lanciate - a[1].lanciate).map(([ed, v]) => [
+    const rR = Object.entries(kpi.byEditore).sort((a, b) => b[1].lanciate - a[1].lanciate).map(([ed, v]) => [
       ed, v.titoli, v.lanciate, v.trasmesse, v.fineGiro, v.amazon, Math.round(v.valore)
     ]);
-
     const ws = XLSX.utils.aoa_to_sheet([headers, ...rows]);
-    const wsV = XLSX.utils.aoa_to_sheet([vHeaders, ...vRows]);
     const wsR = XLSX.utils.aoa_to_sheet([rH, ...rR]);
     const wb = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(wb, ws, `Lanci ${filterLancio.join("-")}`);
-    XLSX.utils.book_append_sheet(wb, wsV, "Verifica Amazon");
     XLSX.utils.book_append_sheet(wb, wsR, "Riepilogo Editori");
     XLSX.writeFile(wb, `Lancio_${filterLancio.join("-")}_${filterAnno}.xlsx`);
   };
@@ -2631,13 +2358,7 @@ if (!r.ok) throw new Error(await r.text());
         <select style={{ ...css.input, fontSize: "13px", fontWeight: "600", color: T.accent }} value={filterAnno || ""} onChange={e => { setFilterAnno(Number(e.target.value)); setFilterLancio([]); }}>
           {anniDisponibili.map(a => <option key={a} value={a}>{a}</option>)}
         </select>
-        {viewMode === "verifica" ? (
-          <select style={{ ...css.input, fontSize: "13px", fontWeight: "600", color: T.accent }} value={filterLancio[0] || ""} onChange={e => setFilterLancio([Number(e.target.value)])}>
-            {lanciPerAnno.map(n => <option key={n} value={n}>Lancio {n}</option>)}
-          </select>
-        ) : (
-          <SearchableMultiSelect values={filterLancio.map(String)} onChange={v => setFilterLancio(v.map(Number))} options={lanciPerAnno.map(String)} renderOption={v => `Lancio ${v}`} placeholder="Seleziona lancio" width={170} />
-        )}
+        <SearchableMultiSelect values={filterLancio.map(String)} onChange={v => setFilterLancio(v.map(Number))} options={lanciPerAnno.map(String)} renderOption={v => `Lancio ${v}`} placeholder="Seleziona lancio" width={170} />
         <input style={{ ...css.input, width: 180 }} placeholder="Cerca EAN / titolo..." value={search} onChange={e => setSearch(e.target.value)} />
         <SearchableMultiSelect values={filterAccount} onChange={setFilterAccount} options={accountsDisponibili} placeholder="Tutti gli account" width={160} />
         {/* Riepilogo giorni */}
@@ -2653,23 +2374,10 @@ if (!r.ok) throw new Error(await r.text());
             {uploading && uploadMode === "iscrizione" ? "..." : "Upload File Lancio"}
             <input type="file" accept=".xlsx,.xls,.csv" style={{ display: "none" }} onChange={(e) => handleUpload(e, "iscrizione")} disabled={uploading} />
           </label>
-          <button
-            style={{ ...css.btn(viewMode === "verifica" ? "accent" : undefined), display: "inline-flex", alignItems: "center", gap: 6 }}
-            onClick={() => setViewMode(m => m === "lanci" ? "verifica" : "lanci")}
-          >
-            🔍 Verifica Amazon{kpiVerifica.nInAttesa > 0 ? ` (${kpiVerifica.nInAttesa} in attesa)` : ""}
-          </button>
-          {viewMode === "verifica" && (
-            <button style={{ ...css.btn(showMailUpload ? "accent" : undefined) }} onClick={() => setShowMailUpload(s => !s)}>
-              📧 Carica mail Messaggerie
-            </button>
-          )}
           <button style={css.btn()} onClick={exportExcel}>Download Excel</button>
         </div>
       </div>
 
-      {viewMode === "lanci" ? (
-      <>
       {/* KPI */}
       <div style={{ padding: "16px 20px", borderBottom: `1px solid ${T.border}` }}>
         <div style={{ display: "flex", gap: 12, flexWrap: "wrap", marginBottom: 16 }}>
@@ -2701,234 +2409,9 @@ if (!r.ok) throw new Error(await r.text());
           ))}
         </div>
       </div>
-      </>
-      ) : (
-      <>
-      {/* KPI VERIFICA AMAZON */}
-      <div style={{ padding: "16px 20px", borderBottom: `1px solid ${T.border}` }}>
-        <div style={{ display: "flex", gap: 12, flexWrap: "wrap" }}>
-          <KpiCard label="Proposto ad Amazon" value={kpiVerifica.totProposto.toLocaleString("it")} color="#e8a838" sub={`€ ${kpiVerifica.valoreProposto.toLocaleString("it", { maximumFractionDigits: 0 })}`} />
-          <KpiCard label="Confermato (Netto)" value={kpiVerifica.totConfermato.toLocaleString("it")} color={T.green} sub={`€ ${kpiVerifica.valoreConfermato.toLocaleString("it", { maximumFractionDigits: 0 })}`} />
-          <KpiCard label="Scostamento vs proposta" value={(kpiVerifica.scostamento > 0 ? "+" : "") + kpiVerifica.scostamento.toLocaleString("it")} color={kpiVerifica.scostamento < 0 ? T.red : T.green} sub={`${kpiVerifica.valoreScostamento > 0 ? "+" : ""}€ ${kpiVerifica.valoreScostamento.toLocaleString("it", { maximumFractionDigits: 0 })}`} />
-          <KpiCard label="Titoli confermati" value={kpiVerifica.nConfermati} color={T.text} />
-          <KpiCard label="In attesa di conferma" value={kpiVerifica.nInAttesa} color={kpiVerifica.nInAttesa > 0 ? "#e8a838" : T.textMid} />
-        </div>
-      </div>
-
-      {/* UPLOAD MAIL MESSAGGERIE */}
-      {showMailUpload && (
-        <div style={{ padding: "16px 20px", borderBottom: `1px solid ${T.border}`, background: T.bg }}>
-          {!mailParseResult ? (
-            <>
-              <div style={{ fontSize: "12px", color: T.textMid, marginBottom: 10 }}>
-                Carica il file <b>.msg</b> della mail "DIFFERENZA PRENOTAZIONI AMAZON" di Messaggerie, oppure incolla qui sotto il testo del corpo mail.
-                I titoli presenti nella mail aggiornano sia <b>Proposta Amaz</b> che <b>Copie</b> con il valore "restituito Amazon" (anche se è zero: significa che Amazon non ha prenotato). Tutti gli altri titoli del lancio (senza differenza segnalata) vengono confermati in automatico con la <b>proposta iniziale PDE</b> (Amazon Cedola), sia in Proposta Amaz che in Copie. Ogni caricamento sovrascrive i dati esistenti.
-              </div>
-              <div style={{ display: "flex", gap: 10, alignItems: "flex-start", flexWrap: "wrap" }}>
-                <label
-                  style={{
-                    ...css.btn(mailDragOver ? "accent" : undefined),
-                    cursor: "pointer", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center",
-                    width: 200, minHeight: 70, border: `2px dashed ${mailDragOver ? T.accent : T.borderHi}`,
-                    background: mailDragOver ? T.accent + "18" : T.surface, textAlign: "center", padding: "8px",
-                  }}
-                  onDragOver={e => { e.preventDefault(); e.stopPropagation(); setMailDragOver(true); }}
-                  onDragLeave={e => { e.preventDefault(); e.stopPropagation(); setMailDragOver(false); }}
-                  onDrop={handleMailDrop}
-                >
-                  <span>↑ Trascina qui il file .msg</span>
-                  <span style={{ fontSize: "10px", color: T.textDim, marginTop: 3 }}>oppure clicca per sceglierlo</span>
-                  <input type="file" accept=".msg,.txt,.eml" style={{ display: "none" }} onChange={handleMailFile} />
-                </label>
-                <div style={{ display: "flex", flexDirection: "column", gap: 6, flex: 1, minWidth: 280 }}>
-                  <textarea
-                    style={{ ...css.input, minHeight: 70, fontFamily: "inherit", fontSize: "11px", resize: "vertical" }}
-                    placeholder="...oppure incolla qui il testo della mail Messaggerie"
-                    value={mailPasteText}
-                    onChange={e => setMailPasteText(e.target.value)}
-                  />
-                  <button style={{ ...css.btn(), alignSelf: "flex-start" }} disabled={!mailPasteText.trim()} onClick={() => runMailParse(mailPasteText)}>Estrai dati dal testo incollato</button>
-                </div>
-                <button style={{ ...css.btn(), alignSelf: "flex-start" }} onClick={() => setShowMailUpload(false)}>Annulla</button>
-              </div>
-            </>
-          ) : (
-            <>
-              {mailLancioMismatch ? (
-                <div style={{ background: T.red + "18", border: `1px solid ${T.red}`, borderRadius: 4, padding: "10px 14px", marginBottom: 12, color: T.red, fontSize: "12px", fontWeight: "600" }}>
-                  🚫 {mailLancioMismatch.msg}
-                </div>
-              ) : mailLancioInfo && (
-                <div style={{ background: T.green + "18", border: `1px solid ${T.green}`, borderRadius: 4, padding: "8px 14px", marginBottom: 12, color: T.green, fontSize: "12px" }}>
-                  ✓ La mail si riferisce al lancio {mailLancioInfo.numLancio}{mailLancioInfo.anno ? "/" + mailLancioInfo.anno : ""}, corrispondente al lancio selezionato.
-                </div>
-              )}
-              <div style={{ fontSize: "12px", color: T.text, marginBottom: 10 }}>
-                Trovati <b style={{ color: "#e8a838" }}>{mailParseResult.length}</b> titoli nella mail. Gli altri <b style={{ color: T.green }}>{mailPreview?.autoConfermati ?? 0}</b> titoli del lancio (senza differenza) verranno confermati in automatico sulla proposta iniziale PDE (Amazon Cedola). Tutti i valori esistenti verranno sovrascritti.
-              </div>
-              {mailParseResult.length > 0 && (
-                <div style={{ maxHeight: 260, overflowY: "auto", marginBottom: 12, border: `1px solid ${T.border}`, borderRadius: 4 }}>
-                <table style={css.table}>
-                  <thead>
-                    <tr>
-                      <th style={css.th}>EAN</th>
-                      <th style={css.th}>Titolo</th>
-                      <th style={css.th}>Prezzo</th>
-                      <th style={css.th}>Proposto</th>
-                      <th style={css.th}>Restituito</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {mailParseResult.map((r, i) => (
-                      <tr key={i}>
-                        <td style={{ ...css.td, fontFamily: "monospace", fontSize: "11px", color: T.textMid }}>{r.ean}</td>
-                        <td style={css.td}>{r.titolo}</td>
-                        <td style={css.td}>€ {r.prezzo.toFixed(2)}</td>
-                        <td style={css.td}>{r.proposto}</td>
-                        <td style={{ ...css.td, color: r.restituito < r.proposto ? T.red : T.green, fontWeight: "700" }}>{r.restituito}</td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-                </div>
-              )}
-              <div style={{ display: "flex", gap: 10 }}>
-                <button style={css.btn("accent")} disabled={mailProcessing || !!mailLancioMismatch} title={mailLancioMismatch ? "Seleziona il lancio corretto per procedere" : ""} onClick={confirmApplyMail}>
-                  {mailProcessing ? "Applico..." : "✓ Conferma e applica"}
-                </button>
-                <button style={css.btn()} disabled={mailProcessing} onClick={() => { setMailParseResult(null); setMailLancioInfo(null); setMailPasteText(""); }}>Annulla</button>
-              </div>
-            </>
-          )}
-        </div>
-      )}
-
-      {/* RIEPILOGO PER EDITORE */}
-      <div style={{ padding: "10px 20px", borderBottom: `1px solid ${T.border}` }}>
-        <div
-          style={{ color: T.textMid, fontSize: "10px", letterSpacing: "0.1em", textTransform: "uppercase", cursor: "pointer", display: "inline-flex", alignItems: "center", gap: 6, userSelect: "none" }}
-          onClick={() => setShowRiepilogoEditori(s => !s)}
-        >
-          <span style={{ transform: showRiepilogoEditori ? "rotate(90deg)" : "none", transition: "transform 0.15s", display: "inline-block", fontSize: "9px" }}>▶</span>
-          Riepilogo per editore ({riepilogoEditoriVerifica.length})
-        </div>
-        {showRiepilogoEditori && (
-        <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginTop: 10 }}>
-          {riepilogoEditoriVerifica.map(e => (
-            <div key={e.editore} style={{ background: T.bg, border: `1px solid ${T.border}`, borderRadius: 4, padding: "8px 12px", minWidth: 150, flex: "1 1 150px", maxWidth: 220 }}>
-              <div style={{ fontSize: "11px", fontWeight: "600", color: T.text, marginBottom: 4, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{e.editore}</div>
-              <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 3 }}>
-                <div style={{ flex: 1, height: 4, background: T.borderHi, borderRadius: 2, overflow: "hidden" }}>
-                  <div style={{ width: `${Math.round(e.confermato / (riepilogoEditoriVerifica[0]?.confermato || 1) * 100)}%`, height: "100%", background: T.green }} />
-                </div>
-                <span style={{ fontSize: "11px", fontWeight: "700", color: T.green, minWidth: 40, textAlign: "right" }}>{e.confermato.toLocaleString("it")}</span>
-              </div>
-              {e.proposto > 0 && (
-                <div style={{ fontSize: "9px", color: "#e8a838" }}>🎯 {e.proposto.toLocaleString("it")} · € {Math.round(e.valoreProposto).toLocaleString("it")}</div>
-              )}
-              <div style={{ fontSize: "9px", color: T.textDim, marginTop: 2 }}>{e.titoli} titoli · € {Math.round(e.valore).toLocaleString("it")}</div>
-            </div>
-          ))}
-        </div>
-        )}
-      </div>
-      </>
-      )}
 
       {/* TABELLA */}
       <div style={{ flex: 1, overflowY: "auto", overflowX: "auto" }}>
-      {viewMode === "verifica" ? (
-        <table style={css.table}>
-          <thead>
-            <tr>
-              <th style={css.th}>EAN</th>
-              <th style={css.th}>Titolo</th>
-              <th style={css.th}>Autore</th>
-              <th style={css.th}>Editore</th>
-              <th style={css.th}>Prezzo</th>
-              <th style={css.th} title="Totale teorico (F.G. trasmesso + Amazon)">Totale</th>
-              <th style={{ ...css.th, color: "#e8a838" }} title="Amazon in cedola (attuale)">Amazon cedola</th>
-              <th style={css.th} title="Quantità proposta ad Amazon">Proposta Amaz</th>
-              <th style={css.th} title="Taglio prenotazione = (Proposta-Cedola)/Cedola">Taglio %</th>
-              <th style={css.th} title="Proposta interna PDE">Proposta PDE</th>
-              <th style={css.th} title="Copie effettivamente inserite da Amazon">Copie</th>
-              <th style={css.th}>Evaso</th>
-              <th style={css.th}>Inevaso</th>
-              <th style={css.th} title="Netto = Copie - Inevaso">Netto</th>
-              <th style={css.th} title="Netto - Amazon cedola">Diff FG</th>
-              <th style={css.th} title="Netto - Proposta Amaz">Diff Amz</th>
-              <th style={css.th} title="Netto - Proposta PDE">Diff PDE</th>
-              <th style={css.th}>Note</th>
-              <th style={css.th}>Preorder</th>
-              <th style={css.th} title="Netto - Preorder">Residuo</th>
-              <th style={css.th}>Rifornim.</th>
-              <th style={css.th}>Rottura stock</th>
-            </tr>
-          </thead>
-          <tbody>
-            {dataVerifica.map((r, i) => {
-              const editVACell = (field, type = "number") => {
-                const isEditing = editCellVA?.ean === r.ean && editCellVA?.field === field;
-                const rawVal = { proposta_amaz: r.vG, proposta_pde: r.vI, copie: r.vJ, evaso: r.vK, inevaso: r.vL, note: r.va.note, preorder: r.vU }[field];
-                if (isEditing) {
-                  return (
-                    <div style={{ display: "flex", gap: 3, alignItems: "center" }}>
-                      <input
-                        type={type} style={{ ...css.input, width: type === "text" ? 120 : 65, padding: "2px 5px", fontSize: "11px" }}
-                        value={editCellVA.value} autoFocus
-                        onChange={e => setEditCellVA(p => ({ ...p, value: e.target.value }))}
-                        onKeyDown={e => {
-                          if (e.key === "Enter") saveVerificaAmazon(r.anno_lancio, r.num_lancio, r.ean, { [field]: type === "number" ? (editCellVA.value === "" ? null : parseInt(editCellVA.value)) : editCellVA.value });
-                          if (e.key === "Escape") setEditCellVA(null);
-                        }}
-                      />
-                      <button style={{ ...css.btn("accent"), padding: "1px 5px", fontSize: "10px" }}
-                        onClick={() => saveVerificaAmazon(r.anno_lancio, r.num_lancio, r.ean, { [field]: type === "number" ? (editCellVA.value === "" ? null : parseInt(editCellVA.value)) : editCellVA.value })}>✓</button>
-                    </div>
-                  );
-                }
-                return (
-                  <div style={{ cursor: "pointer", display: "flex", alignItems: "center", gap: 4 }}
-                    onClick={() => setEditCellVA({ ean: r.ean, field, value: rawVal != null ? String(rawVal) : "" })}>
-                    <span style={{ color: rawVal == null || rawVal === "" ? T.textDim : (field === "proposta_pde" && r.vIauto) ? "#e8a838" : T.text }}>{rawVal != null && rawVal !== "" ? rawVal : "—"}</span>
-                    <span style={{ color: T.accent, fontSize: "10px" }}>✎</span>
-                  </div>
-                );
-              };
-              return (
-                <tr key={r.ean} style={{ background: r.haConferma ? T.green + "14" : (i % 2 === 0 ? "transparent" : T.surface + "66") }}>
-                  <td style={{ ...css.td, fontFamily: "monospace", fontSize: "11px", color: T.textMid }}>{r.ean}</td>
-                  <td style={{ ...css.td, maxWidth: 200 }}><div style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", fontWeight: "600" }}>{r.titolo}</div></td>
-                  <td style={{ ...css.td, color: T.textMid, maxWidth: 130, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{r.autore}</td>
-                  <td style={{ ...css.td, color: T.accent, fontWeight: "600", whiteSpace: "nowrap", maxWidth: 130, overflow: "hidden", textOverflow: "ellipsis" }}>{r.editore}</td>
-                  <td style={{ ...css.td, whiteSpace: "nowrap" }}>€ {(r.prezzo || 0).toFixed(2)}</td>
-                  <td style={css.td}>{r.vE.toLocaleString("it")}</td>
-                  <td style={{ ...css.td, color: "#e8a838", fontWeight: "600" }}>{r.vF.toLocaleString("it")}</td>
-                  <td style={css.td}>{editVACell("proposta_amaz")}</td>
-                  <td style={{ ...css.td, color: r.vH == null ? T.textDim : r.vH < 0 ? T.red : T.green }}>{r.vH != null ? (r.vH * 100).toFixed(1) + "%" : "—"}</td>
-                  <td style={css.td}>{editVACell("proposta_pde")}</td>
-                  <td style={css.td}>{editVACell("copie")}</td>
-                  <td style={css.td}>{editVACell("evaso")}</td>
-                  <td style={css.td}>{editVACell("inevaso")}</td>
-                  <td style={{ ...css.td, fontWeight: "700", color: r.haConferma ? T.green : T.textDim }}>{r.vM != null ? r.vM.toLocaleString("it") : "—"}</td>
-                  <td style={{ ...css.td, color: r.vN == null ? T.textDim : r.vN < 0 ? T.red : T.green }}>{r.vN != null ? (r.vN > 0 ? "+" : "") + r.vN.toLocaleString("it") : "—"}</td>
-                  <td style={{ ...css.td, color: r.vO == null ? T.textDim : r.vO < 0 ? T.red : T.green }}>{r.vO != null ? (r.vO > 0 ? "+" : "") + r.vO.toLocaleString("it") : "—"}</td>
-                  <td style={{ ...css.td, color: r.vP == null ? T.textDim : r.vP < 0 ? T.red : T.green }}>{r.vP != null ? (r.vP > 0 ? "+" : "") + r.vP.toLocaleString("it") : "—"}</td>
-                  <td style={{ ...css.td, fontSize: "11px", maxWidth: 140 }}>{editVACell("note", "text")}</td>
-                  <td style={css.td}>{editVACell("preorder")}</td>
-                  <td style={css.td}>{r.vV != null ? r.vV.toLocaleString("it") : "—"}</td>
-                  <td style={{ ...css.td, textAlign: "center", cursor: "pointer" }} onClick={() => saveVerificaAmazon(r.anno_lancio, r.num_lancio, r.ean, { richiesta_rifornimento: !r.vX })}>
-                    {r.vX ? <span style={{ color: "#e8a838" }}>⚠️</span> : <span style={{ color: T.textDim }}>—</span>}
-                  </td>
-                  <td style={{ ...css.td, textAlign: "center", cursor: "pointer" }} onClick={() => saveVerificaAmazon(r.anno_lancio, r.num_lancio, r.ean, { rottura_stock: !r.vY })}>
-                    {r.vY ? <span style={{ color: T.red }}>🔴</span> : <span style={{ color: T.textDim }}>—</span>}
-                  </td>
-                </tr>
-              );
-            })}
-          </tbody>
-        </table>
-      ) : (
         <table style={css.table}>
           <thead>
             <tr>
@@ -3050,7 +2533,575 @@ if (!r.ok) throw new Error(await r.text());
             ))}
           </tbody>
         </table>
+        {dataFiltrata.length === 0 && (
+          <div style={{ padding: 40, textAlign: "center", color: T.textDim }}>Nessun titolo per questo lancio.</div>
+        )}
+      </div>
+
+      {toast && (
+        <div style={{ position: "fixed", bottom: 24, left: "50%", transform: "translateX(-50%)", background: toast.type === "err" ? "#4a1a2a" : "#1a3a2a", border: `1px solid ${toast.type === "err" ? T.red : T.green}`, color: toast.type === "err" ? T.red : T.green, borderRadius: 6, padding: "8px 20px", fontSize: "12px", zIndex: 999, boxShadow: "0 4px 20px #0008" }}>
+          {toast.msg}
+        </div>
       )}
+    </div>
+  );
+}
+
+// ─── MODULO VERIFICA LANCI AMAZON ──────────────────────────────────────────
+function ModuloVerificaLanciAmazon({ token, titoli, prenotato, canali }) {
+  const [data, setData] = useState([]);
+  const [verificaData, setVerificaData] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [toast, setToast] = useState(null);
+  const [filterAnno, setFilterAnno] = useState(null);
+  const [filterLancio, setFilterLancio] = useState(null); // singolo lancio, sempre
+  const [search, setSearch] = useState("");
+  const [editCellVA, setEditCellVA] = useState(null); // { ean, field, value }
+  const [showRiepilogoEditori, setShowRiepilogoEditori] = useState(false);
+
+  const showToast = (msg, type = "ok") => { setToast({ msg, type }); setTimeout(() => setToast(null), 4000); };
+
+  const loadData = useCallback(async () => {
+    if (!token) return;
+    setLoading(true);
+    const d = await sbFetch("lanci_settimanali?select=*&order=anno_lancio.desc,num_lancio.desc,editore.asc,titolo.asc", token);
+    if (Array.isArray(d)) setData(d);
+    setLoading(false);
+  }, [token]);
+  useEffect(() => { loadData(); }, [loadData]);
+
+  const loadVerifica = useCallback(async () => {
+    if (!token) return;
+    const d = await sbFetch("verifica_amazon?select=*", token);
+    if (Array.isArray(d)) setVerificaData(d);
+  }, [token]);
+  useEffect(() => { loadVerifica(); }, [loadVerifica]);
+
+  // Anni e lanci disponibili (si aggiornano da soli se i titoli slittano da un lancio all'altro)
+  const anniDisponibili = useMemo(() => [...new Set(data.map(r => r.anno_lancio))].sort((a, b) => b - a), [data]);
+  const lanciPerAnno = useMemo(() => {
+    const anno = filterAnno || anniDisponibili[0];
+    if (!anno) return [];
+    return [...new Set(data.filter(r => r.anno_lancio === anno).map(r => r.num_lancio))].sort((a, b) => b - a);
+  }, [data, filterAnno, anniDisponibili]);
+
+  useEffect(() => { if (!filterAnno && anniDisponibili.length > 0) setFilterAnno(anniDisponibili[0]); }, [anniDisponibili]);
+  useEffect(() => { if (lanciPerAnno.length > 0 && (filterLancio == null || !lanciPerAnno.includes(filterLancio))) setFilterLancio(lanciPerAnno[0]); }, [lanciPerAnno]);
+
+  const amazonCodice = "AMAZON";
+
+  // Mappa prenotato per EAN (da fine giro) — per canale, per calcolare Amazon Cedola live
+  const prenByEanCanale = useMemo(() => {
+    const map = {};
+    prenotato.forEach(p => {
+      const t = titoli.find(t => t.id === p.titolo_id);
+      if (!t || !t.ean) return;
+      if (!map[t.ean]) map[t.ean] = {};
+      const c = canali.find(c => c.id === p.canale_id);
+      if (c) map[t.ean][c.codice] = (map[t.ean][c.codice] || 0) + p.quantita;
+    });
+    return map;
+  }, [prenotato, titoli, canali]);
+
+  // Dati del lancio selezionato, arricchiti con Amazon Cedola/Teorico live
+  const dataArricchita = useMemo(() => {
+    const anno = filterAnno || anniDisponibili[0];
+    return data
+      .filter(r => r.anno_lancio === anno && r.num_lancio === filterLancio)
+      .map(r => {
+        const prenCanali = prenByEanCanale[r.ean] || {};
+        const prenAmazonLive = prenCanali[amazonCodice] || 0;
+        const haLiveAmazon = prenAmazonLive > 0;
+        const prenAmazon = haLiveAmazon ? prenAmazonLive : (r.pren_amazon_manual || 0);
+        const teorico = (r.prenotato_trasmesso ?? r.prenotato_iscrizione ?? 0) + prenAmazon;
+        return { ...r, pren_amazon: prenAmazon, teorico };
+      });
+  }, [data, filterAnno, filterLancio, anniDisponibili, prenByEanCanale]);
+
+  const dataFiltrata = useMemo(() => {
+    let result = [...dataArricchita];
+    if (search) {
+      const q = search.toLowerCase();
+      result = result.filter(r => r.ean?.toLowerCase().includes(q) || r.titolo?.toLowerCase().includes(q) || r.autore?.toLowerCase().includes(q) || r.editore?.toLowerCase().includes(q));
+    }
+    return result;
+  }, [dataArricchita, search]);
+
+  // ── Verifica Amazon: mappa record per EAN (lancio/anno correnti) + calcolo formule ──
+  const verificaByEan = useMemo(() => {
+    const anno = filterAnno || anniDisponibili[0];
+    const map = {};
+    verificaData.forEach(v => {
+      if (v.anno_lancio === anno && v.num_lancio === filterLancio) {
+        map[v.ean] = v;
+      }
+    });
+    return map;
+  }, [verificaData, filterAnno, filterLancio, anniDisponibili]);
+
+  const dataVerifica = useMemo(() => {
+    return dataFiltrata.map(r => {
+      const v = verificaByEan[r.ean] || {};
+      const F = r.pren_amazon || 0;          // AMAZON IN CEDOLA (attuale, da fine giro)
+      const E = r.teorico || 0;              // TOTALE teorico
+      const G = v.proposta_amaz ?? null;      // Proposta fatta ad Amazon
+      const I = v.proposta_pde ?? F;          // Proposta PDE — auto = Amazon cedola, modificabile
+      const J = v.copie ?? null;              // Copie effettivamente inserite da Amazon
+      const K = v.evaso ?? null;
+      const L = v.inevaso ?? null;
+      const U = v.preorder ?? 0;
+      const H = (G != null && F) ? (G - F) / F : null;
+      const M = (J != null && L != null) ? J - L : (J != null ? J : null); // Netto confermato
+      const N = M != null ? M - F : null;
+      const O = (M != null && G != null) ? M - G : null;
+      const P = (M != null && I != null) ? M - I : null;
+      const Q = (N != null && F) ? N / F : null;
+      const R = (O != null && G) ? O / G : null;
+      const S = (P != null && I) ? P / I : null;
+      const V = M != null ? M - U : null;
+      const W = (V != null && M) ? U / M : null;
+      return { ...r, va: v, vF: F, vE: E, vG: G, vH: H, vI: I, vIauto: v.proposta_pde == null, vJ: J, vK: K, vL: L, vM: M, vN: N, vO: O, vP: P, vQ: Q, vR: R, vS: S, vNote: v.note || "", vU: U, vV: V, vW: W, vX: !!v.richiesta_rifornimento, vY: !!v.rottura_stock, haConferma: M != null };
+    });
+  }, [dataFiltrata, verificaByEan]);
+
+  const kpiVerifica = useMemo(() => {
+    const totProposto = dataVerifica.reduce((s, r) => s + (r.vF || 0), 0);
+    const totConfermato = dataVerifica.reduce((s, r) => s + (r.vM || 0), 0);
+    const valoreProposto = dataVerifica.reduce((s, r) => s + (r.prezzo || 0) * (r.vF || 0), 0);
+    const valoreConfermato = dataVerifica.reduce((s, r) => s + (r.prezzo || 0) * (r.vM || 0), 0);
+    const nConfermati = dataVerifica.filter(r => r.haConferma).length;
+    const nInAttesa = dataVerifica.length - nConfermati;
+    const scostamento = totConfermato - totProposto;
+    const valoreScostamento = valoreConfermato - valoreProposto;
+    return { totProposto, totConfermato, valoreProposto, valoreConfermato, nConfermati, nInAttesa, scostamento, valoreScostamento };
+  }, [dataVerifica]);
+
+  // Riepilogo Verifica Amazon per editore (proposto/confermato/scostamento)
+  const riepilogoEditoriVerifica = useMemo(() => {
+    const byEd = {};
+    dataVerifica.forEach(r => {
+      if (!byEd[r.editore]) byEd[r.editore] = { editore: r.editore, titoli: 0, proposto: 0, confermato: 0, confermati: 0, inAttesa: 0, valore: 0, valoreProposto: 0 };
+      const e = byEd[r.editore];
+      e.titoli++;
+      e.proposto += r.vF || 0;
+      e.confermato += r.vM || 0;
+      e.valore += (r.prezzo || 0) * (r.vM || 0);
+      e.valoreProposto += (r.prezzo || 0) * (r.vF || 0);
+      if (r.haConferma) e.confermati++; else e.inAttesa++;
+    });
+    return Object.values(byEd)
+      .map(e => ({ ...e, scostamento: e.confermato - e.proposto }))
+      .sort((a, b) => b.confermato - a.confermato);
+  }, [dataVerifica]);
+
+  // ── Upload mail "Differenza prenotazioni Amazon" (Messaggerie) ──
+  const [showMailUpload, setShowMailUpload] = useState(false);
+  const [mailPasteText, setMailPasteText] = useState("");
+  const [mailParseResult, setMailParseResult] = useState(null);
+  const [mailProcessing, setMailProcessing] = useState(false);
+  const [mailLancioInfo, setMailLancioInfo] = useState(null);
+  const [mailDragOver, setMailDragOver] = useState(false);
+
+  // Estrae righe EAN/Titolo/Prezzo/Proposto/Restituito dal testo della mail Messaggerie
+  const parseMessaggerieMail = (text) => {
+    const pattern = /(\d{9,14})\s*(?:\r?\n\s*)+([^\r\n\d][^\r\n]*?)\s*(?:\r?\n\s*)+(\d{1,4}[.,]\d{2})\s*€\s*(?:\r?\n\s*)+(-?\d+)\s*(?:\r?\n\s*)+(-?\d+)/g;
+    const rows = [];
+    let m;
+    while ((m = pattern.exec(text)) !== null) {
+      rows.push({
+        ean: m[1].trim(),
+        titolo: m[2].trim(),
+        prezzo: parseFloat(m[3].replace(",", ".")),
+        proposto: parseInt(m[4], 10),
+        restituito: parseInt(m[5], 10),
+      });
+    }
+    return rows;
+  };
+
+  // Estrae il numero di lancio (es. "LANCIO NR. 29.0 2026" / "lancio n. 29.0") dal testo mail
+  const parseLancioFromMail = (text) => {
+    const m = text.match(/lancio\s*(?:nr\.?|n\.)?\s*(\d{1,3})[.,](\d)(?:\D{0,10}(\d{4}))?/i);
+    if (!m) return null;
+    const numLancio = parseInt(m[1], 10) * 10 + parseInt(m[2], 10);
+    const anno = m[3] ? parseInt(m[3], 10) : null;
+    return { numLancio, anno };
+  };
+
+  const runMailParse = (text) => {
+    let rows = parseMessaggerieMail(text);
+    if (rows.length === 0) showToast("Nessuna riga riconosciuta nel testo/file caricato", "err");
+    setMailLancioInfo(parseLancioFromMail(text));
+    setMailParseResult(rows);
+  };
+
+  const processMailFile = async (file) => {
+    if (!file) return;
+    const buf = await file.arrayBuffer();
+    let text = "";
+    if (/\.msg$/i.test(file.name)) {
+      // I file .msg (Outlook, formato OLE) contengono il corpo testo in UTF-16LE
+      text = new TextDecoder("utf-16le").decode(buf);
+      if (parseMessaggerieMail(text).length === 0) text = new TextDecoder("latin1").decode(buf);
+    } else {
+      text = new TextDecoder("utf-8").decode(buf);
+    }
+    runMailParse(text);
+  };
+
+  const handleMailFile = async (e) => {
+    const file = e.target.files?.[0];
+    await processMailFile(file);
+    e.target.value = "";
+  };
+
+  const handleMailDrop = async (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setMailDragOver(false);
+    const file = e.dataTransfer.files?.[0];
+    await processMailFile(file);
+  };
+
+  const mailByEan = useMemo(() => {
+    const map = {};
+    (mailParseResult || []).forEach(r => { map[r.ean] = r; });
+    return map;
+  }, [mailParseResult]);
+
+  const mailPreview = useMemo(() => {
+    if (!mailParseResult) return null;
+    const daMail = mailParseResult.length;
+    const autoConfermati = dataVerifica.filter(r => !mailByEan[r.ean]).length;
+    return { daMail, autoConfermati };
+  }, [mailParseResult, mailByEan, dataVerifica]);
+
+  // Blocco di sicurezza: la mail deve riferirsi esattamente al lancio/anno selezionati in app
+  const mailLancioMismatch = useMemo(() => {
+    if (!mailParseResult) return null;
+    const annoSel = filterAnno || anniDisponibili[0];
+    if (!mailLancioInfo) {
+      return { tipo: "non_rilevato", msg: "Non sono riuscito a capire a quale lancio si riferisce la mail. Verifica manualmente prima di procedere." };
+    }
+    if (filterLancio !== mailLancioInfo.numLancio || (mailLancioInfo.anno && annoSel !== mailLancioInfo.anno)) {
+      return { tipo: "mismatch", msg: `La mail si riferisce al lancio ${mailLancioInfo.numLancio}${mailLancioInfo.anno ? "/" + mailLancioInfo.anno : ""}, ma qui hai selezionato il lancio ${filterLancio}/${annoSel}. Seleziona il lancio corretto prima di continuare.` };
+    }
+    return null;
+  }, [mailParseResult, mailLancioInfo, filterLancio, filterAnno, anniDisponibili]);
+
+  // Upsert su tabella verifica_amazon (chiave: anno_lancio + num_lancio + ean)
+  const saveVerificaAmazon = async (annoLancio, numLancio, ean, fields) => {
+    const body = { anno_lancio: annoLancio, num_lancio: numLancio, ean, ...fields };
+    try {
+      const resp = await fetch(`${SUPABASE_URL}/rest/v1/verifica_amazon?on_conflict=anno_lancio,num_lancio,ean`, {
+        method: "POST",
+        headers: {
+          "apikey": SUPABASE_KEY, "Authorization": `Bearer ${token}`, "Content-Type": "application/json",
+          "Prefer": "resolution=merge-duplicates,return=representation",
+        },
+        body: JSON.stringify(body),
+      });
+      if (!resp.ok) throw new Error(await resp.text());
+      const saved = (await resp.json())[0];
+      setVerificaData(prev => {
+        const idx = prev.findIndex(x => x.anno_lancio === annoLancio && x.num_lancio === numLancio && x.ean === ean);
+        if (idx >= 0) { const copy = [...prev]; copy[idx] = saved; return copy; }
+        return [...prev, saved];
+      });
+    } catch (err) {
+      showToast("Errore salvataggio Verifica Amazon: " + err.message, "err");
+    }
+    setEditCellVA(null);
+  };
+
+  const confirmApplyMail = async () => {
+    if (!mailParseResult || mailLancioMismatch) return;
+    setMailProcessing(true);
+    let doneMail = 0, doneAuto = 0;
+    for (const r of dataVerifica) {
+      const mailRow = mailByEan[r.ean];
+      if (mailRow) {
+        // Sempre in sovrascrittura: sia Proposta Amaz che Copie prendono "restituito Amazon", zero compreso (0 = Amazon non ha prenotato)
+        await saveVerificaAmazon(r.anno_lancio, r.num_lancio, r.ean, { proposta_amaz: mailRow.restituito, copie: mailRow.restituito });
+        doneMail++;
+      } else {
+        // Nessuna differenza segnalata da Messaggerie: Amazon ha confermato la proposta iniziale di PDE (Amazon Cedola)
+        await saveVerificaAmazon(r.anno_lancio, r.num_lancio, r.ean, { proposta_amaz: r.vF, copie: r.vF });
+        doneAuto++;
+      }
+    }
+    showToast(`Mail applicata: ${doneMail} titoli da mail, ${doneAuto} confermati sulla proposta iniziale PDE`);
+    setMailParseResult(null);
+    setMailLancioInfo(null);
+    setMailPasteText("");
+    setShowMailUpload(false);
+    setMailProcessing(false);
+  };
+
+  const exportExcel = () => {
+    const XLSX = window.XLSX;
+    const vHeaders = ["EAN","Titolo","Autore","Editore","Prezzo","TOTALE","AMAZON IN CEDOLA","Proposta Amaz","Taglio prenotazione","Proposta PDE","Copie","Evaso","Inevaso","Netto","diff da FINE GIRO","diff da TAGLIO AMZ","diff da PROPOSTA PDE","diff % da FG","Diff % da amz","diff % da PDE","NOTE x Amazon","Preorder","Residuo lancio","% usata","Richiesta Rifornimento","ROTTURA DI STOCK"];
+    const vRows = dataVerifica.map(r => [
+      r.ean, r.titolo, r.autore, r.editore, r.prezzo, r.vE, r.vF,
+      r.vG ?? "", r.vH ?? "", r.vI ?? "", r.vJ ?? "", r.vK ?? "", r.vL ?? "", r.vM ?? "",
+      r.vN ?? "", r.vO ?? "", r.vP ?? "", r.vQ ?? "", r.vR ?? "", r.vS ?? "",
+      r.vNote, r.vU, r.vV ?? "", r.vW ?? "", r.vX ? "SI" : "", r.vY ? "SI" : ""
+    ]);
+    const wsV = XLSX.utils.aoa_to_sheet([vHeaders, ...vRows]);
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, wsV, "Verifica Amazon");
+    XLSX.writeFile(wb, `VerificaAmazon_${filterLancio}_${filterAnno}.xlsx`);
+  };
+
+  if (loading) return <div style={{ flex: 1, display: "flex", alignItems: "center", justifyContent: "center", color: T.textMid }}>Caricamento...</div>;
+
+  if (data.length === 0) return (
+    <div style={{ flex: 1, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 20, padding: 40 }}>
+      <div style={{ fontSize: "48px", opacity: 0.3 }}>📦</div>
+      <div style={{ color: T.textMid, fontSize: "14px", textAlign: "center", maxWidth: 400 }}>Nessun lancio caricato. Carica prima un lancio nella sezione Lanci Settimanali.</div>
+    </div>
+  );
+
+  return (
+    <div style={{ display: "flex", flexDirection: "column", height: "100%", overflow: "hidden" }}>
+      {/* TOOLBAR */}
+      <div style={{ padding: "14px 20px", borderBottom: `1px solid ${T.border}`, display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap" }}>
+        <select style={{ ...css.input, fontSize: "13px", fontWeight: "600", color: T.accent }} value={filterAnno || ""} onChange={e => { setFilterAnno(Number(e.target.value)); setFilterLancio(null); }}>
+          {anniDisponibili.map(a => <option key={a} value={a}>{a}</option>)}
+        </select>
+        <select style={{ ...css.input, fontSize: "13px", fontWeight: "600", color: T.accent }} value={filterLancio || ""} onChange={e => setFilterLancio(Number(e.target.value))}>
+          {lanciPerAnno.map(n => <option key={n} value={n}>Lancio {n}</option>)}
+        </select>
+        <input style={{ ...css.input, width: 180 }} placeholder="Cerca EAN / titolo..." value={search} onChange={e => setSearch(e.target.value)} />
+        <div style={{ marginLeft: "auto", display: "flex", gap: 10 }}>
+          <button style={{ ...css.btn(showMailUpload ? "accent" : undefined) }} onClick={() => setShowMailUpload(s => !s)}>
+            📧 Carica mail Messaggerie
+          </button>
+          <button style={css.btn()} onClick={exportExcel}>Download Excel</button>
+        </div>
+      </div>
+
+      {/* KPI */}
+      <div style={{ padding: "16px 20px", borderBottom: `1px solid ${T.border}` }}>
+        <div style={{ display: "flex", gap: 12, flexWrap: "wrap" }}>
+          <KpiCard label="Proposto ad Amazon" value={kpiVerifica.totProposto.toLocaleString("it")} color="#e8a838" sub={`€ ${kpiVerifica.valoreProposto.toLocaleString("it", { maximumFractionDigits: 0 })}`} />
+          <KpiCard label="Confermato (Netto)" value={kpiVerifica.totConfermato.toLocaleString("it")} color={T.green} sub={`€ ${kpiVerifica.valoreConfermato.toLocaleString("it", { maximumFractionDigits: 0 })}`} />
+          <KpiCard label="Scostamento vs proposta" value={(kpiVerifica.scostamento > 0 ? "+" : "") + kpiVerifica.scostamento.toLocaleString("it")} color={kpiVerifica.scostamento < 0 ? T.red : T.green} sub={`${kpiVerifica.valoreScostamento > 0 ? "+" : ""}€ ${kpiVerifica.valoreScostamento.toLocaleString("it", { maximumFractionDigits: 0 })}`} />
+          <KpiCard label="Titoli confermati" value={kpiVerifica.nConfermati} color={T.text} />
+          <KpiCard label="In attesa di conferma" value={kpiVerifica.nInAttesa} color={kpiVerifica.nInAttesa > 0 ? "#e8a838" : T.textMid} />
+        </div>
+      </div>
+
+      {/* UPLOAD MAIL MESSAGGERIE */}
+      {showMailUpload && (
+        <div style={{ padding: "16px 20px", borderBottom: `1px solid ${T.border}`, background: T.bg }}>
+          {!mailParseResult ? (
+            <>
+              <div style={{ fontSize: "12px", color: T.textMid, marginBottom: 10 }}>
+                Carica il file <b>.msg</b> della mail "DIFFERENZA PRENOTAZIONI AMAZON" di Messaggerie, oppure incolla qui sotto il testo del corpo mail.
+                I titoli presenti nella mail aggiornano sia <b>Proposta Amaz</b> che <b>Copie</b> con il valore "restituito Amazon" (anche se è zero: significa che Amazon non ha prenotato). Tutti gli altri titoli del lancio (senza differenza segnalata) vengono confermati in automatico con la <b>proposta iniziale PDE</b> (Amazon Cedola), sia in Proposta Amaz che in Copie. Ogni caricamento sovrascrive i dati esistenti.
+              </div>
+              <div style={{ display: "flex", gap: 10, alignItems: "flex-start", flexWrap: "wrap" }}>
+                <label
+                  style={{
+                    ...css.btn(mailDragOver ? "accent" : undefined),
+                    cursor: "pointer", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center",
+                    width: 200, minHeight: 70, border: `2px dashed ${mailDragOver ? T.accent : T.borderHi}`,
+                    background: mailDragOver ? T.accent + "18" : T.surface, textAlign: "center", padding: "8px",
+                  }}
+                  onDragOver={e => { e.preventDefault(); e.stopPropagation(); setMailDragOver(true); }}
+                  onDragLeave={e => { e.preventDefault(); e.stopPropagation(); setMailDragOver(false); }}
+                  onDrop={handleMailDrop}
+                >
+                  <span>↑ Trascina qui il file .msg</span>
+                  <span style={{ fontSize: "10px", color: T.textDim, marginTop: 3 }}>oppure clicca per sceglierlo</span>
+                  <input type="file" accept=".msg,.txt,.eml" style={{ display: "none" }} onChange={handleMailFile} />
+                </label>
+                <div style={{ display: "flex", flexDirection: "column", gap: 6, flex: 1, minWidth: 280 }}>
+                  <textarea
+                    style={{ ...css.input, minHeight: 70, fontFamily: "inherit", fontSize: "11px", resize: "vertical" }}
+                    placeholder="...oppure incolla qui il testo della mail Messaggerie"
+                    value={mailPasteText}
+                    onChange={e => setMailPasteText(e.target.value)}
+                  />
+                  <button style={{ ...css.btn(), alignSelf: "flex-start" }} disabled={!mailPasteText.trim()} onClick={() => runMailParse(mailPasteText)}>Estrai dati dal testo incollato</button>
+                </div>
+                <button style={{ ...css.btn(), alignSelf: "flex-start" }} onClick={() => setShowMailUpload(false)}>Annulla</button>
+              </div>
+            </>
+          ) : (
+            <>
+              {mailLancioMismatch ? (
+                <div style={{ background: T.red + "18", border: `1px solid ${T.red}`, borderRadius: 4, padding: "10px 14px", marginBottom: 12, color: T.red, fontSize: "12px", fontWeight: "600" }}>
+                  🚫 {mailLancioMismatch.msg}
+                </div>
+              ) : mailLancioInfo && (
+                <div style={{ background: T.green + "18", border: `1px solid ${T.green}`, borderRadius: 4, padding: "8px 14px", marginBottom: 12, color: T.green, fontSize: "12px" }}>
+                  ✓ La mail si riferisce al lancio {mailLancioInfo.numLancio}{mailLancioInfo.anno ? "/" + mailLancioInfo.anno : ""}, corrispondente al lancio selezionato.
+                </div>
+              )}
+              <div style={{ fontSize: "12px", color: T.text, marginBottom: 10 }}>
+                Trovati <b style={{ color: "#e8a838" }}>{mailParseResult.length}</b> titoli nella mail. Gli altri <b style={{ color: T.green }}>{mailPreview?.autoConfermati ?? 0}</b> titoli del lancio (senza differenza) verranno confermati in automatico sulla proposta iniziale PDE (Amazon Cedola). Tutti i valori esistenti verranno sovrascritti.
+              </div>
+              {mailParseResult.length > 0 && (
+                <div style={{ maxHeight: 260, overflowY: "auto", marginBottom: 12, border: `1px solid ${T.border}`, borderRadius: 4 }}>
+                <table style={css.table}>
+                  <thead>
+                    <tr>
+                      <th style={css.th}>EAN</th>
+                      <th style={css.th}>Titolo</th>
+                      <th style={css.th}>Prezzo</th>
+                      <th style={css.th}>Proposto</th>
+                      <th style={css.th}>Restituito</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {mailParseResult.map((r, i) => (
+                      <tr key={i}>
+                        <td style={{ ...css.td, fontFamily: "monospace", fontSize: "11px", color: T.textMid }}>{r.ean}</td>
+                        <td style={css.td}>{r.titolo}</td>
+                        <td style={css.td}>€ {r.prezzo.toFixed(2)}</td>
+                        <td style={css.td}>{r.proposto}</td>
+                        <td style={{ ...css.td, color: r.restituito < r.proposto ? T.red : T.green, fontWeight: "700" }}>{r.restituito}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+                </div>
+              )}
+              <div style={{ display: "flex", gap: 10 }}>
+                <button style={css.btn("accent")} disabled={mailProcessing || !!mailLancioMismatch} title={mailLancioMismatch ? "Seleziona il lancio corretto per procedere" : ""} onClick={confirmApplyMail}>
+                  {mailProcessing ? "Applico..." : "✓ Conferma e applica"}
+                </button>
+                <button style={css.btn()} disabled={mailProcessing} onClick={() => { setMailParseResult(null); setMailPasteText(""); }}>Annulla</button>
+              </div>
+            </>
+          )}
+        </div>
+      )}
+
+      {/* RIEPILOGO PER EDITORE */}
+      <div style={{ padding: "10px 20px", borderBottom: `1px solid ${T.border}` }}>
+        <div
+          style={{ color: T.textMid, fontSize: "10px", letterSpacing: "0.1em", textTransform: "uppercase", cursor: "pointer", display: "inline-flex", alignItems: "center", gap: 6, userSelect: "none" }}
+          onClick={() => setShowRiepilogoEditori(s => !s)}
+        >
+          <span style={{ transform: showRiepilogoEditori ? "rotate(90deg)" : "none", transition: "transform 0.15s", display: "inline-block", fontSize: "9px" }}>▶</span>
+          Riepilogo per editore ({riepilogoEditoriVerifica.length})
+        </div>
+        {showRiepilogoEditori && (
+        <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginTop: 10 }}>
+          {riepilogoEditoriVerifica.map(e => (
+            <div key={e.editore} style={{ background: T.bg, border: `1px solid ${T.border}`, borderRadius: 4, padding: "8px 12px", minWidth: 150, flex: "1 1 150px", maxWidth: 220 }}>
+              <div style={{ fontSize: "11px", fontWeight: "600", color: T.text, marginBottom: 4, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{e.editore}</div>
+              <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 3 }}>
+                <div style={{ flex: 1, height: 4, background: T.borderHi, borderRadius: 2, overflow: "hidden" }}>
+                  <div style={{ width: `${Math.round(e.confermato / (riepilogoEditoriVerifica[0]?.confermato || 1) * 100)}%`, height: "100%", background: T.green }} />
+                </div>
+                <span style={{ fontSize: "11px", fontWeight: "700", color: T.green, minWidth: 40, textAlign: "right" }}>{e.confermato.toLocaleString("it")}</span>
+              </div>
+              {e.proposto > 0 && (
+                <div style={{ fontSize: "9px", color: "#e8a838" }}>🎯 {e.proposto.toLocaleString("it")} · € {Math.round(e.valoreProposto).toLocaleString("it")}</div>
+              )}
+              <div style={{ fontSize: "9px", color: T.textDim, marginTop: 2 }}>{e.titoli} titoli · € {Math.round(e.valore).toLocaleString("it")}</div>
+            </div>
+          ))}
+        </div>
+        )}
+      </div>
+
+      {/* TABELLA */}
+      <div style={{ flex: 1, overflowY: "auto", overflowX: "auto" }}>
+        <table style={css.table}>
+          <thead>
+            <tr>
+              <th style={css.th}>EAN</th>
+              <th style={css.th}>Titolo</th>
+              <th style={css.th}>Autore</th>
+              <th style={css.th}>Editore</th>
+              <th style={css.th}>Prezzo</th>
+              <th style={css.th} title="Totale teorico (F.G. trasmesso + Amazon)">Totale</th>
+              <th style={{ ...css.th, color: "#e8a838" }} title="Amazon in cedola (attuale)">Amazon cedola</th>
+              <th style={css.th} title="Quantità proposta ad Amazon">Proposta Amaz</th>
+              <th style={css.th} title="Taglio prenotazione = (Proposta-Cedola)/Cedola">Taglio %</th>
+              <th style={css.th} title="Proposta interna PDE">Proposta PDE</th>
+              <th style={css.th} title="Copie effettivamente inserite da Amazon">Copie</th>
+              <th style={css.th}>Evaso</th>
+              <th style={css.th}>Inevaso</th>
+              <th style={css.th} title="Netto = Copie - Inevaso">Netto</th>
+              <th style={css.th} title="Netto - Amazon cedola">Diff FG</th>
+              <th style={css.th} title="Netto - Proposta Amaz">Diff Amz</th>
+              <th style={css.th} title="Netto - Proposta PDE">Diff PDE</th>
+              <th style={css.th}>Note</th>
+              <th style={css.th}>Preorder</th>
+              <th style={css.th} title="Netto - Preorder">Residuo</th>
+              <th style={css.th}>Rifornim.</th>
+              <th style={css.th}>Rottura stock</th>
+            </tr>
+          </thead>
+          <tbody>
+            {dataVerifica.map((r, i) => {
+              const editVACell = (field, type = "number") => {
+                const isEditing = editCellVA?.ean === r.ean && editCellVA?.field === field;
+                const rawVal = { proposta_amaz: r.vG, proposta_pde: r.vI, copie: r.vJ, evaso: r.vK, inevaso: r.vL, note: r.va.note, preorder: r.vU }[field];
+                if (isEditing) {
+                  return (
+                    <div style={{ display: "flex", gap: 3, alignItems: "center" }}>
+                      <input
+                        type={type} style={{ ...css.input, width: type === "text" ? 120 : 65, padding: "2px 5px", fontSize: "11px" }}
+                        value={editCellVA.value} autoFocus
+                        onChange={e => setEditCellVA(p => ({ ...p, value: e.target.value }))}
+                        onKeyDown={e => {
+                          if (e.key === "Enter") saveVerificaAmazon(r.anno_lancio, r.num_lancio, r.ean, { [field]: type === "number" ? (editCellVA.value === "" ? null : parseInt(editCellVA.value)) : editCellVA.value });
+                          if (e.key === "Escape") setEditCellVA(null);
+                        }}
+                      />
+                      <button style={{ ...css.btn("accent"), padding: "1px 5px", fontSize: "10px" }}
+                        onClick={() => saveVerificaAmazon(r.anno_lancio, r.num_lancio, r.ean, { [field]: type === "number" ? (editCellVA.value === "" ? null : parseInt(editCellVA.value)) : editCellVA.value })}>✓</button>
+                    </div>
+                  );
+                }
+                return (
+                  <div style={{ cursor: "pointer", display: "flex", alignItems: "center", gap: 4 }}
+                    onClick={() => setEditCellVA({ ean: r.ean, field, value: rawVal != null ? String(rawVal) : "" })}>
+                    <span style={{ color: rawVal == null || rawVal === "" ? T.textDim : (field === "proposta_pde" && r.vIauto) ? "#e8a838" : T.text }}>{rawVal != null && rawVal !== "" ? rawVal : "—"}</span>
+                    <span style={{ color: T.accent, fontSize: "10px" }}>✎</span>
+                  </div>
+                );
+              };
+              return (
+                <tr key={r.ean} style={{ background: r.haConferma ? T.green + "14" : (i % 2 === 0 ? "transparent" : T.surface + "66") }}>
+                  <td style={{ ...css.td, fontFamily: "monospace", fontSize: "11px", color: T.textMid }}>{r.ean}</td>
+                  <td style={{ ...css.td, maxWidth: 200 }}><div style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", fontWeight: "600" }}>{r.titolo}</div></td>
+                  <td style={{ ...css.td, color: T.textMid, maxWidth: 130, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{r.autore}</td>
+                  <td style={{ ...css.td, color: T.accent, fontWeight: "600", whiteSpace: "nowrap", maxWidth: 130, overflow: "hidden", textOverflow: "ellipsis" }}>{r.editore}</td>
+                  <td style={{ ...css.td, whiteSpace: "nowrap" }}>€ {(r.prezzo || 0).toFixed(2)}</td>
+                  <td style={css.td}>{r.vE.toLocaleString("it")}</td>
+                  <td style={{ ...css.td, color: "#e8a838", fontWeight: "600" }}>{r.vF.toLocaleString("it")}</td>
+                  <td style={css.td}>{editVACell("proposta_amaz")}</td>
+                  <td style={{ ...css.td, color: r.vH == null ? T.textDim : r.vH < 0 ? T.red : T.green }}>{r.vH != null ? (r.vH * 100).toFixed(1) + "%" : "—"}</td>
+                  <td style={css.td}>{editVACell("proposta_pde")}</td>
+                  <td style={css.td}>{editVACell("copie")}</td>
+                  <td style={css.td}>{editVACell("evaso")}</td>
+                  <td style={css.td}>{editVACell("inevaso")}</td>
+                  <td style={{ ...css.td, fontWeight: "700", color: r.haConferma ? T.green : T.textDim }}>{r.vM != null ? r.vM.toLocaleString("it") : "—"}</td>
+                  <td style={{ ...css.td, color: r.vN == null ? T.textDim : r.vN < 0 ? T.red : T.green }}>{r.vN != null ? (r.vN > 0 ? "+" : "") + r.vN.toLocaleString("it") : "—"}</td>
+                  <td style={{ ...css.td, color: r.vO == null ? T.textDim : r.vO < 0 ? T.red : T.green }}>{r.vO != null ? (r.vO > 0 ? "+" : "") + r.vO.toLocaleString("it") : "—"}</td>
+                  <td style={{ ...css.td, color: r.vP == null ? T.textDim : r.vP < 0 ? T.red : T.green }}>{r.vP != null ? (r.vP > 0 ? "+" : "") + r.vP.toLocaleString("it") : "—"}</td>
+                  <td style={{ ...css.td, fontSize: "11px", maxWidth: 140 }}>{editVACell("note", "text")}</td>
+                  <td style={css.td}>{editVACell("preorder")}</td>
+                  <td style={css.td}>{r.vV != null ? r.vV.toLocaleString("it") : "—"}</td>
+                  <td style={{ ...css.td, textAlign: "center", cursor: "pointer" }} onClick={() => saveVerificaAmazon(r.anno_lancio, r.num_lancio, r.ean, { richiesta_rifornimento: !r.vX })}>
+                    {r.vX ? <span style={{ color: "#e8a838" }}>⚠️</span> : <span style={{ color: T.textDim }}>—</span>}
+                  </td>
+                  <td style={{ ...css.td, textAlign: "center", cursor: "pointer" }} onClick={() => saveVerificaAmazon(r.anno_lancio, r.num_lancio, r.ean, { rottura_stock: !r.vY })}>
+                    {r.vY ? <span style={{ color: T.red }}>🔴</span> : <span style={{ color: T.textDim }}>—</span>}
+                  </td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
         {dataFiltrata.length === 0 && (
           <div style={{ padding: 40, textAlign: "center", color: T.textDim }}>Nessun titolo per questo lancio.</div>
         )}
@@ -3459,6 +3510,7 @@ const MODULES = [
   { id: "finegiro", label: "Fine Giro", icon: "⊞" },
   { id: "avanzamento", label: "Avanzamento Novità", icon: "▣" },
   { id: "lanci", label: "Lanci Settimanali", icon: "🚀" },
+  { id: "verificalanci", label: "Verifica Lanci Amazon", icon: "📦" },
   { id: "verificaordini", label: "Verifica Ordini", icon: "🔍" },
 ];
 
@@ -3582,6 +3634,7 @@ export default function App() {
           {activeModule === "finegiro" && <ModuloFineGiro titoli={titoli} prenotato={prenotato} canali={canali} token={session.token} ruolo={ruolo} spalmatura={spalmatura} userAccount={userAccount} />}
           {activeModule === "avanzamento" && <ModuloAvanzamento token={session.token} titoli={titoli} prenotato={prenotato} ruolo={ruolo} userAccount={userAccount} />}
           {activeModule === "lanci" && <ModuloLanciSettimanali token={session.token} titoli={titoli} prenotato={prenotato} canali={canali} ruolo={ruolo} userAccount={userAccount} />}
+          {activeModule === "verificalanci" && <ModuloVerificaLanciAmazon token={session.token} titoli={titoli} prenotato={prenotato} canali={canali} />}
           {activeModule === "verificaordini" && <ModuloVerificaOrdini token={session.token} />}
           {activeModule === "import" && <ModuloImport giriList={giriDB} token={session.token} />}
           {activeModule === "importobiettivi" && <ModuloImport giriList={giriDB} token={session.token} onlyObiettivi={true} />}
