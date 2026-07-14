@@ -2882,6 +2882,153 @@ function ModuloVerificaLanciAmazon({ token, titoli, prenotato, canali }) {
     setOrdiniProcessing(false);
   };
 
+  // ── Upload "Prima Proposta" (file Excel: Proposta Amazon + Proposta PDE = Amazon Cedola) ──
+  const [showProposteUpload, setShowProposteUpload] = useState(false);
+  const [proposteParseResult, setProposteParseResult] = useState(null);
+  const [proposteProcessing, setProposteProcessing] = useState(false);
+
+  const processProposteFile = async (file) => {
+    if (!file) return;
+    try {
+      const XLSX = window.XLSX;
+      const buf = await file.arrayBuffer();
+      const wb = XLSX.read(buf, { type: "array" });
+      const ws = wb.Sheets[wb.SheetNames[0]];
+      const rows = XLSX.utils.sheet_to_json(ws, { header: 1 });
+      let headerIdx = 0;
+      for (let i = 0; i < Math.min(rows.length, 10); i++) {
+        if (rows[i] && rows[i].some(c => String(c).toLowerCase().includes("ean"))) { headerIdx = i; break; }
+      }
+      const headers = rows[headerIdx].map(h => String(h || "").trim().toLowerCase());
+      const col = {};
+      headers.forEach((h, i) => {
+        if (h.includes("ean")) col.ean = i;
+        else if (h.includes("proposta") && h.includes("amazon")) col.propostaAmaz = i;
+      });
+      if (col.ean === undefined) throw new Error("Colonna EAN non trovata nel file");
+      if (col.propostaAmaz === undefined) throw new Error("Colonna 'Proposta Amazon' non trovata nel file");
+      const dataRows = rows.slice(headerIdx + 1).filter(r => r && r[col.ean]);
+      const parsed = dataRows.map(r => {
+        const ean = String(r[col.ean]).trim();
+        const val = r[col.propostaAmaz];
+        const propostaAmaz = val === "" || val == null ? null : parseInt(val, 10);
+        return { ean, propostaAmaz: isNaN(propostaAmaz) ? null : propostaAmaz };
+      }).filter(r => /^\d{9,14}$/.test(r.ean));
+      setProposteParseResult(parsed);
+    } catch (err) {
+      showToast("Errore lettura file: " + err.message, "err");
+    }
+  };
+
+  const handleProposteFile = async (e) => {
+    const file = e.target.files?.[0];
+    await processProposteFile(file);
+    e.target.value = "";
+  };
+
+  const proposteByEan = useMemo(() => {
+    const map = {};
+    (proposteParseResult || []).forEach(r => { map[r.ean] = r; });
+    return map;
+  }, [proposteParseResult]);
+
+  const proposteApplyPreview = useMemo(() => {
+    if (!proposteParseResult) return null;
+    const matched = dataVerifica.filter(r => proposteByEan[r.ean]);
+    const conQuantita = matched.filter(r => proposteByEan[r.ean].propostaAmaz != null && proposteByEan[r.ean].propostaAmaz > 0);
+    return { matched: matched.length, conQuantita: conQuantita.length };
+  }, [proposteParseResult, proposteByEan, dataVerifica]);
+
+  const confirmApplyProposte = async () => {
+    if (!proposteParseResult) return;
+    setProposteProcessing(true);
+    let done = 0;
+    for (const r of dataVerifica) {
+      const p = proposteByEan[r.ean];
+      if (!p) continue;
+      const payload = { proposta_pde: r.vF }; // Proposta PDE = sempre Amazon Cedola
+      if (p.propostaAmaz != null && p.propostaAmaz > 0) payload.proposta_amaz = p.propostaAmaz; // Proposta Amaz = solo se c'è quantità
+      await saveVerificaAmazon(r.anno_lancio, r.num_lancio, r.ean, payload);
+      done++;
+    }
+    showToast(`Prima proposta applicata: ${done} titoli aggiornati`);
+    setProposteParseResult(null);
+    setShowProposteUpload(false);
+    setProposteProcessing(false);
+  };
+
+  // ── Upload "Preorder" (file .txt tab-delimited: colonna ordini_aperti = preorder) ──
+  const [showPreorderUpload, setShowPreorderUpload] = useState(false);
+  const [preorderParseResult, setPreorderParseResult] = useState(null);
+  const [preorderProcessing, setPreorderProcessing] = useState(false);
+
+  const parsePreorderFile = (text) => {
+    const lines = text.replace(/^\uFEFF/, "").split(/\r?\n/).filter(l => l.trim() !== "");
+    if (lines.length < 2) return [];
+    const headers = lines[0].split("\t").map(h => h.trim().toLowerCase());
+    const idxEan = headers.indexOf("ean");
+    const idxPreorder = headers.indexOf("ordini_aperti");
+    if (idxEan === -1 || idxPreorder === -1) return [];
+    const out = [];
+    for (let i = 1; i < lines.length; i++) {
+      const cols = lines[i].split("\t");
+      const ean = (cols[idxEan] || "").trim();
+      if (!/^\d{9,14}$/.test(ean)) continue;
+      const val = parseInt(cols[idxPreorder], 10);
+      out.push({ ean, preorder: isNaN(val) ? 0 : val });
+    }
+    return out;
+  };
+
+  const processPreorderFile = async (file) => {
+    if (!file) return;
+    const buf = await file.arrayBuffer();
+    let text = new TextDecoder("utf-8").decode(buf);
+    let rows = parsePreorderFile(text);
+    if (rows.length === 0) {
+      text = new TextDecoder("utf-16le").decode(buf);
+      rows = parsePreorderFile(text);
+    }
+    if (rows.length === 0) showToast("Nessuna riga riconosciuta nel file caricato (colonne 'ean' e 'ordini_aperti' attese)", "err");
+    setPreorderParseResult(rows);
+  };
+
+  const handlePreorderFile = async (e) => {
+    const file = e.target.files?.[0];
+    await processPreorderFile(file);
+    e.target.value = "";
+  };
+
+  const preorderByEan = useMemo(() => {
+    const map = {};
+    (preorderParseResult || []).forEach(r => { map[r.ean] = r; });
+    return map;
+  }, [preorderParseResult]);
+
+  const preorderApplyPreview = useMemo(() => {
+    if (!preorderParseResult) return null;
+    const matched = dataVerifica.filter(r => preorderByEan[r.ean]);
+    const conQuantita = matched.filter(r => preorderByEan[r.ean].preorder > 0);
+    return { matched: matched.length, conQuantita: conQuantita.length };
+  }, [preorderParseResult, preorderByEan, dataVerifica]);
+
+  const confirmApplyPreorder = async () => {
+    if (!preorderParseResult) return;
+    setPreorderProcessing(true);
+    let done = 0;
+    for (const r of dataVerifica) {
+      const p = preorderByEan[r.ean];
+      if (p && p.preorder > 0) {
+        await saveVerificaAmazon(r.anno_lancio, r.num_lancio, r.ean, { preorder: p.preorder });
+        done++;
+      }
+    }
+    showToast(`Preorder applicati: ${done} titoli aggiornati`);
+    setPreorderParseResult(null);
+    setShowPreorderUpload(false);
+    setPreorderProcessing(false);
+  };
+
   // Upsert su tabella verifica_amazon (chiave: anno_lancio + num_lancio + ean)
   const saveVerificaAmazon = async (annoLancio, numLancio, ean, fields) => {
     const body = { anno_lancio: annoLancio, num_lancio: numLancio, ean, ...fields };
@@ -2972,6 +3119,12 @@ function ModuloVerificaLanciAmazon({ token, titoli, prenotato, canali }) {
           </button>
           <button style={{ ...css.btn(showOrdiniUpload ? "accent" : undefined) }} onClick={() => setShowOrdiniUpload(s => !s)}>
             📥 Carica ordini Amazon
+          </button>
+          <button style={{ ...css.btn(showProposteUpload ? "accent" : undefined) }} onClick={() => setShowProposteUpload(s => !s)}>
+            🎯 Carica prima proposta
+          </button>
+          <button style={{ ...css.btn(showPreorderUpload ? "accent" : undefined) }} onClick={() => setShowPreorderUpload(s => !s)}>
+            📖 Carica preorder
           </button>
           <button style={css.btn()} onClick={exportExcel}>Download Excel</button>
         </div>
@@ -3149,6 +3302,72 @@ function ModuloVerificaLanciAmazon({ token, titoli, prenotato, canali }) {
         </div>
       )}
 
+      {/* UPLOAD PRIMA PROPOSTA */}
+      {showProposteUpload && (
+        <div style={{ padding: "16px 20px", borderBottom: `1px solid ${T.border}`, background: T.bg }}>
+          {!proposteParseResult ? (
+            <>
+              <div style={{ fontSize: "12px", color: T.textMid, marginBottom: 10 }}>
+                Carica il file Excel della <b>prima proposta</b> (colonne EAN e Proposta Amazon). Aggiorna <b>Proposta Amaz</b> solo sui titoli con quantità nel file. <b>Proposta PDE</b> viene sempre riportata a Amazon Cedola per i titoli presenti nel file; se la Proposta Amaz differisce da Amazon Cedola, il numero in Proposta PDE viene evidenziato in rosso. Ogni caricamento sovrascrive i dati esistenti.
+              </div>
+              <div style={{ display: "flex", gap: 10, alignItems: "flex-start", flexWrap: "wrap" }}>
+                <label style={{ ...css.btn(), cursor: "pointer", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", width: 200, minHeight: 70, border: `2px dashed ${T.borderHi}`, background: T.surface, textAlign: "center", padding: "8px" }}>
+                  <span>Scegli file Excel</span>
+                  <span style={{ fontSize: "10px", color: T.textDim, marginTop: 3 }}>.xlsx</span>
+                  <input type="file" accept=".xlsx,.xls" style={{ display: "none" }} onChange={handleProposteFile} />
+                </label>
+                <button style={{ ...css.btn(), alignSelf: "flex-start" }} onClick={() => setShowProposteUpload(false)}>Annulla</button>
+              </div>
+            </>
+          ) : (
+            <>
+              <div style={{ fontSize: "12px", color: T.text, marginBottom: 10 }}>
+                Trovati <b style={{ color: "#e8a838" }}>{proposteParseResult.length}</b> EAN nel file, di cui <b style={{ color: T.green }}>{proposteApplyPreview?.matched ?? 0}</b> nel lancio {filterLancio}/{filterAnno} selezionato ({proposteApplyPreview?.conQuantita ?? 0} con quantità in Proposta Amazon).
+              </div>
+              <div style={{ display: "flex", gap: 10 }}>
+                <button style={css.btn("accent")} disabled={proposteProcessing} onClick={confirmApplyProposte}>
+                  {proposteProcessing ? "Applico..." : "✓ Conferma e applica"}
+                </button>
+                <button style={css.btn()} disabled={proposteProcessing} onClick={() => setProposteParseResult(null)}>Annulla</button>
+              </div>
+            </>
+          )}
+        </div>
+      )}
+
+      {/* UPLOAD PREORDER */}
+      {showPreorderUpload && (
+        <div style={{ padding: "16px 20px", borderBottom: `1px solid ${T.border}`, background: T.bg }}>
+          {!preorderParseResult ? (
+            <>
+              <div style={{ fontSize: "12px", color: T.textMid, marginBottom: 10 }}>
+                Carica il file <b>.txt</b> dei preorder (colonne <code>ean</code> e <code>ordini_aperti</code>). Aggiorna <b>Preorder</b> solo sui titoli con quantità &gt; 0. Nota: sto usando la colonna "ordini_aperti" del file come valore di preorder — dimmi se intendevi un'altra colonna.
+              </div>
+              <div style={{ display: "flex", gap: 10, alignItems: "flex-start", flexWrap: "wrap" }}>
+                <label style={{ ...css.btn(), cursor: "pointer", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", width: 200, minHeight: 70, border: `2px dashed ${T.borderHi}`, background: T.surface, textAlign: "center", padding: "8px" }}>
+                  <span>Scegli file .txt</span>
+                  <span style={{ fontSize: "10px", color: T.textDim, marginTop: 3 }}>tab-delimited</span>
+                  <input type="file" accept=".txt,.csv" style={{ display: "none" }} onChange={handlePreorderFile} />
+                </label>
+                <button style={{ ...css.btn(), alignSelf: "flex-start" }} onClick={() => setShowPreorderUpload(false)}>Annulla</button>
+              </div>
+            </>
+          ) : (
+            <>
+              <div style={{ fontSize: "12px", color: T.text, marginBottom: 10 }}>
+                Trovati <b style={{ color: "#e8a838" }}>{preorderParseResult.length}</b> EAN nel file, di cui <b style={{ color: T.green }}>{preorderApplyPreview?.matched ?? 0}</b> nel lancio {filterLancio}/{filterAnno} selezionato ({preorderApplyPreview?.conQuantita ?? 0} con quantità preorder &gt; 0).
+              </div>
+              <div style={{ display: "flex", gap: 10 }}>
+                <button style={css.btn("accent")} disabled={preorderProcessing} onClick={confirmApplyPreorder}>
+                  {preorderProcessing ? "Applico..." : "✓ Conferma e applica"}
+                </button>
+                <button style={css.btn()} disabled={preorderProcessing} onClick={() => setPreorderParseResult(null)}>Annulla</button>
+              </div>
+            </>
+          )}
+        </div>
+      )}
+
       {/* RIEPILOGO PER EDITORE */}
       <div style={{ padding: "10px 20px", borderBottom: `1px solid ${T.border}` }}>
         <div
@@ -3212,7 +3431,7 @@ function ModuloVerificaLanciAmazon({ token, titoli, prenotato, canali }) {
           </thead>
           <tbody>
             {dataVerifica.map((r, i) => {
-              const editVACell = (field, type = "number") => {
+              const editVACell = (field, type = "number", forceRed = false) => {
                 const isEditing = editCellVA?.ean === r.ean && editCellVA?.field === field;
                 const rawVal = { proposta_amaz: r.vG, proposta_pde: r.vI, copie: r.vJ, prenotato: r.vPren, impegnato: r.vImp, evaso: r.vK, inevaso: r.vL, note: r.va.note, preorder: r.vU }[field];
                 if (isEditing) {
@@ -3235,7 +3454,7 @@ function ModuloVerificaLanciAmazon({ token, titoli, prenotato, canali }) {
                 return (
                   <div style={{ cursor: "pointer", display: "flex", alignItems: "center", gap: 4 }}
                     onClick={() => setEditCellVA({ ean: r.ean, field, value: rawVal != null ? String(rawVal) : "" })}>
-                    <span style={{ color: rawVal == null || rawVal === "" ? T.textDim : T.text }}>{rawVal != null && rawVal !== "" ? rawVal : "—"}</span>
+                    <span style={{ color: rawVal == null || rawVal === "" ? T.textDim : forceRed ? T.red : T.text }}>{rawVal != null && rawVal !== "" ? rawVal : "—"}</span>
                     <span style={{ color: T.accent, fontSize: "10px" }}>✎</span>
                   </div>
                 );
@@ -3251,7 +3470,7 @@ function ModuloVerificaLanciAmazon({ token, titoli, prenotato, canali }) {
                   <td style={{ ...css.td, color: "#e8a838", fontWeight: "600" }}>{r.vF.toLocaleString("it")}</td>
                   <td style={css.td}>{editVACell("proposta_amaz")}</td>
                   <td style={{ ...css.td, color: r.vH == null ? T.textDim : r.vH < 0 ? T.red : T.green }}>{r.vH != null ? (r.vH * 100).toFixed(1) + "%" : "—"}</td>
-                  <td style={css.td}>{editVACell("proposta_pde")}</td>
+                  <td style={css.td}>{editVACell("proposta_pde", "number", r.vG != null && r.vG !== r.vF)}</td>
                   <td style={css.td}>{editVACell("copie")}</td>
                   <td style={css.td}>{editVACell("prenotato")}</td>
                   <td style={css.td}>{editVACell("impegnato")}</td>
