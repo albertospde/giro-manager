@@ -2701,7 +2701,7 @@ function ModuloVerificaLanciAmazon({ token, titoli, prenotato, canali }) {
       const S = (P != null && I) ? P / I : null;
       const V = M != null ? M - U : null;
       const W = (V != null && M) ? U / M : null;
-      return { ...r, va: v, vF: F, vE: E, vG: G, vH: H, vI: I, vJ: J, vK: K, vL: L, vPren: Pr, vImp: Im, vM: M, vN: N, vO: O, vP: P, vQ: Q, vR: R, vS: S, vNote: v.note || "", vU: U, vV: V, vW: W, vX: !!v.richiesta_rifornimento, vY: !!v.rottura_stock, haConferma: M != null };
+      return { ...r, va: v, vF: F, vE: E, vG: G, vH: H, vI: I, vJ: J, vK: K, vL: L, vPren: Pr, vImp: Im, vM: M, vN: N, vO: O, vP: P, vQ: Q, vR: R, vS: S, vNote: v.note || "", vU: U, vV: V, vW: W, vX: !!v.richiesta_rifornimento, vY: !!v.rottura_stock, haConferma: M != null, vAsin: v.asin || "", vPropostaVendor: v.proposta_vendor ?? "", vFiltroReti: v.filtro_reti || "", vPreordiniVendor: v.preordini_vendor ?? "" };
     });
   }, [dataFiltrata, verificaByEan]);
 
@@ -2941,8 +2941,12 @@ function ModuloVerificaLanciAmazon({ token, titoli, prenotato, canali }) {
       const headers = rows[headerIdx].map(h => String(h || "").trim().toLowerCase());
       const col = {};
       headers.forEach((h, i) => {
-        if (h.includes("ean")) col.ean = i;
+        if (h === "ean") col.ean = i;
         else if (h.includes("proposta") && h.includes("amazon")) col.propostaAmaz = i;
+        else if (h === "asin") col.asin = i;
+        else if (h.includes("proposta") && h.includes("vendor")) col.propostaVendor = i;
+        else if (h.includes("filtro")) col.filtroReti = i;
+        else if (h.includes("preordini") || h.includes("preordine")) col.preordini = i;
       });
       if (col.ean === undefined) throw new Error("Colonna EAN non trovata nel file");
       if (col.propostaAmaz === undefined) throw new Error("Colonna 'Proposta Amazon' non trovata nel file");
@@ -2951,7 +2955,15 @@ function ModuloVerificaLanciAmazon({ token, titoli, prenotato, canali }) {
         const ean = String(r[col.ean]).trim();
         const val = r[col.propostaAmaz];
         const propostaAmaz = val === "" || val == null ? null : parseInt(val, 10);
-        return { ean, propostaAmaz: isNaN(propostaAmaz) ? null : propostaAmaz };
+        const numOrNull = v => (v === "" || v == null ? null : (isNaN(parseInt(v, 10)) ? null : parseInt(v, 10)));
+        return {
+          ean,
+          propostaAmaz: isNaN(propostaAmaz) ? null : propostaAmaz,
+          asin: col.asin !== undefined ? String(r[col.asin] ?? "").trim() || null : null,
+          propostaVendor: col.propostaVendor !== undefined ? numOrNull(r[col.propostaVendor]) : null,
+          filtroReti: col.filtroReti !== undefined ? String(r[col.filtroReti] ?? "").trim() || null : null,
+          preordini: col.preordini !== undefined ? numOrNull(r[col.preordini]) : null,
+        };
       }).filter(r => /^\d{9,14}$/.test(r.ean));
       setProposteParseResult(parsed);
     } catch (err) {
@@ -2987,6 +2999,10 @@ function ModuloVerificaLanciAmazon({ token, titoli, prenotato, canali }) {
       if (!p) continue;
       const payload = { proposta_pde: r.vF }; // Proposta PDE = sempre Amazon Cedola
       if (p.propostaAmaz != null && p.propostaAmaz > 0) payload.proposta_amaz = p.propostaAmaz; // Proposta Amaz = solo se c'è quantità
+      if (p.asin != null) payload.asin = p.asin;
+      if (p.propostaVendor != null) payload.proposta_vendor = p.propostaVendor;
+      if (p.filtroReti != null) payload.filtro_reti = p.filtroReti;
+      if (p.preordini != null) payload.preordini_vendor = p.preordini;
       await saveVerificaAmazon(r.anno_lancio, r.num_lancio, r.ean, payload);
       done++;
     }
@@ -3117,91 +3133,29 @@ function ModuloVerificaLanciAmazon({ token, titoli, prenotato, canali }) {
     setMailProcessing(false);
   };
 
-  // ── Esporta Controproposta: arricchisce lo stesso file "prima proposta" caricato ──
-  // (ASIN, EAN, Proposta Vendor, Editore, Filtro Reti, Proposta Amazon, Preordini, Controproposta Vendor)
-  // Compila "Controproposta Vendor" con Proposta PDE, aggiunge colonna Note, accoda i titoli del lancio non presenti nel file.
-  const [showContropropostaUpload, setShowContropropostaUpload] = useState(false);
-  const [contropropostaParse, setContropropostaParse] = useState(null);
-  const [contropropostaProcessing, setContropropostaProcessing] = useState(false);
-
-  const processContropropostaFile = async (file) => {
-    if (!file) return;
-    try {
-      const XLSX = window.XLSX;
-      const buf = await file.arrayBuffer();
-      const wb = XLSX.read(buf, { type: "array" });
-      const ws = wb.Sheets[wb.SheetNames[0]];
-      const rows = XLSX.utils.sheet_to_json(ws, { header: 1 });
-      let headerIdx = 0;
-      for (let i = 0; i < Math.min(rows.length, 10); i++) {
-        if (rows[i] && rows[i].some(c => String(c ?? "").trim().toLowerCase() === "ean")) { headerIdx = i; break; }
-      }
-      const headers = rows[headerIdx].map(h => String(h ?? "").trim());
-      const idxEan = headers.findIndex(h => h.toLowerCase() === "ean");
-      const idxContro = headers.findIndex(h => h.toLowerCase().includes("controproposta"));
-      if (idxEan === -1) throw new Error("Colonna EAN non trovata nel file");
-      if (idxContro === -1) throw new Error("Colonna 'Controproposta Vendor' non trovata nel file");
-      const dataRows = rows.slice(headerIdx + 1).filter(r => r && r[idxEan]);
-      setContropropostaParse({ headers, dataRows, idxEan, idxContro });
-    } catch (err) {
-      showToast("Errore lettura file: " + err.message, "err");
-    }
-  };
-
-  const handleContropropostaFile = async (e) => {
-    const file = e.target.files?.[0];
-    await processContropropostaFile(file);
-    e.target.value = "";
-  };
-
-  const contropropostaPreview = useMemo(() => {
-    if (!contropropostaParse) return null;
-    const eanNelFile = new Set(contropropostaParse.dataRows.map(r => String(r[contropropostaParse.idxEan]).trim()));
-    const mancanti = dataArricchita.filter(t => !eanNelFile.has(t.ean));
-    return { totale: contropropostaParse.dataRows.length, mancanti: mancanti.length };
-  }, [contropropostaParse, dataArricchita]);
-
-  const confermaEsportaControproposta = () => {
-    if (!contropropostaParse) return;
-    setContropropostaProcessing(true);
+  // ── Esporta Controproposta: stessa struttura del file "prima proposta", ricostruita dai dati salvati ──
+  // (ASIN, EAN, Proposta Vendor, Editore, Filtro Reti, Proposta Amazon, Preordini, Controproposta Vendor, Note)
+  const exportControproposta = () => {
     const XLSX = window.XLSX;
-    const { headers, dataRows, idxEan, idxContro } = contropropostaParse;
-    const idxEditore = headers.findIndex(h => h.toLowerCase() === "editore");
-    const idxPropostaAmz = headers.findIndex(h => h.toLowerCase().includes("proposta") && h.toLowerCase().includes("amazon"));
-    const outHeaders = [...headers, "Note"];
-    const eanTrovati = new Set();
-
-    const outRows = dataRows.map(r => {
-      const ean = String(r[idxEan]).trim();
-      eanTrovati.add(ean);
-      const v = verificaByEan[ean] || {};
-      const riga = headers.map((_, i) => r[i] ?? "");
-      riga[idxContro] = v.proposta_pde ?? "";
-      riga.push(v.note || "");
-      return riga;
+    const cHeaders = ["ASIN", "EAN", "Proposta Vendor", "Editore", "Filtro Reti", "Proposta Amazon", "Preordini", "Controproposta Vendor", "Note"];
+    const cRows = dataArricchita.map(r => {
+      const v = verificaByEan[r.ean] || {};
+      return [
+        v.asin || "",
+        r.ean,
+        v.proposta_vendor ?? "",
+        r.editore,
+        v.filtro_reti || "",
+        v.proposta_amaz ?? "",
+        v.preordini_vendor ?? "",
+        v.proposta_pde ?? "",
+        v.note || "",
+      ];
     });
-
-    dataArricchita.forEach(t => {
-      if (eanTrovati.has(t.ean)) return;
-      const v = verificaByEan[t.ean] || {};
-      const riga = headers.map(() => "");
-      riga[idxEan] = t.ean;
-      if (idxEditore !== -1) riga[idxEditore] = t.editore;
-      if (idxPropostaAmz !== -1) riga[idxPropostaAmz] = v.proposta_amaz ?? "";
-      riga[idxContro] = v.proposta_pde ?? "";
-      riga.push(v.note || "");
-      outRows.push(riga);
-    });
-
-    const wsOut = XLSX.utils.aoa_to_sheet([outHeaders, ...outRows]);
-    const wbOut = XLSX.utils.book_new();
-    XLSX.utils.book_append_sheet(wbOut, wsOut, "Controproposta");
-    XLSX.writeFile(wbOut, `Controproposta_Lancio${filterLancio}_${filterAnno}.xlsx`);
-
-    showToast(`Controproposta esportata: ${outRows.length} titoli (${outRows.length - dataRows.length} aggiunti in coda)`);
-    setContropropostaParse(null);
-    setShowContropropostaUpload(false);
-    setContropropostaProcessing(false);
+    const wsC = XLSX.utils.aoa_to_sheet([cHeaders, ...cRows]);
+    const wbC = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wbC, wsC, "Controproposta");
+    XLSX.writeFile(wbC, `Controproposta_Lancio${filterLancio}_${filterAnno}.xlsx`);
   };
 
   const exportExcel = () => {
@@ -3241,7 +3195,7 @@ function ModuloVerificaLanciAmazon({ token, titoli, prenotato, canali }) {
           <button style={{ ...css.btn(showProposteUpload ? "accent" : undefined) }} onClick={() => setShowProposteUpload(s => !s)}>
             🎯 Carica prima proposta
           </button>
-          <button style={{ ...css.btn(showContropropostaUpload ? "accent" : undefined) }} onClick={() => setShowContropropostaUpload(s => !s)}>
+          <button style={css.btn()} onClick={exportControproposta}>
             🔁 Esporta controproposta
           </button>
           <button style={{ ...css.btn(showMailUpload ? "accent" : undefined) }} onClick={() => setShowMailUpload(s => !s)}>
@@ -3456,39 +3410,6 @@ function ModuloVerificaLanciAmazon({ token, titoli, prenotato, canali }) {
                   {proposteProcessing ? "Applico..." : "✓ Conferma e applica"}
                 </button>
                 <button style={css.btn()} disabled={proposteProcessing} onClick={() => setProposteParseResult(null)}>Annulla</button>
-              </div>
-            </>
-          )}
-        </div>
-      )}
-
-      {/* ESPORTA CONTROPROPOSTA */}
-      {showContropropostaUpload && (
-        <div style={{ padding: "16px 20px", borderBottom: `1px solid ${T.border}`, background: T.bg }}>
-          {!contropropostaParse ? (
-            <>
-              <div style={{ fontSize: "12px", color: T.textMid, marginBottom: 10 }}>
-                Carica lo <b>stesso file Excel della prima proposta</b> (ASIN, EAN, Proposta Vendor, Editore, Filtro Reti, Proposta Amazon, Preordini, Controproposta Vendor). Verrà riesportato lo stesso file con <b>Controproposta Vendor</b> compilata (Proposta PDE) e una colonna <b>Note</b> aggiunta. I titoli del lancio non presenti nel file caricato vengono aggiunti in coda.
-              </div>
-              <div style={{ display: "flex", gap: 10, alignItems: "flex-start", flexWrap: "wrap" }}>
-                <label style={{ ...css.btn(), cursor: "pointer", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", width: 200, minHeight: 70, border: `2px dashed ${T.borderHi}`, background: T.surface, textAlign: "center", padding: "8px" }}>
-                  <span>Scegli file Excel</span>
-                  <span style={{ fontSize: "10px", color: T.textDim, marginTop: 3 }}>.xlsx</span>
-                  <input type="file" accept=".xlsx,.xls" style={{ display: "none" }} onChange={handleContropropostaFile} />
-                </label>
-                <button style={{ ...css.btn(), alignSelf: "flex-start" }} onClick={() => setShowContropropostaUpload(false)}>Annulla</button>
-              </div>
-            </>
-          ) : (
-            <>
-              <div style={{ fontSize: "12px", color: T.text, marginBottom: 10 }}>
-                Trovati <b style={{ color: "#e8a838" }}>{contropropostaPreview?.totale ?? 0}</b> EAN nel file. <b style={{ color: T.green }}>{contropropostaPreview?.mancanti ?? 0}</b> titoli del lancio {filterLancio}/{filterAnno} non presenti nel file verranno aggiunti in coda.
-              </div>
-              <div style={{ display: "flex", gap: 10 }}>
-                <button style={css.btn("accent")} disabled={contropropostaProcessing} onClick={confermaEsportaControproposta}>
-                  {contropropostaProcessing ? "Genero..." : "⬇ Genera ed esporta"}
-                </button>
-                <button style={css.btn()} disabled={contropropostaProcessing} onClick={() => setContropropostaParse(null)}>Annulla</button>
               </div>
             </>
           )}
