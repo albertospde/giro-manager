@@ -60,9 +60,48 @@ async function fetchAnagraficaEditori(token) {
   return map;
 }
 
+// ─── Fetch posizioni massime già presenti in DB (fresco, non da prop stale) ──
+// Query diretta a Supabase al momento dell'import, così anche se il componente
+// padre non ha ancora rifatto il fetch di titoliEsistenti dopo un import
+// precedente, i contatori ripartono comunque dal valore corretto.
+// Normali (giro_id fisso): raggruppa per editore_nome.
+// EXTRA (giro_id sempre null): raggruppa per editore_nome + n_cedola, perché
+// più cedole EXTRA diverse condividono lo stesso giro_label "EXTRA".
+async function fetchPosizioniEsistenti(token, giroId) {
+  const headers = { "apikey": SUPABASE_KEY, "Authorization": `Bearer ${token}` };
+
+  const [resNormale, resExtra] = await Promise.all([
+    fetch(`${SUPABASE_URL}/rest/v1/titoli?giro_id=eq.${giroId}&select=editore_nome,posizione`, { headers }),
+    fetch(`${SUPABASE_URL}/rest/v1/titoli?giro_label=eq.EXTRA&select=editore_nome,posizione,n_cedola`, { headers }),
+  ]);
+  if (!resNormale.ok || !resExtra.ok) {
+    throw new Error("Errore lettura posizioni esistenti dal database");
+  }
+  const dataNormale = await resNormale.json();
+  const dataExtra = await resExtra.json();
+
+  const maxNormale = {};
+  dataNormale.forEach(({ editore_nome, posizione }) => {
+    const nome = String(editore_nome ?? "").trim().toUpperCase();
+    if (!nome) return;
+    maxNormale[nome] = Math.max(maxNormale[nome] || 0, posizione || 0);
+  });
+
+  const maxExtra = {};
+  dataExtra.forEach(({ editore_nome, posizione, n_cedola }) => {
+    const nome = String(editore_nome ?? "").trim().toUpperCase();
+    const cedola = String(n_cedola ?? "").trim().toUpperCase();
+    if (!nome || !cedola) return;
+    const key = `${nome}|${cedola}`;
+    maxExtra[key] = Math.max(maxExtra[key] || 0, posizione || 0);
+  });
+
+  return { maxNormale, maxExtra };
+}
+
 // ─── Componente principale ───────────────────────────────────────────────────
-// titoliEsistenti: l'array `titoli` già caricato in GiroManager, serve per calcolare
-// la posizione di partenza per ogni gruppo giro+editore (continua da dove sono arrivati).
+// titoliEsistenti: non più usato per calcolare la posizione (vedi fetchPosizioniEsistenti),
+// mantenuto come prop per compatibilità con il chiamante.
 export default function ModuloCaricoSemplice({ giriList, titoliEsistenti, token, onClose, onImportDone }) {
   const [giroSel, setGiroSel] = useState(giriList[0]?.id ?? null);
   const [file, setFile] = useState(null);
@@ -74,6 +113,7 @@ export default function ModuloCaricoSemplice({ giriList, titoliEsistenti, token,
   const [anagraficaMissing, setAnagraficaMissing] = useState([]); // editori non trovati in ranking_editori
 
   const handleFile = useCallback(async (e) => {
+    // (già async: necessario per gli await su fetchAnagraficaEditori e fetchPosizioniEsistenti)
     const f = e.target.files[0];
     if (!f) return;
     setFile(f);
@@ -85,6 +125,15 @@ export default function ModuloCaricoSemplice({ giriList, titoliEsistenti, token,
       alert("Impossibile caricare l'anagrafica editori dal database: " + err.message + "\nRiprova; se l'errore persiste, controlla la sessione/login.");
       return;
     }
+
+    let posizioniEsistenti;
+    try {
+      posizioniEsistenti = await fetchPosizioniEsistenti(token, giroSel);
+    } catch (err) {
+      alert("Impossibile leggere le posizioni esistenti dal database: " + err.message + "\nRiprova.");
+      return;
+    }
+    const { maxNormale, maxExtra } = posizioniEsistenti;
 
     const reader = new FileReader();
     reader.onload = (evt) => {
@@ -100,8 +149,9 @@ export default function ModuloCaricoSemplice({ giriList, titoliEsistenti, token,
         const parsed = [];
         const errs = [];
         const missing = new Set();
-        // Contatori di posizione per gruppo "giro_label|editore_nome", inizializzati al
-        // massimo già presente in DB per quel gruppo (così si continua la numerazione).
+        // Contatori di posizione per gruppo, inizializzati dai MAX freschi letti dal DB
+        // (fetchPosizioniEsistenti), non da titoliEsistenti (poteva essere stale tra
+        // un import e l'altro nella stessa sessione → posizioni duplicate).
         const contatori = {};
 
         dataRows.forEach((row, idx) => {
@@ -155,12 +205,13 @@ export default function ModuloCaricoSemplice({ giriList, titoliEsistenti, token,
           }
 
           // Posizione: sequenziale nell'ordine esatto delle righe del file, per gruppo giro+editore.
-          // Continua dal massimo già presente in DB (titoliEsistenti) per lo stesso giro_label+editore.
-          const keyGruppo = `${obj.giro_label ?? ""}|${nome}`;
+          // Continua dal MAX fresco letto dal DB (fetchPosizioniEsistenti), non da una prop
+          // client-side che poteva essere stale tra un import e l'altro nella stessa sessione.
+          const keyGruppo = obj._isExtra ? `EXTRA|${nome}|${obj.n_cedola ?? ""}` : `${obj.giro_label ?? ""}|${nome}`;
           if (!(keyGruppo in contatori)) {
-            const maxEsistente = (titoliEsistenti || [])
-              .filter(t => t.giro_label === obj.giro_label && String(t.editore_nome ?? "").trim().toUpperCase() === nome)
-              .reduce((m, t) => Math.max(m, t.posizione || 0), 0);
+            const maxEsistente = obj._isExtra
+              ? (maxExtra[`${nome}|${String(obj.n_cedola ?? "").trim().toUpperCase()}`] || 0)
+              : (maxNormale[nome] || 0);
             contatori[keyGruppo] = maxEsistente;
           }
           contatori[keyGruppo] += 1;
@@ -184,7 +235,7 @@ export default function ModuloCaricoSemplice({ giriList, titoliEsistenti, token,
       }
     };
     reader.readAsArrayBuffer(f);
-  }, [token, titoliEsistenti]);
+  }, [token, giroSel]);
 
   const handleImport = async () => {
     if (!giroSel) return;
