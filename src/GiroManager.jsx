@@ -3117,9 +3117,20 @@ function ModuloVerificaLanciAmazon({ token, titoli, prenotato, canali }) {
     setMailProcessing(false);
   };
 
-  const exportExcel = () => {
+  const exportControproposta = () => {
     const XLSX = window.XLSX;
-    const vHeaders = ["EAN","Titolo","Autore","Editore","Prezzo","TOTALE","AMAZON IN CEDOLA","Proposta Amaz","Taglio prenotazione","Proposta PDE","Copie","Prenotato","Impegnato","Evaso","Inevaso","Netto","diff da FINE GIRO","diff da TAGLIO AMZ","diff da PROPOSTA PDE","diff % da FG","Diff % da amz","diff % da PDE","NOTE x Amazon","Preorder","Residuo lancio","% usata","Richiesta Rifornimento","ROTTURA DI STOCK"];
+    const cHeaders = ["EAN", "Proposta Amazon", "Note"];
+    const cRows = dataArricchita.map(r => {
+      const v = verificaByEan[r.ean] || {};
+      return [r.ean, v.proposta_pde ?? "", v.note || ""];
+    });
+    const wsC = XLSX.utils.aoa_to_sheet([cHeaders, ...cRows]);
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, wsC, "Controproposta");
+    XLSX.writeFile(wb, `Controproposta_Lancio${filterLancio}_${filterAnno}.xlsx`);
+  };
+
+  const exportExcel = () => {
     const vRows = dataVerifica.map(r => [
       r.ean, r.titolo, r.autore, r.editore, r.prezzo, r.vE, r.vF,
       r.vG ?? "", r.vH ?? "", r.vI ?? "", r.vJ ?? "", r.vPren ?? "", r.vImp ?? "", r.vK ?? "", r.vL ?? "", r.vM ?? "",
@@ -3153,14 +3164,17 @@ function ModuloVerificaLanciAmazon({ token, titoli, prenotato, canali }) {
         </select>
         <input style={{ ...css.input, width: 180 }} placeholder="Cerca EAN / titolo..." value={search} onChange={e => setSearch(e.target.value)} />
         <div style={{ marginLeft: "auto", display: "flex", gap: 10 }}>
+          <button style={{ ...css.btn(showProposteUpload ? "accent" : undefined) }} onClick={() => setShowProposteUpload(s => !s)}>
+            🎯 Carica prima proposta
+          </button>
+          <button style={css.btn()} onClick={exportControproposta}>
+            🔁 Esporta controproposta
+          </button>
           <button style={{ ...css.btn(showMailUpload ? "accent" : undefined) }} onClick={() => setShowMailUpload(s => !s)}>
             📧 Carica mail Messaggerie
           </button>
           <button style={{ ...css.btn(showOrdiniUpload ? "accent" : undefined) }} onClick={() => setShowOrdiniUpload(s => !s)}>
             📥 Carica ordini Amazon
-          </button>
-          <button style={{ ...css.btn(showProposteUpload ? "accent" : undefined) }} onClick={() => setShowProposteUpload(s => !s)}>
-            🎯 Carica prima proposta
           </button>
           <button style={{ ...css.btn(showPreorderUpload ? "accent" : undefined) }} onClick={() => setShowPreorderUpload(s => !s)}>
             📖 Carica preorder
