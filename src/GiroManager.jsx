@@ -153,6 +153,19 @@ const sbUpdateTitolo = async (id, updates, token) => {
   return r.ok;
 };
 
+// Cancellazione titolo da Giri e Cedole (DELETE)
+const sbDeleteTitolo = async (id, token) => {
+  const r = await fetch(`${SUPABASE_URL}/rest/v1/titoli?id=eq.${id}`, {
+    method: "DELETE",
+    headers: {
+      "apikey": SUPABASE_KEY,
+      "Authorization": `Bearer ${token}`,
+      "Prefer": "return=minimal",
+    },
+  });
+  return r.ok;
+};
+
 const T = {
   bg: "#1a2140", surface: "#212d54", border: "#2e3d6b", borderHi: "#3d4f82",
   text: "#f0f2f8", textMid: "#8b9cc8", textDim: "#4a5a8a",
@@ -258,10 +271,22 @@ function KpiCard({ label, value, sub, color = T.accent }) {
 }
 
 // FIX 5: EditModal ora riceve anche token e onSaveDB per salvare su Supabase
-function EditModal({ titolo, siblings = [], onSave, onClose, token }) {
+function EditModal({ titolo, siblings = [], onSave, onClose, onDelete, token }) {
   const [form, setForm] = useState({ ...titolo });
   const [saving, setSaving] = useState(false);
+  const [deleting, setDeleting] = useState(false);
   const set = k => e => setForm(f => ({ ...f, [k]: e.target.type === "checkbox" ? e.target.checked : e.target.value }));
+
+  const handleDelete = async () => {
+    const conferma = window.confirm(`Cancellare definitivamente "${titolo.titolo || titolo.ean}" dalla cedola? L'operazione non è reversibile.`);
+    if (!conferma) return;
+    setDeleting(true);
+    const ok = await sbDeleteTitolo(titolo.id, token);
+    setDeleting(false);
+    if (!ok) { alert("Errore nella cancellazione su database."); return; }
+    onDelete && onDelete(titolo.id);
+    onClose();
+  };
 
   const handleSave = async () => {
     setSaving(true);
@@ -362,11 +387,16 @@ function EditModal({ titolo, siblings = [], onSave, onClose, token }) {
           <label style={{ color: T.textMid, fontSize: "10px", letterSpacing: "0.08em", textTransform: "uppercase", display: "block", marginBottom: 4 }}>NOTE INTERNE</label>
           <textarea style={{ ...css.input, width: "100%", boxSizing: "border-box", height: 60, resize: "vertical" }} value={form.note ?? ""} onChange={set("note")} />
         </div>
-        <div style={{ marginTop: 20, display: "flex", justifyContent: "flex-end", gap: 8 }}>
-          <button style={css.btn()} onClick={onClose}>Annulla</button>
-          <button style={css.btn("accent")} onClick={handleSave} disabled={saving}>
-            {saving ? "Salvataggio..." : "Salva"}
+        <div style={{ marginTop: 20, display: "flex", justifyContent: "space-between", alignItems: "center", gap: 8 }}>
+          <button style={{ ...css.btn(), color: T.red, borderColor: T.red }} onClick={handleDelete} disabled={saving || deleting}>
+            {deleting ? "Cancellazione..." : "🗑 Cancella riga"}
           </button>
+          <div style={{ display: "flex", gap: 8 }}>
+            <button style={css.btn()} onClick={onClose} disabled={deleting}>Annulla</button>
+            <button style={css.btn("accent")} onClick={handleSave} disabled={saving || deleting}>
+              {saving ? "Salvataggio..." : "Salva"}
+            </button>
+          </div>
         </div>
       </div>
     </div>
@@ -845,7 +875,7 @@ function SearchableMultiSelect({ values, onChange, options, placeholder = "Tutti
   );
 }
 
-function ModuloCedola({ titoli, giriList, onUpdateTitolo, spalmatura, prenotato, ruolo, token, onTitoliChange, userAccount }) {
+function ModuloCedola({ titoli, giriList, onUpdateTitolo, onDeleteTitolo, spalmatura, prenotato, ruolo, token, onTitoliChange, userAccount }) {
   const [giroLabelSel, setGiroLabelSel] = useState([]);
   const [extraSel, setExtraSel] = useState([]);
   const [giroSel, setGiroSel] = useState([]);
@@ -1164,7 +1194,16 @@ function ModuloCedola({ titoli, giriList, onUpdateTitolo, spalmatura, prenotato,
 
   return (
     <div style={{ display: "flex", flexDirection: "column", height: "100%", overflow: "hidden" }}>
-      {editingTitolo && <EditModal titolo={editingTitolo} siblings={titoli} onSave={onUpdateTitolo} onClose={() => setEditingId(null)} token={token} />}
+      {editingTitolo && (
+        <EditModal
+          titolo={editingTitolo}
+          siblings={titoli}
+          onSave={onUpdateTitolo}
+          onDelete={id => { onDeleteTitolo && onDeleteTitolo(id); showToastCedola("Riga cancellata"); if (onTitoliChange) onTitoliChange(); }}
+          onClose={() => setEditingId(null)}
+          token={token}
+        />
+      )}
 
       {/* MODAL NUOVO GIRO */}
       {showNuovoGiro && (
@@ -3952,6 +3991,7 @@ export default function App() {
   const handleLogin = (token, user) => setSession({ token, user });
   const handleLogout = async () => { await sb.auth.signOut(session.token); localStorage.removeItem("giro_token"); setSession(null); };
   const updateTitolo = useCallback(updated => setTitoli(prev => prev.map(t => t.id === updated.id ? { ...t, ...updated } : t)), []);
+  const deleteTitolo = useCallback(id => setTitoli(prev => prev.filter(t => t.id !== id)), []);
   const refreshDati = useCallback(() => {
     if (!session) return;
     sbFetch("prenotato?select=*&limit=100000", session.token).then(data => { if (Array.isArray(data)) setPrenotato(data); });
@@ -4020,7 +4060,7 @@ export default function App() {
           {activeModule === "dashboard" && <ModuloDashboard titoli={titoli} prenotato={prenotato} canali={canali} spalmatura={spalmatura} ruolo={ruolo} />}
           {activeModule === "calendariogiri" && <Modulocalendariogiri token={session.token} ruolo={ruolo} />}
           {/* FIX 5: Passato token a ModuloCedola */}
-          {activeModule === "cedola" && <ModuloCedola titoli={titoli} giriList={giriDB} onUpdateTitolo={t => { updateTitolo(t); setTitoli(prev => prev.some(x => x.id === t.id) ? prev.map(x => x.id === t.id ? t : x) : [...prev, t]); }} spalmatura={spalmatura} prenotato={prenotato} ruolo={ruolo} token={session.token} onTitoliChange={refreshDati} userAccount={userAccount} />}
+          {activeModule === "cedola" && <ModuloCedola titoli={titoli} giriList={giriDB} onUpdateTitolo={t => { updateTitolo(t); setTitoli(prev => prev.some(x => x.id === t.id) ? prev.map(x => x.id === t.id ? t : x) : [...prev, t]); }} onDeleteTitolo={deleteTitolo} spalmatura={spalmatura} prenotato={prenotato} ruolo={ruolo} token={session.token} onTitoliChange={refreshDati} userAccount={userAccount} />}
           {activeModule === "prenotato" && <ModuloPrenotato token={session.token} titoli={titoli} onImportDone={() => sbFetch("prenotato?select=*&limit=100000", session.token).then(setPrenotato)} />}
           {/* MOD 4: Passato spalmatura a ModuloFineGiro */}
           {activeModule === "finegiro" && <ModuloFineGiro titoli={titoli} prenotato={prenotato} canali={canali} token={session.token} ruolo={ruolo} spalmatura={spalmatura} userAccount={userAccount} />}
