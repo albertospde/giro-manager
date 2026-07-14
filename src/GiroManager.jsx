@@ -3133,10 +3133,9 @@ function ModuloVerificaLanciAmazon({ token, titoli, prenotato, canali }) {
     setMailProcessing(false);
   };
 
-  // ── Esporta Controproposta: stessa struttura del file "prima proposta", ricostruita dai dati salvati ──
-  // (ASIN, EAN, Proposta Vendor, Editore, Filtro Reti, Proposta Amazon, Preordini, Controproposta Vendor, Note)
+  // ── Esporta Controproposta: stessa struttura E formattazione del file "prima proposta" ──
   const exportControproposta = () => {
-    const XLSX = window.XLSX;
+    const XS = window.XLSXStyle;
     const cHeaders = ["ASIN", "EAN", "Proposta Vendor", "Editore", "Filtro Reti", "Proposta Amazon", "Preordini", "Controproposta Vendor", "Note"];
     const cRows = dataArricchita.map(r => {
       const v = verificaByEan[r.ean] || {};
@@ -3152,10 +3151,38 @@ function ModuloVerificaLanciAmazon({ token, titoli, prenotato, canali }) {
         v.note || "",
       ];
     });
-    const wsC = XLSX.utils.aoa_to_sheet([cHeaders, ...cRows]);
-    const wbC = XLSX.utils.book_new();
-    XLSX.utils.book_append_sheet(wbC, wsC, "Controproposta");
-    XLSX.writeFile(wbC, `Controproposta_Lancio${filterLancio}_${filterAnno}.xlsx`);
+
+    const FONT = { name: "Aptos Narrow", sz: 11 };
+    const THIN = { style: "thin", color: { rgb: "FF000000" } };
+    const BORDER_ALL = { top: THIN, bottom: THIN, left: THIN, right: THIN };
+    const headerStyle = {
+      font: { ...FONT, bold: true, color: { rgb: "FFFFFFFF" } },
+      fill: { patternType: "solid", fgColor: { rgb: "FF000000" } },
+      alignment: { horizontal: "center", vertical: "center" },
+      border: BORDER_ALL,
+    };
+    const cellStyle = { font: FONT, border: BORDER_ALL };
+    const cellStyleNum = { ...cellStyle, numFmt: "0" };
+
+    const aoa = [cHeaders, ...cRows];
+    const ws = XS.utils.aoa_to_sheet(aoa);
+    cHeaders.forEach((_, c) => {
+      const addr = XS.utils.encode_cell({ r: 0, c });
+      if (ws[addr]) ws[addr].s = headerStyle;
+    });
+    cRows.forEach((row, rIdx) => {
+      row.forEach((_, c) => {
+        const addr = XS.utils.encode_cell({ r: rIdx + 1, c });
+        if (ws[addr]) ws[addr].s = (c === 0 || c === 1) ? cellStyleNum : cellStyle; // ASIN, EAN senza notazione scientifica
+      });
+    });
+    ws["!cols"] = [
+      { wch: 13 }, { wch: 14.5 }, { wch: 15 }, { wch: 22 }, { wch: 10 }, { wch: 16 }, { wch: 10 }, { wch: 21 }, { wch: 30 },
+    ];
+
+    const wbC = XS.utils.book_new();
+    XS.utils.book_append_sheet(wbC, ws, "Controproposta");
+    XS.writeFile(wbC, `Controproposta_Lancio${filterLancio}_${filterAnno}.xlsx`);
   };
 
   const exportExcel = () => {
