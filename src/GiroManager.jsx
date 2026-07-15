@@ -1,5 +1,5 @@
 import { useState, useEffect, useMemo, useCallback } from "react";
-import ModuloImport from "./ModuloImport.jsx";
+import ModuloImport, { ImportSpalmatura } from "./ModuloImport.jsx";
 import ModuloCaricoSemplice from "./ModuloCaricoSemplice.jsx";
 import ModuloPrenotato from "./ModuloPrenotato.jsx";
 import ModuloAvanzamento from "./ModuloAvanzamento.jsx";
@@ -4041,7 +4041,7 @@ const MODULES = [
 const MODULES_IMPORT = [
   { id: "import", label: "Import Cedola", icon: "↑" },
   { id: "prenotato", label: "Import Prenotato", icon: "↳" },
-  { id: "importobiettivi", label: "Import Obiettivi", icon: "◎" },
+  { id: "spalmatura", label: "Import Pesi Spalmatura", icon: "⚖" },
 ];
 
 const style = document.createElement('style');
@@ -4162,7 +4162,7 @@ export default function App() {
           {activeModule === "verificalanci" && <ModuloVerificaLanciAmazon token={session.token} titoli={titoli} prenotato={prenotato} canali={canali} />}
           {activeModule === "verificaordini" && <ModuloVerificaOrdini token={session.token} />}
           {activeModule === "import" && <ModuloImport giriList={giriDB} token={session.token} />}
-          {activeModule === "importobiettivi" && <ModuloImport giriList={giriDB} token={session.token} onlyObiettivi={true} />}
+          {activeModule === "spalmatura" && <ImportSpalmatura token={session.token} onImportDone={() => sbFetch("spalmatura_obiettivo?select=*", session.token).then(setSpalmatura)} />}
         </div>
       </div>
     </div>
