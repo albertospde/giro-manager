@@ -3231,6 +3231,12 @@ function ModuloVerificaLanciAmazon({ token, titoli, prenotato, canali }) {
 
   const exportExcel = () => {
     const XLSX = window.XLSX;
+    const vHeaders = [
+      "EAN", "Titolo", "Autore", "Editore", "Prezzo", "Totale", "Amazon cedola",
+      "Proposta Amaz", "Taglio %", "Proposta PDE", "Copie", "Prenotato", "Impegnato", "Evaso", "Inevaso", "Netto",
+      "Diff FG", "Diff Amz", "Diff PDE", "% Diff FG", "% Diff Amz", "% Diff PDE",
+      "Note", "Preorder", "Residuo", "% Preorder/Netto", "Rifornim.", "Rottura stock"
+    ];
     const vRows = dataVerifica.map(r => [
       r.ean, r.titolo, r.autore, r.editore, r.prezzo, r.vE, r.vF,
       r.vG ?? "", r.vH ?? "", r.vI ?? "", r.vJ ?? "", r.vPren ?? "", r.vImp ?? "", r.vK ?? "", r.vL ?? "", r.vM ?? "",
