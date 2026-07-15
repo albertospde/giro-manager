@@ -1117,10 +1117,24 @@ function ModuloCedola({ titoli, giriList, onUpdateTitolo, onDeleteTitolo, spalma
     return ws;
   };
 
+  // Numera i titoli in sequenza (1, 2, 3...) all'interno di ciascun editore, seguendo l'ordine
+  // già presente nell'elenco (per rispettare la "posizione" impostata in cedola). Non lascia mai vuoto.
+  const computeRankTitolo = (lista) => {
+    const contatori = {};
+    const map = new Map();
+    lista.forEach(t => {
+      const chiave = t.editore_nome || t.codice_editore || "—";
+      contatori[chiave] = (contatori[chiave] || 0) + 1;
+      map.set(t.id, contatori[chiave]);
+    });
+    return map;
+  };
+
   const exportAgenti = () => {
     const XLSX = window.XLSX;
-    const headers = ["N° CEDOLA","EAN","TITOLO","AUTORE","COD.EDITORE","EDITORE","RANK.EDITORE","RANK.TITOLO","TOP 100","PREZZO","USCITA","NOTE","EAN GEM 1","TITOLO GEM 1","EAN GEM 2","TITOLO GEM 2","EAN GEM 3","TITOLO GEM 3","OBJ INDIPENDENTI & ALTRE CATENE"];
-    const rows = filtered.map(t => [t.n_cedola, t.ean, t.titolo, t.autore, t.codice_editore, t.editore_nome, t.ranking_editore ?? "", t.ranking_titolo ?? "", t.top_100 ? "SI" : "", t.prezzo, t.uscita, t.note_comunicazione || t.note, t.ean_gemello_1, t.titolo_gemello_1, t.ean_gemello_2, t.titolo_gemello_2, t.ean_gemello_3, t.titolo_gemello_3, getObjCanale(t, 'INDIPENDENTI_ALTRE_CATENE')]);
+    const rankTitoloMap = computeRankTitolo(filtered);
+    const headers = ["N° CEDOLA","RANK.EDITORE","RANK.TITOLO","EAN","TITOLO","AUTORE","COD.EDITORE","EDITORE","TOP 100","PREZZO","USCITA","NOTE","EAN GEM 1","TITOLO GEM 1","EAN GEM 2","TITOLO GEM 2","EAN GEM 3","TITOLO GEM 3","OBJ INDIPENDENTI & ALTRE CATENE"];
+    const rows = filtered.map(t => [t.n_cedola, t.ranking_editore ?? "", rankTitoloMap.get(t.id), t.ean, t.titolo, t.autore, t.codice_editore, t.editore_nome, t.top_100 ? "SI" : "", t.prezzo, t.uscita, t.note_comunicazione || t.note, t.ean_gemello_1, t.titolo_gemello_1, t.ean_gemello_2, t.titolo_gemello_2, t.ean_gemello_3, t.titolo_gemello_3, getObjCanale(t, 'INDIPENDENTI_ALTRE_CATENE')]);
     const ws = buildTemplateSheet(XLSX, "CEDOLA AGENTI — GIRO " + (giroLabelSel.length === 0 ? "TUTTI" : giroLabelSel.join(", ")), "Esportazione dati cedola per la rete agenti", headers, rows);
     const wb = XLSX.utils.book_new(); XLSX.utils.book_append_sheet(wb, ws, "CEDOLA AGENTI");
     XLSX.writeFile(wb, `CEDOLA_AGENTI_${giroLabelSel.length === 0 ? "TUTTI" : giroLabelSel.join("-")}.xlsx`);
@@ -1130,8 +1144,9 @@ function ModuloCedola({ titoli, giriList, onUpdateTitolo, onDeleteTitolo, spalma
     const XLSX = window.XLSX;
     const canaliDir = [{ codice: 'FELTRINELLI', label: 'Feltrinelli' },{ codice: 'GIUNTI', label: 'Giunti' },{ codice: 'MONDADORI', label: 'Mondadori' },{ codice: 'UBIK', label: 'Ubik' },{ codice: 'INDIPENDENTI_ALTRE_CATENE', label: 'Indip. & Altre Catene' },{ codice: 'AMAZON', label: 'Amazon' },{ codice: 'IBS', label: 'IBS' },{ codice: 'ALTRI_ONLINE', label: 'Altri Online' },{ codice: 'FASTBOOK', label: 'Fastbook' },{ codice: 'GROSSISTI', label: 'Grossisti' },{ codice: 'CENTROLIBRI', label: 'Centrolibri' },{ codice: 'GDO', label: 'GDO' }];
     const giroLabelStr = giroLabelSel.length === 0 ? "TUTTI" : giroLabelSel.join(", ");
-    const headersCedola = ["N° CEDOLA","EAN","TITOLO","AUTORE","COD.EDITORE","EDITORE","RANK.EDITORE","RANK.TITOLO","TOP 100","PREZZO","OBJ TOTALE","NOTE","EAN GEM 1","TITOLO GEM 1","EAN GEM 2","TITOLO GEM 2","EAN GEM 3","TITOLO GEM 3"];
-    const rowsCedola = filtered.map(t => [t.n_cedola, t.ean, t.titolo, t.autore, t.codice_editore, t.editore_nome, t.ranking_editore ?? "", t.ranking_titolo ?? "", t.top_100 ? "SI" : "", t.prezzo, t.obiettivo_assegnato || 0, t.note_comunicazione || t.note, t.ean_gemello_1, t.titolo_gemello_1, t.ean_gemello_2, t.titolo_gemello_2, t.ean_gemello_3, t.titolo_gemello_3]);
+    const rankTitoloMap = computeRankTitolo(filtered);
+    const headersCedola = ["N° CEDOLA","RANK.EDITORE","RANK.TITOLO","EAN","TITOLO","AUTORE","COD.EDITORE","EDITORE","TOP 100","PREZZO","OBJ TOTALE","NOTE","EAN GEM 1","TITOLO GEM 1","EAN GEM 2","TITOLO GEM 2","EAN GEM 3","TITOLO GEM 3"];
+    const rowsCedola = filtered.map(t => [t.n_cedola, t.ranking_editore ?? "", rankTitoloMap.get(t.id), t.ean, t.titolo, t.autore, t.codice_editore, t.editore_nome, t.top_100 ? "SI" : "", t.prezzo, t.obiettivo_assegnato || 0, t.note_comunicazione || t.note, t.ean_gemello_1, t.titolo_gemello_1, t.ean_gemello_2, t.titolo_gemello_2, t.ean_gemello_3, t.titolo_gemello_3]);
     const wsCedola = buildTemplateSheet(XLSX, "CEDOLA DIREZIONALE — GIRO " + giroLabelStr, "Esportazione dati cedola per la direzione", headersCedola, rowsCedola);
     const headersObj = ["N° CEDOLA","EAN","TITOLO","AUTORE","COD.EDITORE","EDITORE","PREZZO","OBJ TOTALE",...canaliDir.map(c => c.label)];
     const rowsObj = filtered.map(t => [t.n_cedola, t.ean, t.titolo, t.autore, t.codice_editore, t.editore_nome, t.prezzo, t.obiettivo_assegnato || 0, ...canaliDir.map(c => getObjCanale(t, c.codice))]);
