@@ -7,6 +7,8 @@ import ModuloAvanzamento from "./ModuloAvanzamento.jsx";
 const SUPABASE_URL = "https://tdflwenlylhctxssatax.supabase.co";
 const SUPABASE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InRkZmx3ZW5seWxoY3R4c3NhdGF4Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzYzMzgyNzYsImV4cCI6MjA5MTkxNDI3Nn0.l35qEL7LOvyYuI1McQlVqj4vbyTqmlevcmqWbTGYi2Q";
 
+const normEditoreKey = n => (n || "").trim().toLowerCase();
+
 const ACCOUNT_BY_COD = {
   "103": "CALAVETTA",
   "108": "CALAVETTA",
@@ -4060,10 +4062,22 @@ export default function App() {
   const [ruolo, setRuolo] = useState("admin");
   const [userAccount, setUserAccount] = useState(null);
 
+  // Applica alle righe titoli il ranking_editore AGGIORNATO (da ranking_editori), invece del
+  // valore congelato al momento dell'import. Evita il disallineamento che causa titoli di
+  // editori diversi ma con stesso ranking "vecchio" a intrecciarsi nell'ordinamento.
+  const applyRankingLive = useCallback((rows, rankingMap) => rows.map(t => {
+    const rLive = rankingMap[normEditoreKey(t.editore_nome)];
+    return { ...t, account_editore: ACCOUNT_BY_COD[t.codice_editore] || t.account_editore || null, ranking_editore: rLive != null ? rLive : t.ranking_editore };
+  }), []);
+
   useEffect(() => {
     if (!session) return;
     sbFetch("giri?select=*&order=anno.desc,numero.desc", session.token).then(setGiriDB);
-    sbFetch("titoli?select=*&order=ranking_editore.asc,ranking_titolo.asc", session.token).then(data => setTitoli(Array.isArray(data) ? data.map(t => ({ ...t, account_editore: ACCOUNT_BY_COD[t.codice_editore] || t.account_editore || null })) : data));
+    sbFetch("ranking_editori?select=editore_nome,ranking", session.token).then(reData => {
+      const rankingMap = {};
+      if (Array.isArray(reData)) reData.forEach(r => { rankingMap[normEditoreKey(r.editore_nome)] = Math.round(Number(r.ranking)); });
+      sbFetch("titoli?select=*&order=ranking_editore.asc,ranking_titolo.asc", session.token).then(data => setTitoli(Array.isArray(data) ? applyRankingLive(data, rankingMap) : data));
+    });
     sbFetch("prenotato?select=*&limit=100000", session.token).then(setPrenotato);
     sbFetch("spalmatura_obiettivo?select=*", session.token).then(setSpalmatura);
     sbFetch("canali?select=*&order=nome.asc", session.token).then(setCanali);
@@ -4088,8 +4102,12 @@ export default function App() {
   const refreshDati = useCallback(() => {
     if (!session) return;
     sbFetch("prenotato?select=*&limit=100000", session.token).then(data => { if (Array.isArray(data)) setPrenotato(data); });
-    sbFetch("titoli?select=*&order=ranking_editore.asc,ranking_titolo.asc", session.token).then(data => { if (Array.isArray(data)) setTitoli(data.map(t => ({ ...t, account_editore: ACCOUNT_BY_COD[t.codice_editore] || t.account_editore || null }))); });
-  }, [session]);
+    sbFetch("ranking_editori?select=editore_nome,ranking", session.token).then(reData => {
+      const rankingMap = {};
+      if (Array.isArray(reData)) reData.forEach(r => { rankingMap[normEditoreKey(r.editore_nome)] = Math.round(Number(r.ranking)); });
+      sbFetch("titoli?select=*&order=ranking_editore.asc,ranking_titolo.asc", session.token).then(data => { if (Array.isArray(data)) setTitoli(applyRankingLive(data, rankingMap)); });
+    });
+  }, [session, applyRankingLive]);
 
   if (checkingAuth) return <div style={{ ...css.app, display: "flex", alignItems: "center", justifyContent: "center", height: "100vh", color: T.textMid }}>Caricamento...</div>;
   if (!session) return <LoginScreen onLogin={handleLogin} />;
