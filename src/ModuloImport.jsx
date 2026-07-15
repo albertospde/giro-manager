@@ -359,3 +359,235 @@ export default function ModuloImport({ token, onImportDone }) {
     </div>
   );
 }
+
+// ═══════════════════════════════════════════════════════════════════════════
+// IMPORT PESI SPALMATURA OBIETTIVI
+// Sostituisce il vecchio "Import Obiettivi" (non utilizzato).
+// Sorgente: foglio "SPALMATURA" del template, formato wide (editore+formato in riga,
+// un canale per colonna, peso in % 0-100). Scrive su spalmatura_obiettivo,
+// upsert on_conflict=editore_nome,formato,canale_codice.
+// ═══════════════════════════════════════════════════════════════════════════
+
+const CANALI_SPALMATURA = [
+  "AMAZON", "AURORA", "CENTROLIBRI", "FASTBOOK", "FELTRINELLI", "GIUNTI",
+  "GROSSISTI", "IBS", "INDIPENDENTI_ALTRE_CATENE", "LIBRACCIO", "LIB_COOP",
+  "ALTRI_ONLINE", "LIB_RELIGIOSE", "MONDADORI", "UBIK",
+];
+const FORMATI_VALIDI = ["Cover", "Tascabile"];
+
+async function fetchEditoriNoti(token) {
+  const res = await fetch(
+    `${SUPABASE_URL}/rest/v1/ranking_editori?select=editore_nome`,
+    { headers: { "apikey": SUPABASE_KEY, "Authorization": `Bearer ${token}` } }
+  );
+  if (!res.ok) return new Set();
+  const data = await res.json();
+  return new Set(data.map(r => String(r.editore_nome ?? "").trim().toUpperCase()));
+}
+
+export function ImportSpalmatura({ token, onImportDone }) {
+  const [rows, setRows] = useState([]);       // righe editore+formato con pesi grezzi (per preview)
+  const [payload, setPayload] = useState([]); // righe appiattite pronte per upsert
+  const [errors, setErrors] = useState([]);
+  const [editoriIgnoti, setEditoriIgnoti] = useState([]);
+  const [importing, setImporting] = useState(false);
+  const [loadingFile, setLoadingFile] = useState(false);
+  const [done, setDone] = useState(null);
+  const [step, setStep] = useState("upload");
+
+  const handleFile = useCallback(async (e) => {
+    const f = e.target.files[0];
+    if (!f) return;
+    setLoadingFile(true);
+
+    let editoriNoti = new Set();
+    try { editoriNoti = await fetchEditoriNoti(token); } catch { /* non bloccante */ }
+
+    const reader = new FileReader();
+    reader.onload = (evt) => {
+      try {
+        const XLSX = window.XLSX;
+        const wb = XLSX.read(evt.target.result, { type: "array" });
+        const ws = wb.Sheets["SPALMATURA"];
+        if (!ws) { alert("Foglio 'SPALMATURA' non trovato. Stai usando il template corretto?"); setLoadingFile(false); return; }
+        const data = XLSX.utils.sheet_to_json(ws, { header: 1, defval: "" });
+        // Riga 1 titolo, 2-3 istruzioni, 4 header canali, dati da riga 5
+        const dataRows = data.slice(4).filter(r => r.some(v => v !== ""));
+
+        const parsedRows = [];
+        const flatPayload = [];
+        const errs = [];
+        const ignoti = new Set();
+
+        dataRows.forEach((r, idx) => {
+          const editore = String(r[0] ?? "").trim().toUpperCase();
+          const formato = String(r[1] ?? "").trim();
+          const rowErrs = [];
+          if (!editore) rowErrs.push("editore mancante");
+          if (!FORMATI_VALIDI.includes(formato)) rowErrs.push(`formato non valido (atteso Cover/Tascabile, trovato "${formato}")`);
+          if (editore && !editoriNoti.has(editore) && editoriNoti.size > 0) ignoti.add(editore);
+
+          const pesi = {};
+          let somma = 0;
+          CANALI_SPALMATURA.forEach((cod, ci) => {
+            const raw = r[2 + ci];
+            if (raw === "" || raw === null || raw === undefined) return; // cella vuota = non tocca quel canale
+            const num = parseFloat(String(raw).replace(",", "."));
+            if (isNaN(num)) { rowErrs.push(`peso non valido per ${cod}`); return; }
+            pesi[cod] = num;
+            somma += num;
+            if (!rowErrs.length) flatPayload.push({ editore_nome: editore, formato, canale_codice: cod, percentuale: Math.round((num / 100) * 100000) / 100000 });
+          });
+
+          if (rowErrs.length) errs.push({ row: idx + 5, fields: rowErrs });
+          parsedRows.push({ editore, formato, pesi, somma: Math.round(somma * 10) / 10 });
+        });
+
+        setRows(parsedRows);
+        setPayload(flatPayload);
+        setErrors(errs);
+        setEditoriIgnoti([...ignoti]);
+        setStep("preview");
+      } catch (err) {
+        alert("Errore lettura file: " + err.message);
+      }
+      setLoadingFile(false);
+    };
+    reader.readAsArrayBuffer(f);
+  }, [token]);
+
+  const handleImport = async () => {
+    setImporting(true);
+    try {
+      const CHUNK = 300;
+      for (let i = 0; i < payload.length; i += CHUNK) {
+        const batch = payload.slice(i, i + CHUNK);
+        const res = await fetch(`${SUPABASE_URL}/rest/v1/spalmatura_obiettivo?on_conflict=editore_nome,formato,canale_codice`, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            "apikey": SUPABASE_KEY,
+            "Authorization": `Bearer ${token}`,
+            "Prefer": "resolution=merge-duplicates",
+          },
+          body: JSON.stringify(batch),
+        });
+        if (!res.ok) {
+          const err = await res.json().catch(() => ({}));
+          throw new Error(JSON.stringify(err));
+        }
+      }
+      setDone({ ok: payload.length, righe: rows.length });
+      setStep("result");
+      onImportDone && onImportDone();
+    } catch (e) {
+      alert("Errore import: " + e.message);
+    }
+    setImporting(false);
+  };
+
+  const reset = () => { setRows([]); setPayload([]); setErrors([]); setEditoriIgnoti([]); setDone(null); setStep("upload"); };
+
+  return (
+    <div style={{ flex: 1, overflowY: "auto", padding: 24 }}>
+      <div style={{ display: "flex", gap: 8, marginBottom: 24, alignItems: "center" }}>
+        {["upload", "preview", "result"].map((s, i) => (
+          <div key={s} style={{ display: "flex", alignItems: "center", gap: 8 }}>
+            <div style={{ width: 24, height: 24, borderRadius: "50%", background: step === s ? T.accent : T.borderHi, color: step === s ? "#000" : T.textMid, display: "flex", alignItems: "center", justifyContent: "center", fontSize: "11px", fontWeight: "700" }}>{i + 1}</div>
+            <span style={{ color: step === s ? T.accent : T.textMid, fontSize: "11px", textTransform: "uppercase", letterSpacing: "0.08em" }}>{s === "upload" ? "Carica file" : s === "preview" ? "Verifica" : "Completato"}</span>
+            {i < 2 && <span style={{ color: T.textDim }}>›</span>}
+          </div>
+        ))}
+      </div>
+
+      {step === "upload" && (
+        <div style={{ maxWidth: 500 }}>
+          <div style={{ border: `2px dashed ${T.borderHi}`, borderRadius: 6, padding: 40, textAlign: "center", marginBottom: 20 }}>
+            <div style={{ fontSize: "32px", marginBottom: 12 }}>⚖️</div>
+            <div style={{ color: T.text, marginBottom: 8 }}>{loadingFile ? "Elaborazione in corso..." : "Carica il template pesi spalmatura compilato"}</div>
+            <div style={{ color: T.textMid, fontSize: "11px", marginBottom: 20 }}>Solo file .xlsx — foglio "SPALMATURA"</div>
+            <input type="file" accept=".xlsx" onChange={handleFile} style={{ display: "none" }} id="file-input-spalmatura" disabled={loadingFile} />
+            <label htmlFor="file-input-spalmatura" style={{ ...css.btn("accent"), cursor: loadingFile ? "default" : "pointer", padding: "8px 20px", opacity: loadingFile ? 0.6 : 1 }}>Scegli file .xlsx</label>
+          </div>
+          <div style={{ color: T.textMid, fontSize: "11px" }}>
+            Non hai il template? <a href="https://albertospde.github.io/giro-manager/template_spalmatura.xlsx" download style={{ color: T.accent }}>Scaricalo qui</a>
+            {" · "}
+            <a href="https://albertospde.github.io/giro-manager/spalmatura_attuale.xlsx" download style={{ color: T.accent }}>Scarica i pesi attuali</a>
+          </div>
+        </div>
+      )}
+
+      {step === "preview" && (
+        <div>
+          <div style={{ display: "flex", gap: 12, marginBottom: 16, alignItems: "center" }}>
+            <div style={{ background: T.surface, border: `1px solid ${T.border}`, borderRadius: 4, padding: "10px 16px" }}>
+              <span style={{ color: T.textMid, fontSize: "11px" }}>Righe editore+formato: </span>
+              <span style={{ color: T.text, fontWeight: "700" }}>{rows.length}</span>
+            </div>
+            <div style={{ background: T.surface, border: `1px solid ${T.border}`, borderRadius: 4, padding: "10px 16px" }}>
+              <span style={{ color: T.textMid, fontSize: "11px" }}>Pesi da scrivere: </span>
+              <span style={{ color: T.text, fontWeight: "700" }}>{payload.length}</span>
+            </div>
+            <div style={{ background: T.surface, border: `1px solid ${errors.length > 0 ? T.red : T.green}`, borderRadius: 4, padding: "10px 16px" }}>
+              <span style={{ color: T.textMid, fontSize: "11px" }}>Errori: </span>
+              <span style={{ color: errors.length > 0 ? T.red : T.green, fontWeight: "700" }}>{errors.length}</span>
+            </div>
+            <div style={{ marginLeft: "auto", display: "flex", gap: 8 }}>
+              <button style={css.btn()} onClick={reset}>← Ricarica</button>
+              <button style={css.btn("accent")} onClick={handleImport} disabled={importing || errors.length > 0}>
+                {importing ? "Import in corso..." : `Importa ${payload.length} pesi`}
+              </button>
+            </div>
+          </div>
+
+          {errors.length > 0 && (
+            <div style={{ background: T.red + "11", border: `1px solid ${T.red}44`, borderRadius: 4, padding: 16, marginBottom: 16 }}>
+              <div style={{ color: T.red, fontWeight: "700", marginBottom: 8, fontSize: "12px" }}>⚠ Correggi gli errori prima di importare</div>
+              {errors.map((e, i) => <div key={i} style={{ color: T.textMid, fontSize: "11px" }}>Riga {e.row}: {e.fields.join(", ")}</div>)}
+            </div>
+          )}
+
+          {editoriIgnoti.length > 0 && (
+            <div style={{ background: T.blue + "11", border: `1px solid ${T.blue}44`, borderRadius: 4, padding: 16, marginBottom: 16 }}>
+              <div style={{ color: T.blue, fontWeight: "700", marginBottom: 8, fontSize: "12px" }}>ℹ Editori non presenti in ranking_editori (importo comunque, verifica il nome)</div>
+              {editoriIgnoti.map((e, i) => <div key={i} style={{ color: T.textMid, fontSize: "11px" }}>{e}</div>)}
+            </div>
+          )}
+
+          <div style={{ overflowX: "auto" }}>
+            <table style={{ width: "100%", borderCollapse: "collapse" }}>
+              <thead>
+                <tr>
+                  {["Editore", "Formato", "Canali compilati", "Somma %"].map(h => <th key={h} style={css.th}>{h}</th>)}
+                </tr>
+              </thead>
+              <tbody>
+                {rows.map((r, i) => {
+                  const hasErr = errors.find(e => e.row === i + 5);
+                  const sommaOk = r.somma >= 95 && r.somma <= 105;
+                  return (
+                    <tr key={i} style={{ background: hasErr ? T.red + "11" : i % 2 === 0 ? "transparent" : T.surface + "66" }}>
+                      <td style={{ ...css.td, fontWeight: "600" }}>{r.editore}</td>
+                      <td style={css.td}>{r.formato}</td>
+                      <td style={{ ...css.td, color: T.textMid }}>{Object.keys(r.pesi).length} / {CANALI_SPALMATURA.length}</td>
+                      <td style={{ ...css.td, color: sommaOk ? T.green : T.red, fontWeight: "600" }}>{r.somma}%</td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
+
+      {step === "result" && done && (
+        <div style={{ textAlign: "center", padding: 60 }}>
+          <div style={{ fontSize: "48px", marginBottom: 16 }}>✅</div>
+          <div style={{ color: T.green, fontSize: "20px", fontWeight: "700", marginBottom: 8 }}>Import completato</div>
+          <div style={{ color: T.textMid, marginBottom: 32 }}>{done.ok} pesi aggiornati su {done.righe} combinazioni editore+formato</div>
+          <button style={css.btn("accent")} onClick={reset}>Nuovo import</button>
+        </div>
+      )}
+    </div>
+  );
+}
