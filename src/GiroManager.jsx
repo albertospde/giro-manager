@@ -2949,6 +2949,7 @@ function ModuloVerificaLanciAmazon({ token, titoli, prenotato, canali }) {
 
   // ── Upload "Prima Proposta" (file Excel: Proposta Amazon + Proposta PDE = Amazon Cedola) ──
   const [showProposteUpload, setShowProposteUpload] = useState(false);
+  const [proposteDragOver, setProposteDragOver] = useState(false);
   const [proposteParseResult, setProposteParseResult] = useState(null);
   const [proposteProcessing, setProposteProcessing] = useState(false);
 
@@ -3003,6 +3004,14 @@ function ModuloVerificaLanciAmazon({ token, titoli, prenotato, canali }) {
     e.target.value = "";
   };
 
+  const handleProposteDrop = async (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setProposteDragOver(false);
+    const file = e.dataTransfer.files?.[0];
+    await processProposteFile(file);
+  };
+
   const proposteByEan = useMemo(() => {
     const map = {};
     (proposteParseResult || []).forEach(r => { map[r.ean] = r; });
@@ -3042,13 +3051,14 @@ function ModuloVerificaLanciAmazon({ token, titoli, prenotato, canali }) {
   const [showPreorderUpload, setShowPreorderUpload] = useState(false);
   const [preorderParseResult, setPreorderParseResult] = useState(null);
   const [preorderProcessing, setPreorderProcessing] = useState(false);
+  const [preorderDragOver, setPreorderDragOver] = useState(false);
 
   const parsePreorderFile = (text) => {
     const lines = text.replace(/^\uFEFF/, "").split(/\r?\n/).filter(l => l.trim() !== "");
     if (lines.length < 2) return [];
     const headers = lines[0].split("\t").map(h => h.trim().toLowerCase());
     const idxEan = headers.indexOf("ean");
-    const idxPreorder = headers.indexOf("ordini_aperti");
+    const idxPreorder = headers.indexOf("storico_ordini");
     if (idxEan === -1 || idxPreorder === -1) return [];
     const out = [];
     for (let i = 1; i < lines.length; i++) {
@@ -3070,7 +3080,7 @@ function ModuloVerificaLanciAmazon({ token, titoli, prenotato, canali }) {
       text = new TextDecoder("utf-16le").decode(buf);
       rows = parsePreorderFile(text);
     }
-    if (rows.length === 0) showToast("Nessuna riga riconosciuta nel file caricato (colonne 'ean' e 'ordini_aperti' attese)", "err");
+    if (rows.length === 0) showToast("Nessuna riga riconosciuta nel file caricato (colonne 'ean' e 'storico_ordini' attese)", "err");
     setPreorderParseResult(rows);
   };
 
@@ -3078,6 +3088,14 @@ function ModuloVerificaLanciAmazon({ token, titoli, prenotato, canali }) {
     const file = e.target.files?.[0];
     await processPreorderFile(file);
     e.target.value = "";
+  };
+
+  const handlePreorderDrop = async (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setPreorderDragOver(false);
+    const file = e.dataTransfer.files?.[0];
+    await processPreorderFile(file);
   };
 
   const preorderByEan = useMemo(() => {
@@ -3212,6 +3230,7 @@ function ModuloVerificaLanciAmazon({ token, titoli, prenotato, canali }) {
   };
 
   const exportExcel = () => {
+    const XLSX = window.XLSX;
     const vRows = dataVerifica.map(r => [
       r.ean, r.titolo, r.autore, r.editore, r.prezzo, r.vE, r.vF,
       r.vG ?? "", r.vH ?? "", r.vI ?? "", r.vJ ?? "", r.vPren ?? "", r.vImp ?? "", r.vK ?? "", r.vL ?? "", r.vM ?? "",
@@ -3445,9 +3464,19 @@ function ModuloVerificaLanciAmazon({ token, titoli, prenotato, canali }) {
                 Carica il file Excel della <b>prima proposta</b> (colonne EAN e Proposta Amazon). Aggiorna <b>Proposta Amaz</b> solo sui titoli con quantità nel file. <b>Proposta PDE</b> viene sempre riportata a Amazon Cedola per i titoli presenti nel file; se la Proposta Amaz differisce da Amazon Cedola, il numero in Proposta PDE viene evidenziato in rosso. Ogni caricamento sovrascrive i dati esistenti.
               </div>
               <div style={{ display: "flex", gap: 10, alignItems: "flex-start", flexWrap: "wrap" }}>
-                <label style={{ ...css.btn(), cursor: "pointer", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", width: 200, minHeight: 70, border: `2px dashed ${T.borderHi}`, background: T.surface, textAlign: "center", padding: "8px" }}>
-                  <span>Scegli file Excel</span>
-                  <span style={{ fontSize: "10px", color: T.textDim, marginTop: 3 }}>.xlsx</span>
+                <label
+                  style={{
+                    ...css.btn(proposteDragOver ? "accent" : undefined),
+                    cursor: "pointer", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center",
+                    width: 200, minHeight: 70, border: `2px dashed ${proposteDragOver ? T.accent : T.borderHi}`,
+                    background: proposteDragOver ? T.accent + "18" : T.surface, textAlign: "center", padding: "8px",
+                  }}
+                  onDragOver={e => { e.preventDefault(); e.stopPropagation(); setProposteDragOver(true); }}
+                  onDragLeave={e => { e.preventDefault(); e.stopPropagation(); setProposteDragOver(false); }}
+                  onDrop={handleProposteDrop}
+                >
+                  <span>↑ Trascina qui il file Excel</span>
+                  <span style={{ fontSize: "10px", color: T.textDim, marginTop: 3 }}>oppure clicca per sceglierlo (.xlsx)</span>
                   <input type="file" accept=".xlsx,.xls" style={{ display: "none" }} onChange={handleProposteFile} />
                 </label>
                 <button style={{ ...css.btn(), alignSelf: "flex-start" }} onClick={() => setShowProposteUpload(false)}>Annulla</button>
@@ -3475,12 +3504,22 @@ function ModuloVerificaLanciAmazon({ token, titoli, prenotato, canali }) {
           {!preorderParseResult ? (
             <>
               <div style={{ fontSize: "12px", color: T.textMid, marginBottom: 10 }}>
-                Carica il file <b>.txt</b> dei preorder (colonne <code>ean</code> e <code>ordini_aperti</code>). Aggiorna <b>Preorder</b> solo sui titoli con quantità &gt; 0. Nota: sto usando la colonna "ordini_aperti" del file come valore di preorder — dimmi se intendevi un'altra colonna.
+                Carica il file <b>.txt</b> dei preorder (colonne <code>ean</code> e <code>storico_ordini</code>). Aggiorna <b>Preorder</b> solo sui titoli con quantità &gt; 0.
               </div>
               <div style={{ display: "flex", gap: 10, alignItems: "flex-start", flexWrap: "wrap" }}>
-                <label style={{ ...css.btn(), cursor: "pointer", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", width: 200, minHeight: 70, border: `2px dashed ${T.borderHi}`, background: T.surface, textAlign: "center", padding: "8px" }}>
-                  <span>Scegli file .txt</span>
-                  <span style={{ fontSize: "10px", color: T.textDim, marginTop: 3 }}>tab-delimited</span>
+                <label
+                  style={{
+                    ...css.btn(preorderDragOver ? "accent" : undefined),
+                    cursor: "pointer", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center",
+                    width: 200, minHeight: 70, border: `2px dashed ${preorderDragOver ? T.accent : T.borderHi}`,
+                    background: preorderDragOver ? T.accent + "18" : T.surface, textAlign: "center", padding: "8px",
+                  }}
+                  onDragOver={e => { e.preventDefault(); e.stopPropagation(); setPreorderDragOver(true); }}
+                  onDragLeave={e => { e.preventDefault(); e.stopPropagation(); setPreorderDragOver(false); }}
+                  onDrop={handlePreorderDrop}
+                >
+                  <span>↑ Trascina qui il file .txt</span>
+                  <span style={{ fontSize: "10px", color: T.textDim, marginTop: 3 }}>oppure clicca per sceglierlo (tab-delimited)</span>
                   <input type="file" accept=".txt,.csv" style={{ display: "none" }} onChange={handlePreorderFile} />
                 </label>
                 <button style={{ ...css.btn(), alignSelf: "flex-start" }} onClick={() => setShowPreorderUpload(false)}>Annulla</button>
