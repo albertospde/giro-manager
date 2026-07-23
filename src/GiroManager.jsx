@@ -2920,30 +2920,70 @@ function ModuloVerificaLanciAmazon({ token, titoli, prenotato, canali }) {
   const [ordiniProcessing, setOrdiniProcessing] = useState(false);
   const [ordiniDragOver, setOrdiniDragOver] = useState(false);
 
+  // Gestisce sia "26,00" (virgola decimale, nuovo formato) sia "1.234" (punto migliaia, vecchio formato)
   const parseNumIt = (s) => {
     if (s == null || s === "") return 0;
-    const n = parseInt(String(s).trim().replace(/\./g, ""), 10);
-    return isNaN(n) ? 0 : n;
+    let str = String(s).trim();
+    if (str === "") return 0;
+    str = str.replace(/\.(?=\d{3}(?:\D|$))/g, "").replace(",", ".");
+    const n = parseFloat(str);
+    return isNaN(n) ? 0 : Math.round(n);
   };
 
-  // Estrae e aggrega per EAN le colonne Copie/Prenotato/Impegnato/Evaso dal file "Dettaglio cliente" (righe = righe ordine, un EAN può ripetersi su più righe/ordini)
+  // Parser CSV con supporto campi tra virgolette (gestisce "" come escape e delimitatore dentro le virgolette)
+  const parseCsvLine = (line, delim) => {
+    const out = [];
+    let cur = "";
+    let inQuotes = false;
+    for (let i = 0; i < line.length; i++) {
+      const c = line[i];
+      if (inQuotes) {
+        if (c === '"') {
+          if (line[i + 1] === '"') { cur += '"'; i++; }
+          else inQuotes = false;
+        } else cur += c;
+      } else {
+        if (c === '"') inQuotes = true;
+        else if (c === delim) { out.push(cur); cur = ""; }
+        else cur += c;
+      }
+    }
+    out.push(cur);
+    return out;
+  };
+
+  // Estrae e aggrega per EAN le colonne Copie/Prenotato/Impegnato/Evaso.
+  // Riconosce sia il nuovo formato MeLi-PortafoglioOrdini-Riepilogo (.csv, delimitatore ";", UTF-8, campi tra virgolette)
+  // sia il vecchio formato "Dettaglio cliente" (tab-delimited, UTF-16LE), individuando le colonne dall'header.
   const parseOrdiniAmazon = (text) => {
     const lines = text.replace(/^\uFEFF/, "").split(/\r?\n/).filter(l => l.trim() !== "");
     if (lines.length < 2) return [];
+    const delim = lines[0].includes(";") ? ";" : "\t";
+    const headers = parseCsvLine(lines[0], delim).map(h => h.trim().toLowerCase());
+    const findCol = (...names) => headers.findIndex(h => names.some(n => h.includes(n)));
+    const cOrdine = findCol("n. ordine", "n.ordine", "ordine");
+    const cEan = findCol("ean");
+    const cTitolo = findCol("titolo");
+    const cCopie = findCol("copie");
+    const cPren = findCol("prenotato");
+    const cImp = findCol("impegnato");
+    const cEvaso = findCol("evaso");
+    if (cEan < 0 || cCopie < 0) return [];
     const agg = {};
     for (let i = 1; i < lines.length; i++) {
-      const cols = lines[i].split("\t");
-      if (cols.length < 13) continue;
-      const ordine = (cols[0] || "").trim();
-      if (!ordine || /^totale/i.test(ordine)) continue; // salta riga "Totale complessivo"
-      const ean = (cols[2] || "").trim();
+      const cols = parseCsvLine(lines[i], delim);
+      if (cOrdine >= 0) {
+        const ordine = (cols[cOrdine] || "").trim();
+        if (!ordine || /^totale/i.test(ordine)) continue; // salta eventuale riga "Totale complessivo"
+      }
+      const ean = (cols[cEan] || "").trim();
       if (!/^\d{9,14}$/.test(ean)) continue;
-      const titolo = (cols[3] || "").trim();
+      const titolo = cTitolo >= 0 ? (cols[cTitolo] || "").trim() : "";
       if (!agg[ean]) agg[ean] = { ean, titolo, copie: 0, prenotato: 0, impegnato: 0, evaso: 0 };
-      agg[ean].copie += parseNumIt(cols[9]);
-      agg[ean].prenotato += parseNumIt(cols[10]);
-      agg[ean].impegnato += parseNumIt(cols[11]);
-      agg[ean].evaso += parseNumIt(cols[12]);
+      agg[ean].copie += parseNumIt(cols[cCopie]);
+      if (cPren >= 0) agg[ean].prenotato += parseNumIt(cols[cPren]);
+      if (cImp >= 0) agg[ean].impegnato += parseNumIt(cols[cImp]);
+      if (cEvaso >= 0) agg[ean].evaso += parseNumIt(cols[cEvaso]);
       if (titolo) agg[ean].titolo = titolo;
     }
     return Object.values(agg);
@@ -2952,10 +2992,10 @@ function ModuloVerificaLanciAmazon({ token, titoli, prenotato, canali }) {
   const processOrdiniFile = async (file) => {
     if (!file) return;
     const buf = await file.arrayBuffer();
-    let text = new TextDecoder("utf-16le").decode(buf);
+    let text = new TextDecoder("utf-8").decode(buf);
     let rows = parseOrdiniAmazon(text);
     if (rows.length === 0) {
-      text = new TextDecoder("utf-8").decode(buf);
+      text = new TextDecoder("utf-16le").decode(buf);
       rows = parseOrdiniAmazon(text);
     }
     if (rows.length === 0) showToast("Nessuna riga riconosciuta nel file caricato", "err");
@@ -3452,7 +3492,7 @@ function ModuloVerificaLanciAmazon({ token, titoli, prenotato, canali }) {
           {!ordiniParseResult ? (
             <>
               <div style={{ fontSize: "12px", color: T.textMid, marginBottom: 10 }}>
-                Carica il file <b>Dettaglio cliente</b> (export ordini Amazon). Le righe vengono aggregate per EAN e aggiornano <b>Copie</b>, <b>Prenotato</b>, <b>Impegnato</b> ed <b>Evaso</b>. Solo i titoli presenti nel file e nel lancio selezionato vengono toccati; gli altri restano invariati. Ogni caricamento sovrascrive i valori esistenti per i titoli coinvolti.
+                Carica il file <b>Riepilogo Portafoglio Ordini</b> (export ordini Amazon). Le righe vengono aggregate per EAN e aggiornano <b>Copie</b>, <b>Prenotato</b>, <b>Impegnato</b> ed <b>Evaso</b>. Solo i titoli presenti nel file e nel lancio selezionato vengono toccati; gli altri restano invariati. Ogni caricamento sovrascrive i valori esistenti per i titoli coinvolti.
               </div>
               <div style={{ display: "flex", gap: 10, alignItems: "flex-start", flexWrap: "wrap" }}>
                 <label
