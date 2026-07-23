@@ -3687,201 +3687,133 @@ function ModuloVerificaLanciAmazon({ token, titoli, prenotato, canali }) {
   );
 }
 
-// ─── MODULO VERIFICA ORDINI ────────────────────────────────────────────────
-function ModuloVerificaOrdini({ token }) {
-  const [lanciData, setLanciData] = useState([]);
-  const [loadingLanci, setLoadingLanci] = useState(true);
-  const [filterAnno, setFilterAnno] = useState(null);
-  const [filterLancio, setFilterLancio] = useState(null);
-  const [fileRiepilogo, setFileRiepilogo] = useState(null); // col B=numOrdine, col I=codiceCliente
-  const [fileDettaglio, setFileDettaglio] = useState(null); // col A=numOrdine, col C=EAN
-  const [result, setResult] = useState(null);
-  const [processing, setProcessing] = useState(false);
+// ─── MODULO ANTICIPI LANCIO ────────────────────────────────────────────────
+function ModuloAnticipiLancio({ token, userEmail }) {
+  const [data, setData] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [template, setTemplate] = useState(null);
+  const [filterStato, setFilterStato] = useState("attivi"); // attivi | da_gestire | notificato | gestito | tutti
+  const [search, setSearch] = useState("");
+  const [selected, setSelected] = useState(new Set());
+  const [showForm, setShowForm] = useState(false);
+  const [saving, setSaving] = useState(false);
   const [toast, setToast] = useState(null);
-  const showToast = (msg, type = "ok") => { setToast({ msg, type }); setTimeout(() => setToast(null), 4000); };
+  const emptyForm = { codice_cliente: "", ean: "", quantita: "", sconto_occasionale: "", pagamento_occasionale: "", numero_ordine: "", note: "" };
+  const [form, setForm] = useState(emptyForm);
 
-  // Carica anni/lanci disponibili da lanci_settimanali
+  const showToast = (msg, type = "ok") => { setToast({ msg, type }); setTimeout(() => setToast(null), 3500); };
+
+  const loadData = useCallback(() => {
+    if (!token) return;
+    setLoading(true);
+    sbFetch("novita_fuori_lancio?select=*,lanci_settimanali(num_lancio,anno_lancio,titolo,editore)&order=created_at.desc", token).then(d => {
+      setData(Array.isArray(d) ? d : []);
+      setLoading(false);
+    });
+  }, [token]);
+  useEffect(() => { loadData(); }, [loadData]);
+
   useEffect(() => {
     if (!token) return;
-    sbFetch("lanci_settimanali?select=anno_lancio,num_lancio&order=anno_lancio.desc,num_lancio.desc", token)
-      .then(d => {
-        if (Array.isArray(d)) setLanciData(d);
-        setLoadingLanci(false);
-      });
+    sbFetch("mail_templates?select=*&key=eq.anticipo_lancio", token).then(d => { if (Array.isArray(d) && d[0]) setTemplate(d[0]); });
   }, [token]);
 
-  const anniDisp = useMemo(() => [...new Set(lanciData.map(r => r.anno_lancio))].sort((a, b) => b - a), [lanciData]);
-  const lanciPerAnno = useMemo(() => {
-    const anno = filterAnno || anniDisp[0];
-    if (!anno) return [];
-    return [...new Set(lanciData.filter(r => r.anno_lancio === anno).map(r => r.num_lancio))].sort((a, b) => b - a);
-  }, [lanciData, filterAnno, anniDisp]);
-
-  useEffect(() => { if (!filterAnno && anniDisp.length > 0) setFilterAnno(anniDisp[0]); }, [anniDisp]);
-  useEffect(() => { if (filterLancio === null && lanciPerAnno.length > 0) setFilterLancio(lanciPerAnno[0]); }, [lanciPerAnno]);
-
-  // Legge file xlsx o CSV UTF-16 (export Meli) → array di array
-  // Usa TextDecoder utf-16 + SheetJS per parsing robusto
-  const leggiExcel = (file) => new Promise((resolve, reject) => {
-    const reader = new FileReader();
-    reader.onload = (e) => {
-      try {
-        const XLSX = window.XLSX;
-        const isCsv = file.name.toLowerCase().endsWith(".csv");
-        if (isCsv) {
-          // Decodifica UTF-16 LE con BOM → stringa → SheetJS
-          const testo = new TextDecoder("utf-16").decode(e.target.result);
-          const wb = XLSX.read(testo, { type: "string", FS: "\t" });
-          const ws = wb.Sheets[wb.SheetNames[0]];
-          resolve(XLSX.utils.sheet_to_json(ws, { header: 1, defval: "" }));
-        } else {
-          const wb = XLSX.read(e.target.result, { type: "array" });
-          const ws = wb.Sheets[wb.SheetNames[0]];
-          resolve(XLSX.utils.sheet_to_json(ws, { header: 1, defval: "" }));
-        }
-      } catch (err) { reject(err); }
+  const salvaNuovo = async () => {
+    if (!form.codice_cliente.trim() || !form.ean.trim() || !form.quantita) {
+      showToast("Codice cliente, EAN e quantità sono obbligatori", "err"); return;
+    }
+    setSaving(true);
+    const payload = {
+      codice_cliente: form.codice_cliente.trim(),
+      ean: form.ean.trim(),
+      quantita: parseInt(form.quantita, 10) || 0,
+      sconto_occasionale: form.sconto_occasionale ? parseFloat(String(form.sconto_occasionale).replace(",", ".")) : null,
+      pagamento_occasionale: form.pagamento_occasionale.trim() || null,
+      numero_ordine: form.numero_ordine.trim() || null,
+      note: form.note.trim() || null,
+      creato_da: userEmail || null,
     };
-    reader.onerror = reject;
-    reader.readAsArrayBuffer(file);
-  });
-
-  const normalizzaEan = (v) => String(v || "").replace(/\.0$/, "").trim();
-  // Rimuove zeri iniziali per confronto uniforme (es. "0002594419" → "2594419")
-  const normalizzaCodice = (v) => String(v || "").trim().replace(/^0+/, "") || "0";
-
-  const esegui = async () => {
-    if (!filterLancio || !fileRiepilogo || !fileDettaglio) {
-      showToast("Seleziona lancio e carica entrambi i file", "err"); return;
+    const r = await fetch(`${SUPABASE_URL}/rest/v1/novita_fuori_lancio`, {
+      method: "POST",
+      headers: { "apikey": SUPABASE_KEY, "Authorization": `Bearer ${token}`, "Content-Type": "application/json", "Prefer": "return=representation" },
+      body: JSON.stringify([payload]),
+    });
+    if (r.ok) {
+      showToast("Anticipo lancio aggiunto");
+      setShowForm(false);
+      setForm(emptyForm);
+      loadData();
+    } else {
+      showToast("Errore nel salvataggio: " + await r.text(), "err");
     }
-    setProcessing(true); setResult(null);
-    try {
-      const anno = filterAnno || anniDisp[0];
-
-      // 1. Fetch pianificazione visite da prenotato_clienti per i titoli del lancio selezionato
-      //    Join con titoli per ottenere EAN, filtro su num_lancio e anno_lancio via titoli→lanci_settimanali
-      //    Strategia: prendo gli EAN del lancio da lanci_settimanali, poi filtro prenotato_clienti per titolo_id
-      const lanciRows = await sbFetch(
-        `lanci_settimanali?select=ean&anno_lancio=eq.${anno}&num_lancio=eq.${filterLancio}`,
-        token
-      );
-      if (!Array.isArray(lanciRows) || lanciRows.length === 0) {
-        showToast("Nessun titolo trovato per il lancio selezionato", "err");
-        setProcessing(false); return;
-      }
-
-      // 1. Prendo EAN e titolo_id dal lancio selezionato
-      const eanLancio = new Set(lanciRows.map(r => normalizzaEan(r.ean)).filter(e => e.length >= 8));
-
-      // Recupero titolo_id corrispondenti agli EAN del lancio dalla tabella titoli
-      const titoliLancio = await sbFetch(
-        `titoli?select=id,ean&ean=in.(${[...eanLancio].map(e => `"${e}"`).join(",")})`,
-        token
-      );
-      if (!Array.isArray(titoliLancio) || titoliLancio.length === 0) {
-        showToast("EAN del lancio non trovati in tabella titoli", "err");
-        setProcessing(false); return;
-      }
-
-      // Mappa titolo_id → ean
-      const titIdToEan = {};
-      titoliLancio.forEach(t => { titIdToEan[t.id] = normalizzaEan(t.ean); });
-      const titoloIds = Object.keys(titIdToEan).join(",");
-
-      // 2. Fetch prenotato_clienti filtrato per titolo_id del lancio
-      const pianificazione = await sbFetch(
-        `prenotato_clienti?select=codice_cliente,nome_cliente,quantita,sconto_occasionale,pagamento_occasionale,num_ordine_cliente,titolo_id&titolo_id=in.(${titoloIds})&order=codice_cliente.asc`,
-        token
-      );
-      if (!Array.isArray(pianificazione)) {
-        showToast("Errore lettura pianificazione visite", "err");
-        setProcessing(false); return;
-      }
-
-      // Aggiungo EAN a ogni riga
-      const pianLancio = pianificazione.map(r => ({ ...r, ean: titIdToEan[r.titolo_id] || "" })).filter(r => r.ean);
-
-      if (pianLancio.length === 0) {
-        showToast("Nessuna riga in pianificazione visite per questo lancio. Hai ricaricato il file dopo l'aggiornamento Supabase?", "err");
-        setProcessing(false); return;
-      }
-
-      // Set di coppie pianificate: "codiceCliente__EAN"
-      const pianSet = new Map(); // key → record pianificazione
-      pianLancio.forEach(r => {
-        const key = `${normalizzaCodice(r.codice_cliente)}__${r.ean}`;
-        if (!pianSet.has(key)) pianSet.set(key, r);
-      });
-
-      // 3. Leggi file riepilogo: col B (idx 1) = numOrdine, col I (idx 8) = codiceCliente
-      const rowsRiepilogo = await leggiExcel(fileRiepilogo);
-      // Trova header row (riga con "ordine" o simile)
-      let hIdxR = 0;
-      for (let i = 0; i < Math.min(rowsRiepilogo.length, 10); i++) {
-        const r = rowsRiepilogo[i];
-        if (r && r.some(c => String(c).toLowerCase().includes("ordine") || String(c).toLowerCase().includes("cliente"))) {
-          hIdxR = i; break;
-        }
-      }
-      // numOrdine→codiceCliente
-      const ordineToCliente = {};
-      for (const row of rowsRiepilogo.slice(hIdxR + 1)) {
-        if (!row || row.length < 9) continue;
-        const numOrdine = String(row[1] || "").trim().replace(/\s/g, "");
-        const codCliente = normalizzaCodice(row[8]);
-        // Salta righe totale o senza dati validi
-        if (!numOrdine || numOrdine.toLowerCase().includes("totale")) continue;
-        if (!codCliente || codCliente.toLowerCase().includes("totale")) continue;
-        ordineToCliente[numOrdine] = codCliente;
-      }
-
-      // 4. Leggi file dettaglio: col A (idx 0) = numOrdine, col C (idx 2) = EAN
-      const rowsDettaglio = await leggiExcel(fileDettaglio);
-      let hIdxD = 0;
-      for (let i = 0; i < Math.min(rowsDettaglio.length, 10); i++) {
-        const r = rowsDettaglio[i];
-        if (r && r.some(c => String(c).toLowerCase().includes("ordine") || String(c).toLowerCase().includes("ean"))) {
-          hIdxD = i; break;
-        }
-      }
-
-      // Set coppie già ordinate: "codiceCliente__EAN"
-      const ordinatiSet = new Set();
-      for (const row of rowsDettaglio.slice(hIdxD + 1)) {
-        if (!row || row.length < 3) continue;
-        const numOrdine = String(row[0] || "").trim().replace(/\s/g, "");
-        if (!numOrdine || numOrdine.toLowerCase().includes("totale")) continue;
-        const ean = normalizzaEan(row[2]);
-        if (ean.length < 8) continue;
-        const codCliente = ordineToCliente[numOrdine];
-        if (codCliente) ordinatiSet.add(`${codCliente}__${ean}`);
-      }
-
-      // 5. Differenza: pianificati ma non ordinati
-      const mancanti = [];
-      const presenti = [];
-      // Debug temporaneo: apri la console del browser per verificare i valori confrontati
-      console.log("[VO] pianSet sample:", [...pianSet.entries()].slice(0, 3));
-      console.log("[VO] ordinatiSet sample:", [...ordinatiSet].slice(0, 3));
-      console.log("[VO] ordineToCliente sample:", Object.entries(ordineToCliente).slice(0, 3));
-      pianSet.forEach((r, key) => {
-        if (ordinatiSet.has(key)) presenti.push(r);
-        else mancanti.push(r);
-      });
-
-      setResult({ mancanti, presenti, totPian: pianSet.size, eanLancio: [...eanLancio] });
-      showToast(`Analisi completata: ${mancanti.length} righe mancanti su ${pianSet.size}`);
-    } catch (err) {
-      showToast(err.message, "err");
-    }
-    setProcessing(false);
+    setSaving(false);
   };
 
-  // Genera file Excel di rifornimento nel formato template
-  const exportRifornimento = () => {
-    if (!result || result.mancanti.length === 0) return;
-    const XLSX = window.XLSX;
+  const segnaGestito = async (id) => {
+    const r = await fetch(`${SUPABASE_URL}/rest/v1/novita_fuori_lancio?id=eq.${id}`, {
+      method: "PATCH",
+      headers: { "apikey": SUPABASE_KEY, "Authorization": `Bearer ${token}`, "Content-Type": "application/json", "Prefer": "return=minimal" },
+      body: JSON.stringify({ stato: "gestito", gestito_at: new Date().toISOString() }),
+    });
+    if (r.ok) {
+      setData(prev => prev.map(x => x.id === id ? { ...x, stato: "gestito", gestito_at: new Date().toISOString() } : x));
+      showToast("Ordine segnato come gestito");
+    } else showToast("Errore aggiornamento stato", "err");
+  };
 
-    // Riga header uguale al template
+  const riapri = async (id) => {
+    const r = await fetch(`${SUPABASE_URL}/rest/v1/novita_fuori_lancio?id=eq.${id}`, {
+      method: "PATCH",
+      headers: { "apikey": SUPABASE_KEY, "Authorization": `Bearer ${token}`, "Content-Type": "application/json", "Prefer": "return=minimal" },
+      body: JSON.stringify({ stato: "da_gestire", gestito_at: null }),
+    });
+    if (r.ok) { setData(prev => prev.map(x => x.id === id ? { ...x, stato: "da_gestire", gestito_at: null } : x)); showToast("Riaperto"); }
+  };
+
+  const eliminaRiga = async (id) => {
+    if (!confirm("Eliminare questa riga?")) return;
+    const r = await fetch(`${SUPABASE_URL}/rest/v1/novita_fuori_lancio?id=eq.${id}`, {
+      method: "DELETE",
+      headers: { "apikey": SUPABASE_KEY, "Authorization": `Bearer ${token}` },
+    });
+    if (r.ok) { setData(prev => prev.filter(x => x.id !== id)); showToast("Riga eliminata"); }
+  };
+
+  const dataFiltrata = useMemo(() => {
+    let result = [...data];
+    if (filterStato === "attivi") result = result.filter(r => r.stato !== "gestito");
+    else if (filterStato !== "tutti") result = result.filter(r => r.stato === filterStato);
+    if (search) {
+      const q = search.toLowerCase();
+      result = result.filter(r => r.codice_cliente?.toLowerCase().includes(q) || r.ean?.includes(q) || r.numero_ordine?.toLowerCase().includes(q));
+    }
+    return result;
+  }, [data, filterStato, search]);
+
+  const counts = useMemo(() => ({
+    da_gestire: data.filter(r => r.stato === "da_gestire").length,
+    notificato: data.filter(r => r.stato === "notificato").length,
+    gestito: data.filter(r => r.stato === "gestito").length,
+  }), [data]);
+
+  const toggleSelect = (id) => setSelected(prev => { const n = new Set(prev); n.has(id) ? n.delete(id) : n.add(id); return n; });
+
+  const creaMail = (row) => {
+    if (!template) { showToast("Template mail non disponibile", "err"); return; }
+    const lancioLabel = row.lanci_settimanali ? `${row.lanci_settimanali.num_lancio}/${row.lanci_settimanali.anno_lancio}` : "(non ancora lanciato)";
+    const corpo = (template.corpo || "")
+      .replaceAll("{cliente}", row.codice_cliente)
+      .replaceAll("{lancio}", lancioLabel)
+      .replaceAll("{ean}", row.ean);
+    const subject = encodeURIComponent(template.oggetto || "Anticipo lancio");
+    const body = encodeURIComponent(corpo);
+    window.location.href = `mailto:?subject=${subject}&body=${body}`;
+  };
+
+  const exportMessaggerie = () => {
+    const righe = selected.size > 0 ? dataFiltrata.filter(r => selected.has(r.id)) : dataFiltrata.filter(r => r.stato !== "gestito");
+    if (righe.length === 0) { showToast("Nessuna riga da esportare", "err"); return; }
+    const XLSX = window.XLSX;
     const header = [
       "Cod. cliente \n(max 10 caratteri)",
       "Tipo ordine \n(vd elenco)                                      ",
@@ -3902,166 +3834,123 @@ function ModuloVerificaOrdini({ token }) {
       "Nuovo destinatario - Provincia",
       "Nuovo destinatario - Nazione"
     ];
-
-    const righe = result.mancanti.map(r => [
-      r.codice_cliente,                                          // A - Cod. cliente
-      "Rifornimento",                                            // B - Tipo ordine
-      "",                                                        // C - Cod. campagna
-      r.ean,                                                     // D - EAN
-      r.quantita,                                                // E - Copie
-      r.sconto_occasionale > 0 ? r.sconto_occasionale : "",     // F - Sovrasc. occas.
-      r.pagamento_occasionale || "",                             // G - Pag. occas.
-      r.num_ordine_cliente || "",                                // H - N. ord. Cliente
-      "", "", "", "", "", "", "", "", "", ""                     // I..R - vuote
+    const rows = righe.map(r => [
+      r.codice_cliente, "Anticipo lancio", "", r.ean, r.quantita,
+      r.sconto_occasionale > 0 ? r.sconto_occasionale : "",
+      r.pagamento_occasionale || "",
+      r.numero_ordine || "",
+      "", "", "", "", "", "", "", "", "", ""
     ]);
-
-    const ws = XLSX.utils.aoa_to_sheet([header, ...righe]);
-    // Larghezze colonne
+    const ws = XLSX.utils.aoa_to_sheet([header, ...rows]);
     ws["!cols"] = [10,15,10,14,8,12,12,20,10,20,15,30,25,25,20,8,8,8].map(w => ({ wch: w }));
     const wb = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(wb, ws, "Ordini");
-    XLSX.writeFile(wb, `Rifornimento_Lancio${filterLancio}_${filterAnno || ""}.xlsx`);
+    XLSX.writeFile(wb, `Anticipi_Lancio_${new Date().toISOString().slice(0,10)}.xlsx`);
   };
 
-  if (loadingLanci) return (
-    <div style={{ flex: 1, display: "flex", alignItems: "center", justifyContent: "center", color: T.textMid }}>
-      Caricamento lanci...
-    </div>
-  );
-
-  const anno = filterAnno || anniDisp[0];
+  if (loading) return <div style={{ flex: 1, display: "flex", alignItems: "center", justifyContent: "center", color: T.textMid }}>Caricamento...</div>;
 
   return (
     <div style={{ display: "flex", flexDirection: "column", height: "100%", overflow: "hidden" }}>
+      {/* MODAL NUOVO ANTICIPO */}
+      {showForm && (
+        <div style={{ position: "fixed", inset: 0, background: "#000a", zIndex: 200, display: "flex", alignItems: "center", justifyContent: "center" }} onClick={() => setShowForm(false)}>
+          <div style={{ background: T.surface, border: `1px solid ${T.borderHi}`, borderRadius: 6, padding: 28, width: 460 }} onClick={e => e.stopPropagation()}>
+            <div style={{ color: T.accent, fontWeight: "700", fontSize: "13px", marginBottom: 20 }}>NUOVO ANTICIPO LANCIO</div>
+            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
+              {[
+                ["codice_cliente", "Codice/i cliente *", "full"],
+                ["ean", "EAN *"], ["quantita", "Quantità *"],
+                ["sconto_occasionale", "Sconto occasionale (%)"], ["pagamento_occasionale", "Pagamento occasionale"],
+                ["numero_ordine", "N° ordine", "full"],
+              ].map(([k, label, span]) => (
+                <div key={k} style={span === "full" ? { gridColumn: "1/-1" } : {}}>
+                  <label style={{ color: T.textMid, fontSize: "10px", textTransform: "uppercase", letterSpacing: "0.08em", display: "block", marginBottom: 4 }}>{label}</label>
+                  <input style={{ ...css.input, width: "100%", boxSizing: "border-box" }} value={form[k]} onChange={e => setForm(f => ({ ...f, [k]: e.target.value }))} placeholder={k === "codice_cliente" ? "es. 12345, 67890" : ""} />
+                </div>
+              ))}
+            </div>
+            <div style={{ marginTop: 12 }}>
+              <label style={{ color: T.textMid, fontSize: "10px", textTransform: "uppercase", letterSpacing: "0.08em", display: "block", marginBottom: 4 }}>Note</label>
+              <textarea style={{ ...css.input, width: "100%", boxSizing: "border-box", height: 60, resize: "vertical" }} value={form.note} onChange={e => setForm(f => ({ ...f, note: e.target.value }))} />
+            </div>
+            <div style={{ display: "flex", justifyContent: "flex-end", gap: 8, marginTop: 20 }}>
+              <button style={css.btn()} onClick={() => setShowForm(false)}>Annulla</button>
+              <button style={css.btn("accent")} onClick={salvaNuovo} disabled={saving}>{saving ? "Salvataggio..." : "Aggiungi"}</button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* TOOLBAR */}
-      <div style={{ padding: "14px 20px", borderBottom: `1px solid ${T.border}`, display: "flex", gap: 12, alignItems: "center", flexWrap: "wrap" }}>
-        <select style={{ ...css.input, fontSize: "13px", fontWeight: "600", color: T.accent }}
-          value={anno || ""} onChange={e => { setFilterAnno(Number(e.target.value)); setFilterLancio(null); setResult(null); }}>
-          {anniDisp.map(a => <option key={a} value={a}>{a}</option>)}
-        </select>
-        <select style={{ ...css.input, fontSize: "13px", fontWeight: "600" }}
-          value={filterLancio ?? ""} onChange={e => { setFilterLancio(Number(e.target.value)); setResult(null); }}>
-          {lanciPerAnno.map(n => <option key={n} value={n}>Lancio {n}</option>)}
-        </select>
-        {result && result.mancanti.length > 0 && (
-          <button style={{ ...css.btn("accent"), marginLeft: "auto", fontSize: "12px" }} onClick={exportRifornimento}>
-            ↓ Scarica Rifornimento
-          </button>
-        )}
+      <div style={{ padding: "14px 20px", borderBottom: `1px solid ${T.border}`, display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap" }}>
+        {[["attivi","Attivi"],["da_gestire","Da gestire"],["notificato","Notificato"],["gestito","Gestiti"],["tutti","Tutti"]].map(([k, label]) => (
+          <button key={k} style={css.btn(filterStato === k ? "accent" : "default")} onClick={() => setFilterStato(k)}>{label}</button>
+        ))}
+        <input style={{ ...css.input, width: 200 }} placeholder="Cerca cliente / EAN / ordine..." value={search} onChange={e => setSearch(e.target.value)} />
+        <div style={{ marginLeft: "auto", display: "flex", gap: 8 }}>
+          <button style={css.btn()} onClick={exportMessaggerie}>↓ Export Messaggerie{selected.size > 0 ? ` (${selected.size})` : ""}</button>
+          <button style={{ ...css.btn(), borderColor: T.green, color: T.green }} onClick={() => setShowForm(true)}>+ Nuovo</button>
+        </div>
       </div>
 
-      {/* BODY */}
-      <div style={{ flex: 1, overflowY: "auto", padding: "20px 24px", display: "flex", flexDirection: "column", gap: 20 }}>
+      {/* KPI */}
+      <div style={{ padding: "14px 20px", borderBottom: `1px solid ${T.border}`, display: "flex", gap: 12 }}>
+        <KpiCard label="Da gestire" value={counts.da_gestire} color={T.textMid} />
+        <KpiCard label="🔔 Notificati" value={counts.notificato} color="#e8a838" />
+        <KpiCard label="Gestiti" value={counts.gestito} color={T.green} />
+      </div>
 
-        {/* Upload files */}
-        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16 }}>
-          {/* File Riepilogo */}
-          <div style={{ background: T.surface, border: `1px solid ${fileRiepilogo ? T.green : T.border}`, borderRadius: 8, padding: 16 }}>
-            <div style={{ color: T.textMid, fontSize: "11px", letterSpacing: "0.1em", textTransform: "uppercase", marginBottom: 6 }}>
-              File Riepilogo Cliente
-            </div>
-            <div style={{ color: T.textDim, fontSize: "11px", marginBottom: 12 }}>
-              Col B = N° Ordine · Col I = Codice destinatario Meli
-            </div>
-            <label style={{ ...css.btn(fileRiepilogo ? "accent" : ""), cursor: "pointer", display: "inline-flex", alignItems: "center", gap: 6, fontSize: "12px" }}>
-              {fileRiepilogo ? `✓ ${fileRiepilogo.name}` : "↑ Carica Riepilogo_cliente.csv"}
-              <input type="file" accept=".xlsx,.xls,.csv" style={{ display: "none" }}
-                onChange={e => { setFileRiepilogo(e.target.files?.[0] || null); setResult(null); e.target.value = ""; }} />
-            </label>
-            {fileRiepilogo && (
-              <button style={{ ...css.btn(), marginLeft: 8, fontSize: "11px", padding: "3px 8px" }}
-                onClick={() => { setFileRiepilogo(null); setResult(null); }}>✕</button>
-            )}
-          </div>
-
-          {/* File Dettaglio */}
-          <div style={{ background: T.surface, border: `1px solid ${fileDettaglio ? T.green : T.border}`, borderRadius: 8, padding: 16 }}>
-            <div style={{ color: T.textMid, fontSize: "11px", letterSpacing: "0.1em", textTransform: "uppercase", marginBottom: 6 }}>
-              File Dettaglio Cliente
-            </div>
-            <div style={{ color: T.textDim, fontSize: "11px", marginBottom: 12 }}>
-              Col A = N° Ordine · Col C = EAN13
-            </div>
-            <label style={{ ...css.btn(fileDettaglio ? "accent" : ""), cursor: "pointer", display: "inline-flex", alignItems: "center", gap: 6, fontSize: "12px" }}>
-              {fileDettaglio ? `✓ ${fileDettaglio.name}` : "↑ Carica Dettaglio_cliente.csv"}
-              <input type="file" accept=".xlsx,.xls,.csv" style={{ display: "none" }}
-                onChange={e => { setFileDettaglio(e.target.files?.[0] || null); setResult(null); e.target.value = ""; }} />
-            </label>
-            {fileDettaglio && (
-              <button style={{ ...css.btn(), marginLeft: 8, fontSize: "11px", padding: "3px 8px" }}
-                onClick={() => { setFileDettaglio(null); setResult(null); }}>✕</button>
-            )}
-          </div>
-        </div>
-
-        {/* Pulsante analisi */}
-        <div style={{ display: "flex", justifyContent: "center" }}>
-          <button
-            style={{ ...css.btn("accent"), fontSize: "13px", padding: "10px 32px", opacity: (!filterLancio || !fileRiepilogo || !fileDettaglio || processing) ? 0.5 : 1 }}
-            disabled={!filterLancio || !fileRiepilogo || !fileDettaglio || processing}
-            onClick={esegui}
-          >
-            {processing ? "Analisi in corso..." : "▶ Analizza"}
-          </button>
-        </div>
-
-        {/* Risultati */}
-        {result && (
-          <>
-            {/* KPI */}
-            <div style={{ display: "flex", gap: 12, flexWrap: "wrap" }}>
-              <KpiCard label="Righe pianificate" value={result.totPian} color={T.text} />
-              <KpiCard label="Già ordinate" value={result.presenti.length} color={T.green} />
-              <KpiCard label="Mancanti" value={result.mancanti.length} color={result.mancanti.length > 0 ? "#e8a838" : T.green} />
-            </div>
-
-            {/* Tabella mancanti */}
-            {result.mancanti.length > 0 ? (
-              <div>
-                <div style={{ color: "#e8a838", fontSize: "12px", fontWeight: "600", letterSpacing: "0.08em", marginBottom: 10 }}>
-                  ⚠ Righe mancanti ({result.mancanti.length}) — incluse nel file di rifornimento
-                </div>
-                <div style={{ overflowX: "auto", borderRadius: 6, border: `1px solid ${T.border}` }}>
-                  <table style={{ width: "100%", borderCollapse: "collapse" }}>
-                    <thead>
-                      <tr>
-                        <th style={css.th}>Cod. Cliente</th>
-                        <th style={css.th}>Nome</th>
-                        <th style={css.th}>EAN</th>
-                        <th style={css.th}>Copie</th>
-                        <th style={css.th}>Sconto occ.</th>
-                        <th style={css.th}>Pag. occ.</th>
-                        <th style={css.th}>N. ord. cliente</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {result.mancanti.map((r, i) => (
-                        <tr key={i} style={{ background: i % 2 === 0 ? "transparent" : T.surface + "66" }}>
-                          <td style={{ ...css.td, color: T.accent, fontWeight: "600" }}>{r.codice_cliente}</td>
-                          <td style={{ ...css.td, color: T.textMid, fontSize: "11px" }}>{r.nome_cliente || "—"}</td>
-                          <td style={{ ...css.td, fontFamily: "monospace", fontSize: "11px", color: T.textMid }}>{r.ean}</td>
-                          <td style={{ ...css.td, textAlign: "right" }}>{(r.quantita || 0).toLocaleString("it")}</td>
-                          <td style={{ ...css.td, textAlign: "right", color: r.sconto_occasionale > 0 ? T.accent : T.textDim }}>
-                            {r.sconto_occasionale > 0 ? `${r.sconto_occasionale}%` : "—"}
-                          </td>
-                          <td style={{ ...css.td, color: r.pagamento_occasionale ? T.text : T.textDim }}>
-                            {r.pagamento_occasionale || "—"}
-                          </td>
-                          <td style={{ ...css.td, color: r.num_ordine_cliente ? T.text : T.textDim }}>
-                            {r.num_ordine_cliente || "—"}
-                          </td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-              </div>
-            ) : (
-              <div style={{ textAlign: "center", padding: "32px 20px", color: T.green, fontSize: "14px" }}>
-                ✓ Tutti i clienti pianificati hanno già ordinato i titoli del lancio {filterLancio}
-              </div>
-            )}
-          </>
+      {/* TABELLA */}
+      <div style={{ flex: 1, overflowY: "auto" }}>
+        <table style={css.table}>
+          <thead>
+            <tr>
+              <th style={{ ...css.th, width: 30 }}></th>
+              <th style={css.th}>Stato</th>
+              <th style={css.th}>Cliente/i</th>
+              <th style={css.th}>EAN</th>
+              <th style={css.th}>Titolo (se lanciato)</th>
+              <th style={css.th}>Qtà</th>
+              <th style={css.th}>Sconto occ.</th>
+              <th style={css.th}>Pag. occ.</th>
+              <th style={css.th}>N° ordine</th>
+              <th style={css.th}>Note</th>
+              <th style={css.th}></th>
+            </tr>
+          </thead>
+          <tbody>
+            {dataFiltrata.map((r, i) => (
+              <tr key={r.id} style={{ background: r.stato === "notificato" ? "#e8a83822" : (i % 2 === 0 ? "transparent" : T.surface + "66") }}>
+                <td style={css.td}><input type="checkbox" checked={selected.has(r.id)} onChange={() => toggleSelect(r.id)} style={{ accentColor: T.accent }} /></td>
+                <td style={css.td}>
+                  {r.stato === "gestito" && <Badge label="Gestito" color={T.green} />}
+                  {r.stato === "notificato" && <Badge label="🔔 Notificato" color="#e8a838" />}
+                  {r.stato === "da_gestire" && <Badge label="Da gestire" color={T.textMid} />}
+                </td>
+                <td style={{ ...css.td, fontWeight: "600" }}>{r.codice_cliente}</td>
+                <td style={{ ...css.td, fontFamily: "monospace", fontSize: "11px", color: T.textMid }}>{r.ean}</td>
+                <td style={{ ...css.td, color: T.accent, maxWidth: 200 }}>{r.lanci_settimanali ? `${r.lanci_settimanali.titolo} (lancio ${r.lanci_settimanali.num_lancio}/${r.lanci_settimanali.anno_lancio})` : <span style={{ color: T.textDim }}>—</span>}</td>
+                <td style={css.td}>{r.quantita}</td>
+                <td style={css.td}>{r.sconto_occasionale != null ? `${r.sconto_occasionale}%` : "—"}</td>
+                <td style={css.td}>{r.pagamento_occasionale || "—"}</td>
+                <td style={css.td}>{r.numero_ordine || "—"}</td>
+                <td style={{ ...css.td, maxWidth: 160, fontSize: "11px", color: T.textMid, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }} title={r.note}>{r.note || ""}</td>
+                <td style={{ ...css.td, whiteSpace: "nowrap" }}>
+                  <button title="Crea mail" style={{ ...css.btn(), padding: "2px 6px", fontSize: "11px", marginRight: 4 }} onClick={() => creaMail(r)}>✉️</button>
+                  {r.stato !== "gestito" ? (
+                    <button title="Segna gestito" style={{ ...css.btn(), padding: "2px 6px", fontSize: "11px", color: T.green, borderColor: T.green, marginRight: 4 }} onClick={() => segnaGestito(r.id)}>✓</button>
+                  ) : (
+                    <button title="Riapri" style={{ ...css.btn(), padding: "2px 6px", fontSize: "11px", marginRight: 4 }} onClick={() => riapri(r.id)}>↺</button>
+                  )}
+                  <button title="Elimina" style={{ ...css.btn(), padding: "2px 6px", fontSize: "11px", color: T.red, borderColor: T.red }} onClick={() => eliminaRiga(r.id)}>✕</button>
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+        {dataFiltrata.length === 0 && (
+          <div style={{ padding: 40, textAlign: "center", color: T.textDim }}>Nessun anticipo lancio in questa vista.</div>
         )}
       </div>
 
@@ -4082,7 +3971,7 @@ const MODULES = [
   { id: "avanzamento", label: "Avanzamento Novità", icon: "▣" },
   { id: "lanci", label: "Lanci Settimanali", icon: "🚀" },
   { id: "verificalanci", label: "Verifica Lanci Amazon", icon: "📦" },
-  { id: "verificaordini", label: "Verifica Ordini", icon: "🔍" },
+  { id: "anticipilancio", label: "Anticipi Lancio", icon: "⏱" },
 ];
 
 const MODULES_IMPORT = [
@@ -4223,7 +4112,7 @@ export default function App() {
           {activeModule === "avanzamento" && <ModuloAvanzamento token={session.token} titoli={titoli} prenotato={prenotato} ruolo={ruolo} userAccount={userAccount} />}
           {activeModule === "lanci" && <ModuloLanciSettimanali token={session.token} titoli={titoli} prenotato={prenotato} canali={canali} ruolo={ruolo} userAccount={userAccount} />}
           {activeModule === "verificalanci" && <ModuloVerificaLanciAmazon token={session.token} titoli={titoli} prenotato={prenotato} canali={canali} />}
-          {activeModule === "verificaordini" && <ModuloVerificaOrdini token={session.token} />}
+          {activeModule === "anticipilancio" && <ModuloAnticipiLancio token={session.token} userEmail={session.user?.email} />}
           {activeModule === "import" && <ModuloImport giriList={giriDB} token={session.token} />}
           {activeModule === "spalmatura" && <ImportSpalmatura token={session.token} onImportDone={() => sbFetch("spalmatura_obiettivo?select=*", session.token).then(setSpalmatura)} />}
         </div>
