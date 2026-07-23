@@ -3753,6 +3753,7 @@ function ModuloAnticipiLancio({ token, userEmail }) {
   const [search, setSearch] = useState("");
   const [selected, setSelected] = useState(new Set());
   const [showForm, setShowForm] = useState(false);
+  const [editingId, setEditingId] = useState(null);
   const [saving, setSaving] = useState(false);
   const [toast, setToast] = useState(null);
   const emptyForm = { codice_cliente: "", ean: "", quantita: "", sconto_occasionale: "", pagamento_occasionale: "", numero_ordine: "", note: "" };
@@ -3775,7 +3776,23 @@ function ModuloAnticipiLancio({ token, userEmail }) {
     sbFetch("mail_templates?select=*&key=eq.anticipo_lancio", token).then(d => { if (Array.isArray(d) && d[0]) setTemplate(d[0]); });
   }, [token]);
 
-  const salvaNuovo = async () => {
+  const apriNuovo = () => { setEditingId(null); setForm(emptyForm); setShowForm(true); };
+
+  const apriModifica = (row) => {
+    setEditingId(row.id);
+    setForm({
+      codice_cliente: row.codice_cliente || "",
+      ean: row.ean || "",
+      quantita: row.quantita != null ? String(row.quantita) : "",
+      sconto_occasionale: row.sconto_occasionale != null ? String(row.sconto_occasionale) : "",
+      pagamento_occasionale: row.pagamento_occasionale || "",
+      numero_ordine: row.numero_ordine || "",
+      note: row.note || "",
+    });
+    setShowForm(true);
+  };
+
+  const salvaForm = async () => {
     if (!form.codice_cliente.trim() || !form.ean.trim() || !form.quantita) {
       showToast("Codice cliente, EAN e quantità sono obbligatori", "err"); return;
     }
@@ -3788,20 +3805,42 @@ function ModuloAnticipiLancio({ token, userEmail }) {
       pagamento_occasionale: form.pagamento_occasionale.trim() || null,
       numero_ordine: form.numero_ordine.trim() || null,
       note: form.note.trim() || null,
-      creato_da: userEmail || null,
     };
-    const r = await fetch(`${SUPABASE_URL}/rest/v1/novita_fuori_lancio`, {
-      method: "POST",
-      headers: { "apikey": SUPABASE_KEY, "Authorization": `Bearer ${token}`, "Content-Type": "application/json", "Prefer": "return=representation" },
-      body: JSON.stringify([payload]),
-    });
-    if (r.ok) {
-      showToast("Anticipo lancio aggiunto");
-      setShowForm(false);
-      setForm(emptyForm);
-      loadData();
+    if (editingId) {
+      // Se cambia l'EAN, ripristina lo stato a "da_gestire" e stacca il lancio, così il trigger può ri-matchare da capo
+      const rigaOriginale = data.find(x => x.id === editingId);
+      if (rigaOriginale && rigaOriginale.ean !== payload.ean) {
+        payload.stato = "da_gestire";
+        payload.lancio_id = null;
+      }
+      const r = await fetch(`${SUPABASE_URL}/rest/v1/novita_fuori_lancio?id=eq.${editingId}`, {
+        method: "PATCH",
+        headers: { "apikey": SUPABASE_KEY, "Authorization": `Bearer ${token}`, "Content-Type": "application/json", "Prefer": "return=minimal" },
+        body: JSON.stringify(payload),
+      });
+      if (r.ok) {
+        showToast("Anticipo lancio aggiornato");
+        setShowForm(false);
+        setEditingId(null);
+        setForm(emptyForm);
+        loadData();
+      } else {
+        showToast("Errore nell'aggiornamento: " + await r.text(), "err");
+      }
     } else {
-      showToast("Errore nel salvataggio: " + await r.text(), "err");
+      const r = await fetch(`${SUPABASE_URL}/rest/v1/novita_fuori_lancio`, {
+        method: "POST",
+        headers: { "apikey": SUPABASE_KEY, "Authorization": `Bearer ${token}`, "Content-Type": "application/json", "Prefer": "return=representation" },
+        body: JSON.stringify([{ ...payload, creato_da: userEmail || null }]),
+      });
+      if (r.ok) {
+        showToast("Anticipo lancio aggiunto");
+        setShowForm(false);
+        setForm(emptyForm);
+        loadData();
+      } else {
+        showToast("Errore nel salvataggio: " + await r.text(), "err");
+      }
     }
     setSaving(false);
   };
@@ -3909,11 +3948,11 @@ function ModuloAnticipiLancio({ token, userEmail }) {
 
   return (
     <div style={{ display: "flex", flexDirection: "column", height: "100%", overflow: "hidden" }}>
-      {/* MODAL NUOVO ANTICIPO */}
+      {/* MODAL NUOVO / MODIFICA ANTICIPO */}
       {showForm && (
-        <div style={{ position: "fixed", inset: 0, background: "#000a", zIndex: 200, display: "flex", alignItems: "center", justifyContent: "center" }} onClick={() => setShowForm(false)}>
+        <div style={{ position: "fixed", inset: 0, background: "#000a", zIndex: 200, display: "flex", alignItems: "center", justifyContent: "center" }} onClick={() => { setShowForm(false); setEditingId(null); }}>
           <div style={{ background: T.surface, border: `1px solid ${T.borderHi}`, borderRadius: 6, padding: 28, width: 460 }} onClick={e => e.stopPropagation()}>
-            <div style={{ color: T.accent, fontWeight: "700", fontSize: "13px", marginBottom: 20 }}>NUOVO ANTICIPO LANCIO</div>
+            <div style={{ color: T.accent, fontWeight: "700", fontSize: "13px", marginBottom: 20 }}>{editingId ? "✎ MODIFICA ANTICIPO LANCIO" : "NUOVO ANTICIPO LANCIO"}</div>
             <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
               {[
                 ["codice_cliente", "Codice/i cliente *", "full"],
@@ -3927,13 +3966,18 @@ function ModuloAnticipiLancio({ token, userEmail }) {
                 </div>
               ))}
             </div>
+            {editingId && form.ean && (
+              <div style={{ color: "#e8a838", fontSize: "11px", marginTop: 8 }}>
+                ⚠ Se cambi l'EAN, lo stato torna a "Da gestire" finché non viene ri-lanciato.
+              </div>
+            )}
             <div style={{ marginTop: 12 }}>
               <label style={{ color: T.textMid, fontSize: "10px", textTransform: "uppercase", letterSpacing: "0.08em", display: "block", marginBottom: 4 }}>Note</label>
               <textarea style={{ ...css.input, width: "100%", boxSizing: "border-box", height: 60, resize: "vertical" }} value={form.note} onChange={e => setForm(f => ({ ...f, note: e.target.value }))} />
             </div>
             <div style={{ display: "flex", justifyContent: "flex-end", gap: 8, marginTop: 20 }}>
-              <button style={css.btn()} onClick={() => setShowForm(false)}>Annulla</button>
-              <button style={css.btn("accent")} onClick={salvaNuovo} disabled={saving}>{saving ? "Salvataggio..." : "Aggiungi"}</button>
+              <button style={css.btn()} onClick={() => { setShowForm(false); setEditingId(null); }}>Annulla</button>
+              <button style={css.btn("accent")} onClick={salvaForm} disabled={saving}>{saving ? "Salvataggio..." : editingId ? "Salva modifiche" : "Aggiungi"}</button>
             </div>
           </div>
         </div>
@@ -3947,7 +3991,7 @@ function ModuloAnticipiLancio({ token, userEmail }) {
         <input style={{ ...css.input, width: 200 }} placeholder="Cerca cliente / EAN / ordine..." value={search} onChange={e => setSearch(e.target.value)} />
         <div style={{ marginLeft: "auto", display: "flex", gap: 8 }}>
           <button style={css.btn()} onClick={exportMessaggerie}>↓ Export Messaggerie{selected.size > 0 ? ` (${selected.size})` : ""}</button>
-          <button style={{ ...css.btn(), borderColor: T.green, color: T.green }} onClick={() => setShowForm(true)}>+ Nuovo</button>
+          <button style={{ ...css.btn(), borderColor: T.green, color: T.green }} onClick={apriNuovo}>+ Nuovo</button>
         </div>
       </div>
 
@@ -3994,6 +4038,7 @@ function ModuloAnticipiLancio({ token, userEmail }) {
                 <td style={css.td}>{r.numero_ordine || "—"}</td>
                 <td style={{ ...css.td, maxWidth: 160, fontSize: "11px", color: T.textMid, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }} title={r.note}>{r.note || ""}</td>
                 <td style={{ ...css.td, whiteSpace: "nowrap" }}>
+                  <button title="Modifica" style={{ ...css.btn(), padding: "2px 6px", fontSize: "11px", marginRight: 4 }} onClick={() => apriModifica(r)}>✎</button>
                   <button title="Crea mail" style={{ ...css.btn(), padding: "2px 6px", fontSize: "11px", marginRight: 4 }} onClick={() => creaMail(r)}>✉️</button>
                   {r.stato !== "gestito" ? (
                     <button title="Segna gestito" style={{ ...css.btn(), padding: "2px 6px", fontSize: "11px", color: T.green, borderColor: T.green, marginRight: 4 }} onClick={() => segnaGestito(r.id)}>✓</button>
