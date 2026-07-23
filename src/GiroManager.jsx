@@ -2026,7 +2026,7 @@ function parsePrezzo(str) {
 
 
 
-function ModuloLanciSettimanali({ token, titoli, prenotato, canali, ruolo, userAccount }) {
+function ModuloLanciSettimanali({ token, titoli, prenotato, canali, ruolo, userAccount, onNavigateAnticipi }) {
   const [data, setData] = useState([]);
   const [loading, setLoading] = useState(true);
   const [uploading, setUploading] = useState(false);
@@ -2041,6 +2041,20 @@ function ModuloLanciSettimanali({ token, titoli, prenotato, canali, ruolo, userA
   const [sortDir, setSortDir] = useState("desc");
 
   const [editCell, setEditCell] = useState(null); // { id, field, value }
+  const [anticipiPopup, setAnticipiPopup] = useState(null); // array di righe novita_fuori_lancio notificate da questo upload
+
+  // Dopo un upload, controlla se qualche EAN caricato sblocca un anticipo lancio "da_gestire" → "notificato"
+  const checkAnticipiNotificati = async (eans) => {
+    if (!eans || eans.length === 0 || !token) return;
+    const trovati = [];
+    for (let i = 0; i < eans.length; i += 150) {
+      const batch = eans.slice(i, i + 150);
+      const list = batch.map(e => `"${e}"`).join(",");
+      const res = await sbFetch(`novita_fuori_lancio?select=*&ean=in.(${list})&stato=eq.notificato`, token);
+      if (Array.isArray(res)) trovati.push(...res);
+    }
+    if (trovati.length > 0) setAnticipiPopup(trovati);
+  };
 
   const showToast = (msg, type = "ok") => { setToast({ msg, type }); setTimeout(() => setToast(null), 4000); };
 
@@ -2353,6 +2367,7 @@ function ModuloLanciSettimanali({ token, titoli, prenotato, canali, ruolo, userA
 if (!r.ok) throw new Error(await r.text());
         }
         showToast(`Lancio: ${payload.length} titoli caricati (lancio ${payload[0]?.num_lancio})`);
+        await checkAnticipiNotificati(payload.map(p => p.ean));
       } else {
         let updated = 0;
         for (const r of dataRows) {
@@ -2606,6 +2621,49 @@ if (!r.ok) throw new Error(await r.text());
       {toast && (
         <div style={{ position: "fixed", bottom: 24, left: "50%", transform: "translateX(-50%)", background: toast.type === "err" ? "#4a1a2a" : "#1a3a2a", border: `1px solid ${toast.type === "err" ? T.red : T.green}`, color: toast.type === "err" ? T.red : T.green, borderRadius: 6, padding: "8px 20px", fontSize: "12px", zIndex: 999, boxShadow: "0 4px 20px #0008" }}>
           {toast.msg}
+        </div>
+      )}
+
+      {/* POPUP ANTICIPI LANCIO NOTIFICATI */}
+      {anticipiPopup && (
+        <div style={{ position: "fixed", inset: 0, background: "#000a", zIndex: 300, display: "flex", alignItems: "center", justifyContent: "center" }} onClick={() => setAnticipiPopup(null)}>
+          <div style={{ background: T.surface, border: `1px solid #e8a838`, borderRadius: 6, padding: 28, width: 520, maxHeight: "80vh", overflowY: "auto" }} onClick={e => e.stopPropagation()}>
+            <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 6 }}>
+              <span style={{ fontSize: "22px" }}>🔔</span>
+              <span style={{ color: "#e8a838", fontWeight: "700", fontSize: "14px" }}>ANTICIPI LANCIO SBLOCCATI</span>
+            </div>
+            <div style={{ color: T.textMid, fontSize: "12px", marginBottom: 16 }}>
+              {anticipiPopup.length === 1
+                ? "1 anticipo lancio è ora collegato a un titolo di questo lancio ed è pronto per essere gestito."
+                : `${anticipiPopup.length} anticipi lancio sono ora collegati a titoli di questo lancio e pronti per essere gestiti.`}
+            </div>
+            <div style={{ border: `1px solid ${T.border}`, borderRadius: 4, overflow: "hidden", marginBottom: 20 }}>
+              <table style={css.table}>
+                <thead>
+                  <tr>
+                    <th style={css.th}>Cliente</th>
+                    <th style={css.th}>EAN</th>
+                    <th style={css.th}>Qtà</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {anticipiPopup.map((r, i) => (
+                    <tr key={r.id} style={{ background: i % 2 === 0 ? "transparent" : T.bg }}>
+                      <td style={{ ...css.td, fontWeight: "600" }}>{r.codice_cliente}</td>
+                      <td style={{ ...css.td, fontFamily: "monospace", fontSize: "11px", color: T.textMid }}>{r.ean}</td>
+                      <td style={css.td}>{r.quantita}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+            <div style={{ display: "flex", justifyContent: "flex-end", gap: 8 }}>
+              <button style={css.btn()} onClick={() => setAnticipiPopup(null)}>Chiudi</button>
+              {onNavigateAnticipi && (
+                <button style={{ ...css.btn("accent") }} onClick={() => { setAnticipiPopup(null); onNavigateAnticipi(); }}>Vai ad Anticipi Lancio →</button>
+              )}
+            </div>
+          </div>
         </div>
       )}
     </div>
@@ -3686,7 +3744,6 @@ function ModuloVerificaLanciAmazon({ token, titoli, prenotato, canali }) {
     </div>
   );
 }
-
 // ─── MODULO ANTICIPI LANCIO ────────────────────────────────────────────────
 function ModuloAnticipiLancio({ token, userEmail }) {
   const [data, setData] = useState([]);
@@ -4110,7 +4167,7 @@ export default function App() {
           {/* MOD 4: Passato spalmatura a ModuloFineGiro */}
           {activeModule === "finegiro" && <ModuloFineGiro titoli={titoli} prenotato={prenotato} canali={canali} token={session.token} ruolo={ruolo} spalmatura={spalmatura} userAccount={userAccount} />}
           {activeModule === "avanzamento" && <ModuloAvanzamento token={session.token} titoli={titoli} prenotato={prenotato} ruolo={ruolo} userAccount={userAccount} />}
-          {activeModule === "lanci" && <ModuloLanciSettimanali token={session.token} titoli={titoli} prenotato={prenotato} canali={canali} ruolo={ruolo} userAccount={userAccount} />}
+          {activeModule === "lanci" && <ModuloLanciSettimanali token={session.token} titoli={titoli} prenotato={prenotato} canali={canali} ruolo={ruolo} userAccount={userAccount} onNavigateAnticipi={() => setActiveModule("anticipilancio")} />}
           {activeModule === "verificalanci" && <ModuloVerificaLanciAmazon token={session.token} titoli={titoli} prenotato={prenotato} canali={canali} />}
           {activeModule === "anticipilancio" && <ModuloAnticipiLancio token={session.token} userEmail={session.user?.email} />}
           {activeModule === "import" && <ModuloImport giriList={giriDB} token={session.token} />}
