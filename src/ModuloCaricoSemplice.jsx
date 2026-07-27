@@ -298,6 +298,9 @@ export default function ModuloCaricoSemplice({ giriList, titoliEsistenti, token,
               <input type="file" accept=".xlsx" onChange={handleFile} style={{ display: "none" }} id="file-input-carico" />
               <label htmlFor="file-input-carico" style={{ ...css.btn("accent"), cursor: "pointer", padding: "8px 20px" }}>Scegli file .xlsx</label>
             </div>
+            <div style={{ color: T.textMid, fontSize: "11px" }}>
+              Non hai il template? <a href="https://albertospde.github.io/giro-manager/template_carico_semplice.xlsx" download style={{ color: T.accent }}>Scaricalo qui</a>
+            </div>
           </div>
         )}
 
