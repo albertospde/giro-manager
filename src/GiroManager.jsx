@@ -2146,6 +2146,9 @@ function ModuloLanciSettimanali({ token, titoli, prenotato, canali, ruolo, userA
         const prenCanali = prenByEanCanale[r.ean] || {};
         const prenFineGiroLive = Object.entries(prenCanali).reduce((s, [cod, q]) => s + q, 0);
         const prenAmazonLive = prenCanali[amazonCodice] || 0;
+        // Diretti da Tipografia (ex AURORA): quantità già in Fine Giro ma non ancora sul Portafoglio Ordini Meli,
+        // quindi non incluse nel Teorico. Vanno segnalate separatamente quando generano un FG vs Tot.Teorico negativo.
+        const prenStampatoreLive = prenCanali["AURORA"] || 0;
         const cedoleLive = cedoleByEan[r.ean] || [];
 
         // Usa dati live se disponibili, altrimenti fallback manuale
@@ -2165,6 +2168,10 @@ function ModuloLanciSettimanali({ token, titoli, prenotato, canali, ruolo, userA
         const isOverride = !!r.giorno_uscita_override;
 
         const deltaPortale = teorico - prenFineGiro;
+        // Se il negativo è (in tutto o in parte) spiegato da quantità Diretti da Tipografia
+        // non ancora transitate sul Portafoglio Ordini Meli, lo segnaliamo.
+        const prenStampatore = haLiveFG ? prenStampatoreLive : 0;
+        const deltaSpiegatoDaStampatore = deltaPortale < 0 && prenStampatore > 0;
 
         return {
           ...r,
@@ -2172,6 +2179,8 @@ function ModuloLanciSettimanali({ token, titoli, prenotato, canali, ruolo, userA
           pren_fine_giro: prenFineGiro,
           pren_amazon: prenAmazon,
           pren_senza_amazon: prenSenzaAmazon,
+          pren_stampatore: prenStampatore,
+          delta_spiegato_da_stampatore: deltaSpiegatoDaStampatore,
           teorico,
           giorno_calcolato: giornoCalcolato,
           giorno_uscita: giornoUscita,
@@ -2397,10 +2406,10 @@ if (!r.ok) throw new Error(await r.text());
   // Export Excel
   const exportExcel = () => {
     const XLSX = window.XLSX;
-    const headers = ["LANCIO","CEDOLA","EAN","TITOLO","AUTORE","COD.EDITORE","EDITORE","PREZZO","F.G.","P.O. MELI","AMAZON","TOT.TEORICO","FG VS TOT","GIORNO USCITA"];
+    const headers = ["LANCIO","CEDOLA","EAN","TITOLO","AUTORE","COD.EDITORE","EDITORE","PREZZO","F.G.","P.O. MELI","AMAZON","TOT.TEORICO","FG VS TOT","DI CUI STAMPATORE","GIORNO USCITA"];
     const rows = dataFiltrata.map(r => [
       r.num_lancio, r.cedole.join(", "), r.ean, r.titolo, r.autore, r.codice_editore, r.editore, r.prezzo,
-      r.pren_fine_giro, r.prenotato_trasmesso ?? "", r.pren_amazon, r.teorico, r.delta_portale, r.giorno_uscita
+      r.pren_fine_giro, r.prenotato_trasmesso ?? "", r.pren_amazon, r.teorico, r.delta_portale, r.pren_stampatore || "", r.giorno_uscita
     ]);
     // Riepilogo editori
     const rH = ["EDITORE","TITOLI","LANCIATE","TRASMESSE","FINE GIRO","AMAZON","VALORE"];
@@ -2587,7 +2596,19 @@ if (!r.ok) throw new Error(await r.text());
                 </td>
                 <td style={{ ...css.td, fontWeight: "700", color: r.delta_portale > 0 ? T.green : r.delta_portale < 0 ? T.red : T.textMid, textAlign: "right" }}>
                   {r.prenotato_trasmesso != null || r.pren_fine_giro > 0
-                    ? (r.delta_portale > 0 ? "+" : "") + r.delta_portale.toLocaleString("it")
+                    ? (
+                      <>
+                        {(r.delta_portale > 0 ? "+" : "") + r.delta_portale.toLocaleString("it")}
+                        {r.delta_spiegato_da_stampatore && (
+                          <div
+                            style={{ fontSize: "9px", fontWeight: 500, color: "#e8a838", whiteSpace: "nowrap" }}
+                            title="Quantità Diretti da Tipografia già in Fine Giro ma non ancora sul Portafoglio Ordini Meli"
+                          >
+                            di cui {r.pren_stampatore.toLocaleString("it")} da stampatore
+                          </div>
+                        )}
+                      </>
+                    )
                     : "—"}
                 </td>
                 <td style={css.td}>
