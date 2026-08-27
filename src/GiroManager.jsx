@@ -2031,6 +2031,7 @@ function ModuloLanciSettimanali({ token, titoli, prenotato, canali, ruolo, userA
   const [loading, setLoading] = useState(true);
   const [uploading, setUploading] = useState(false);
   const [uploadMode, setUploadMode] = useState(null);
+  const [syncingMessaggerie, setSyncingMessaggerie] = useState(false);
   const [toast, setToast] = useState(null);
   const [filterAnno, setFilterAnno] = useState(null);
   const [filterLancio, setFilterLancio] = useState([]);
@@ -2403,6 +2404,27 @@ if (!r.ok) throw new Error(await r.text());
     e.target.value = "";
   };
 
+  // Sincronizza il lancio della settimana direttamente da Messaggerie (API reale, no upload)
+  const handleAggiornaMessaggerie = async () => {
+    setSyncingMessaggerie(true);
+    try {
+      const res = await fetch(SUPABASE_URL + "/functions/v1/giro-lanci-sync", {
+        headers: { Authorization: "Bearer " + token },
+      });
+      const result = await res.json();
+      if (!res.ok) throw new Error(result.message || result.error || "Errore sconosciuto");
+      showToast("Lancio " + result.numero_lancio + "/" + result.anno_lancio + " aggiornato: " + result.titoli_sincronizzati + " titoli");
+      const eansRes = await sbFetch("lanci_settimanali?anno_lancio=eq." + result.anno_lancio + "&num_lancio=eq." + result.numero_lancio + "&select=ean", token);
+      if (Array.isArray(eansRes)) await checkAnticipiNotificati(eansRes.map(r => r.ean));
+      await loadData();
+      setFilterAnno(result.anno_lancio);
+      setFilterLancio([result.numero_lancio]);
+    } catch (err) {
+      showToast(err.message, "err");
+    }
+    setSyncingMessaggerie(false);
+  };
+
   // Export Excel
   const exportExcel = () => {
     const XLSX = window.XLSX;
@@ -2459,8 +2481,11 @@ if (!r.ok) throw new Error(await r.text());
           )}
         </div>
         <div style={{ marginLeft: "auto", display: "flex", gap: 8 }}>
-          <label style={{ ...css.btn("accent"), cursor: "pointer", display: "inline-flex", alignItems: "center", gap: 4 }}>
-            {uploading && uploadMode === "iscrizione" ? "..." : "Upload File Lancio"}
+          <button style={css.btn("accent")} onClick={handleAggiornaMessaggerie} disabled={syncingMessaggerie}>
+            {syncingMessaggerie ? "Sincronizzo..." : "🔄 Aggiorna da Messaggerie"}
+          </button>
+          <label style={{ ...css.btn(), cursor: "pointer", display: "inline-flex", alignItems: "center", gap: 4 }}>
+            {uploading && uploadMode === "iscrizione" ? "..." : "Upload manuale (fallback)"}
             <input type="file" accept=".xlsx,.xls,.csv" style={{ display: "none" }} onChange={(e) => handleUpload(e, "iscrizione")} disabled={uploading} />
           </label>
           <button style={css.btn()} onClick={exportExcel}>Download Excel</button>
