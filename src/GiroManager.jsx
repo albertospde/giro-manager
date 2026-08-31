@@ -3,6 +3,7 @@ import ModuloImport, { ImportSpalmatura } from "./ModuloImport.jsx";
 import ModuloCaricoSemplice from "./ModuloCaricoSemplice.jsx";
 import ModuloPrenotato from "./ModuloPrenotato.jsx";
 import ModuloAvanzamento from "./ModuloAvanzamento.jsx";
+import { fetchPrenotatoRpn, parseEaggrega, importAggregato } from "./rpnPrenotatoSync.js";
 
 const SUPABASE_URL = "https://tdflwenlylhctxssatax.supabase.co";
 const SUPABASE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InRkZmx3ZW5seWxoY3R4c3NhdGF4Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzYzMzgyNzYsImV4cCI6MjA5MTkxNDI3Nn0.l35qEL7LOvyYuI1McQlVqj4vbyTqmlevcmqWbTGYi2Q";
@@ -1454,7 +1455,7 @@ function ModuloCedola({ titoli, giriList, onUpdateTitolo, onDeleteTitolo, spalma
   );
 }
 
-function ModuloFineGiro({ titoli, prenotato, canali, token, ruolo, spalmatura, userAccount }) {
+function ModuloFineGiro({ titoli, prenotato, canali, token, ruolo, spalmatura, userAccount, onPrenotatoUpdated }) {
   const anniDispFineGiro = useMemo(() => {
     const s = new Set();
     titoli.forEach(t => { if (t.giro_label && t.giro_label !== "EXTRA") { const yr = Number(t.giro_label.split(" ")[1]); if (yr >= 2020) s.add(yr); } });
@@ -1497,6 +1498,35 @@ function ModuloFineGiro({ titoli, prenotato, canali, token, ruolo, spalmatura, u
   const [filterEditori, setFilterEditori] = useState([]);
   const [filterAccount, setFilterAccount] = useState([]);
   useEffect(() => { if (ruolo === 'agente' && userAccount) { setFilterAccount(prev => prev.length > 0 ? prev : [userAccount]); } }, [ruolo, userAccount]);
+
+  // Bottone "Aggiorna da RPN" della pagina Fine Giro: attivo solo con un singolo giro
+  // selezionato in tendina (serve sapere quale giro chiedere a RPN).
+  const [rpnSync, setRpnSync] = useState({ status: "idle", error: null, preview: null }); // idle | loading | preview | importing | done
+  const rpnGiroTarget = giroLabelSel.length === 1 ? giroLabelSel[0] : null;
+
+  const avviaSyncRpn = useCallback(async () => {
+    if (!rpnGiroTarget) return;
+    setRpnSync({ status: "loading", error: null, preview: null });
+    try {
+      const arrayBuffer = await fetchPrenotatoRpn(token, rpnGiroTarget);
+      const parsed = parseEaggrega(arrayBuffer, titoli);
+      setRpnSync({ status: "preview", error: null, preview: parsed });
+    } catch (err) {
+      setRpnSync({ status: "idle", error: err.message, preview: null });
+    }
+  }, [rpnGiroTarget, token, titoli]);
+
+  const confermaImportRpn = useCallback(async () => {
+    if (!rpnSync.preview) return;
+    setRpnSync(s => ({ ...s, status: "importing" }));
+    try {
+      await importAggregato(token, rpnSync.preview.aggregato, rpnSync.preview.aggregatoClienti);
+      setRpnSync({ status: "done", error: null, preview: rpnSync.preview });
+      onPrenotatoUpdated && onPrenotatoUpdated();
+    } catch (err) {
+      setRpnSync(s => ({ ...s, status: "preview", error: err.message }));
+    }
+  }, [rpnSync.preview, token, onPrenotatoUpdated]);
   const [filterPromozione, setFilterPromozione] = useState([]);
   const [filterCanale, setFilterCanale] = useState([]);
   const [search, setSearch] = useState("");
@@ -1862,8 +1892,58 @@ function ModuloFineGiro({ titoli, prenotato, canali, token, ruolo, spalmatura, u
           &nbsp;·&nbsp; <span style={{ color: pctTot >= 80 ? T.green : pctTot >= 50 ? T.accent : T.red, fontWeight: "700" }}>{pctTot}%</span>
         </div>
         <button style={css.btn()} onClick={resetFiltri}>↺ Reset</button>
-        <button style={{ ...css.btn("accent"), marginLeft: "auto" }} onClick={exportExcel}>↓ Export Excel</button>
+        <button
+          style={{ ...css.btn("accent"), marginLeft: "auto" }}
+          onClick={avviaSyncRpn}
+          disabled={!rpnGiroTarget || rpnSync.status === "loading"}
+          title={!rpnGiroTarget ? "Seleziona un solo Giro per aggiornare da RPN" : undefined}
+        >
+          {rpnSync.status === "loading" ? "Scarico da RPN..." : "📡 Aggiorna da RPN"}
+        </button>
+        <button style={css.btn("accent")} onClick={exportExcel}>↓ Export Excel</button>
       </div>
+
+      {/* Errore sync RPN */}
+      {rpnSync.error && (
+        <div style={{ padding: "10px 20px", borderBottom: `1px solid ${T.border}`, background: T.red + "18", color: T.red, fontSize: "12px" }}>
+          {rpnSync.error}
+        </div>
+      )}
+
+      {/* Riepilogo + conferma import da RPN */}
+      {(rpnSync.status === "preview" || rpnSync.status === "importing") && rpnSync.preview && (
+        <div style={{ padding: "14px 20px", borderBottom: `1px solid ${T.border}`, background: T.surface }}>
+          <div style={{ color: T.textMid, fontSize: "10px", textTransform: "uppercase", letterSpacing: "0.1em", marginBottom: 10 }}>
+            Anteprima da RPN — Giro {rpnGiroTarget}
+          </div>
+          <div style={{ display: "flex", gap: 12, flexWrap: "wrap", marginBottom: 12 }}>
+            {[
+              ["Righe lette", rpnSync.preview.righe.length.toLocaleString("it"), T.text],
+              ["Totale copie", rpnSync.preview.totaleAggregato.toLocaleString("it"), T.accent],
+              ["Trovati in cedola", rpnSync.preview.totaleFound.toLocaleString("it"), T.green],
+              ["Non trovati", rpnSync.preview.aggregato.filter(r => !r.found).length, T.red],
+            ].map(([label, val, color]) => (
+              <div key={label} style={{ background: T.bg, border: `1px solid ${T.border}`, borderRadius: 4, padding: "8px 14px" }}>
+                <div style={{ color: T.textMid, fontSize: "10px", textTransform: "uppercase", marginBottom: 2 }}>{label}</div>
+                <div style={{ color, fontWeight: "700", fontSize: "16px" }}>{val}</div>
+              </div>
+            ))}
+          </div>
+          <div style={{ display: "flex", gap: 8 }}>
+            <button style={css.btn()} onClick={() => setRpnSync({ status: "idle", error: null, preview: null })} disabled={rpnSync.status === "importing"}>Annulla</button>
+            <button style={css.btn("accent")} onClick={confermaImportRpn} disabled={rpnSync.status === "importing"}>
+              {rpnSync.status === "importing" ? "Import in corso..." : `Conferma e importa ${rpnSync.preview.totaleFound.toLocaleString("it")} copie`}
+            </button>
+          </div>
+        </div>
+      )}
+
+      {rpnSync.status === "done" && (
+        <div style={{ padding: "10px 20px", borderBottom: `1px solid ${T.border}`, background: T.green + "18", color: T.green, fontSize: "12px", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+          <span>✅ Prenotato aggiornato da RPN per il Giro {rpnGiroTarget}.</span>
+          <button style={{ ...css.btn(), fontSize: "11px", padding: "3px 10px" }} onClick={() => setRpnSync({ status: "idle", error: null, preview: null })}>Chiudi</button>
+        </div>
+      )}
 
       {/* Riepilogo cliente */}
       {clienteSel && byCanaleCliente && (
@@ -4302,7 +4382,7 @@ export default function App() {
           {activeModule === "cedola" && <ModuloCedola titoli={titoli} giriList={giriDB} onUpdateTitolo={t => { updateTitolo(t); setTitoli(prev => prev.some(x => x.id === t.id) ? prev.map(x => x.id === t.id ? t : x) : [...prev, t]); }} onDeleteTitolo={deleteTitolo} spalmatura={spalmatura} prenotato={prenotato} ruolo={ruolo} token={session.token} onTitoliChange={refreshDati} userAccount={userAccount} />}
           {activeModule === "prenotato" && <ModuloPrenotato token={session.token} titoli={titoli} onImportDone={() => sbFetch("prenotato?select=*&limit=100000", session.token).then(setPrenotato)} />}
           {/* MOD 4: Passato spalmatura a ModuloFineGiro */}
-          {activeModule === "finegiro" && <ModuloFineGiro titoli={titoli} prenotato={prenotato} canali={canali} token={session.token} ruolo={ruolo} spalmatura={spalmatura} userAccount={userAccount} />}
+          {activeModule === "finegiro" && <ModuloFineGiro titoli={titoli} prenotato={prenotato} canali={canali} token={session.token} ruolo={ruolo} spalmatura={spalmatura} userAccount={userAccount} onPrenotatoUpdated={refreshDati} />}
           {activeModule === "avanzamento" && <ModuloAvanzamento token={session.token} titoli={titoli} prenotato={prenotato} ruolo={ruolo} userAccount={userAccount} />}
           {activeModule === "lanci" && <ModuloLanciSettimanali token={session.token} titoli={titoli} prenotato={prenotato} canali={canali} ruolo={ruolo} userAccount={userAccount} onNavigateAnticipi={() => setActiveModule("anticipilancio")} />}
           {activeModule === "verificalanci" && <ModuloVerificaLanciAmazon token={session.token} titoli={titoli} prenotato={prenotato} canali={canali} />}
