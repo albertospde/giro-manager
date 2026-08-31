@@ -2404,17 +2404,23 @@ if (!r.ok) throw new Error(await r.text());
     e.target.value = "";
   };
 
-  // Sincronizza il lancio della settimana direttamente da Messaggerie (API reale, no upload)
+  // Sincronizza da Messaggerie: se in tendina c'è già UN lancio specifico
+  // selezionato, aggiorna QUELLO (non salta più forzatamente sul lancio della
+  // settimana corrente). Con selezione multipla o vuota, il backend calcola da
+  // solo il lancio della settimana (comportamento di partenza, invariato).
   const handleAggiornaMessaggerie = async () => {
     setSyncingMessaggerie(true);
     try {
-      const res = await fetch(SUPABASE_URL + "/functions/v1/giro-lanci-sync", {
+      const numeroSelezionato = filterLancio.length === 1 ? filterLancio[0] / 10 : null;
+      const syncUrl = SUPABASE_URL + "/functions/v1/giro-lanci-sync"
+        + (numeroSelezionato != null ? `?numero=${numeroSelezionato}&anno=${filterAnno}` : "");
+      const res = await fetch(syncUrl, {
         headers: { Authorization: "Bearer " + token },
       });
       const result = await res.json();
       if (!res.ok) throw new Error(result.message || result.error || "Errore sconosciuto");
       showToast("Lancio " + result.numero_lancio + "/" + result.anno_lancio + " aggiornato: " + result.titoli_sincronizzati + " titoli");
-      const eansRes = await sbFetch("lanci_settimanali?anno_lancio=eq." + result.anno_lancio + "&num_lancio=eq." + result.numero_lancio + "&select=ean", token);
+      const eansRes = await sbFetch("lanci_settimanali?anno_lancio=eq." + result.anno_lancio + "&num_lancio=eq." + result.numero_lancio_db + "&select=ean", token);
       if (Array.isArray(eansRes)) await checkAnticipiNotificati(eansRes.map(r => r.ean));
       await loadData();
       setFilterAnno(result.anno_lancio);
