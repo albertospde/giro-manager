@@ -2418,7 +2418,7 @@ if (!r.ok) throw new Error(await r.text());
       if (Array.isArray(eansRes)) await checkAnticipiNotificati(eansRes.map(r => r.ean));
       await loadData();
       setFilterAnno(result.anno_lancio);
-      setFilterLancio([result.numero_lancio]);
+      setFilterLancio([result.numero_lancio_db]);
     } catch (err) {
       showToast(err.message, "err");
     }
