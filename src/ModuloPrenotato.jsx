@@ -1,7 +1,5 @@
 import { useState, useCallback, useMemo } from "react";
-
-const SUPABASE_URL = "https://tdflwenlylhctxssatax.supabase.co";
-const SUPABASE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InRkZmx3ZW5seWxoY3R4c3NhdGF4Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzYzMzgyNzYsImV4cCI6MjA5MTkxNDI3Nn0.l35qEL7LOvyYuI1McQlVqj4vbyTqmlevcmqWbTGYi2Q";
+import { fetchPrenotatoRpn, parseEaggrega, importAggregato, CANALI_LABELS } from "./rpnPrenotatoSync.js";
 
 const T = {
   bg: "#1a2140", surface: "#212d54", border: "#2e3d6b", borderHi: "#3d4f82",
@@ -16,47 +14,6 @@ const css = {
   td: { padding: "7px 12px", borderBottom: `1px solid ${T.border}22`, verticalAlign: "middle", fontSize: "12px" },
 };
 
-const GRUPPI_CANALE = {
-  2: "FELTRINELLI", 23: "FELTRINELLI", 59: "FELTRINELLI", 77: "FELTRINELLI",
-  8: "MONDADORI", 34: "MONDADORI", 80: "MONDADORI",
-  83: "UBIK",
-  32: "GIUNTI",
-  11: "LIBRACCIO", 56: "LIBRACCIO", 88: "LIBRACCIO", 90: "LIBRACCIO", 91: "LIBRACCIO", 92: "LIBRACCIO",
-  6: "LIB_RELIGIOSE", 18: "LIB_RELIGIOSE", 19: "LIB_RELIGIOSE", 21: "LIB_RELIGIOSE", 57: "LIB_RELIGIOSE",
-  36: "LIB_COOP",
-  4: "INDIPENDENTI_ALTRE_CATENE", 22: "INDIPENDENTI_ALTRE_CATENE", 24: "INDIPENDENTI_ALTRE_CATENE", 60: "INDIPENDENTI_ALTRE_CATENE",
-  28: "FASTBOOK",
-  63: "CENTROLIBRI",
-  25: "GROSSISTI", 30: "GROSSISTI", 94: "GROSSISTI",
-  82: "AMAZON",
-  58: "IBS",
-  33: "ALTRI_ONLINE",
-};
-
-const CANALI_LABELS = {
-  FELTRINELLI: "Feltrinelli", GIUNTI: "Giunti al Punto", MONDADORI: "Mondadori",
-  UBIK: "Ubik", LIBRACCIO: "Libraccio", INDIPENDENTI_ALTRE_CATENE: "Indipendenti",
-  LIB_RELIGIOSE: "Librerie Religiose", LIB_COOP: "Librerie Coop", ALTRI_ONLINE: "Librerie On-line",
-  AMAZON: "Amazon", IBS: "Stereo Online", FASTBOOK: "Fastbook + GD", GROSSISTI: "Grossisti",
-  CENTROLIBRI: "Centro Libri",
-};
-
-// Legge un valore da una riga per nome colonna o indice (0-based)
-// Prova prima il nome esatto, poi cerca per indice se il file usa header numerici
-function leggiCella(row, nomeColonna, indice, headers) {
-  // Prima prova il nome diretto
-  if (row[nomeColonna] !== undefined && row[nomeColonna] !== "") return row[nomeColonna];
-  // Poi prova varianti case-insensitive
-  const key = Object.keys(row).find(k => k.trim().toLowerCase() === nomeColonna.toLowerCase());
-  if (key && row[key] !== "") return row[key];
-  // Fallback: usa l'indice di colonna tramite l'array headers
-  if (headers && indice < headers.length) {
-    const hKey = headers[indice];
-    if (hKey !== undefined && row[hKey] !== undefined) return row[hKey];
-  }
-  return "";
-}
-
 export default function ModuloPrenotato({ token, titoli, onImportDone }) {
   const [step, setStep] = useState("upload");
   const [righe, setRighe] = useState([]);
@@ -65,116 +22,27 @@ export default function ModuloPrenotato({ token, titoli, onImportDone }) {
   const [importing, setImporting] = useState(false);
   const [done, setDone] = useState(null);
 
-  // Se lo stesso EAN compare su più righe di `titoli` (ristampe/relanci su giri diversi),
-  // preferisce il giro più recente invece del primo trovato in ordine arbitrario
-  // (titoli arriva ordinato per ranking_editore/ranking_titolo, non per giro).
-  const trovaTitoloPerEan = useCallback((ean) => {
-    const candidati = titoli.filter(t => t.ean === ean || t.ean === String(parseInt(ean)));
-    if (candidati.length <= 1) return candidati[0];
-    return [...candidati].sort((a, b) => {
-      const annoA = Number((a.giro_label || "").split(" ")[1]) || 0;
-      const annoB = Number((b.giro_label || "").split(" ")[1]) || 0;
-      if (annoB !== annoA) return annoB - annoA;
-      const numA = Number((a.giro_label || "").split(" ")[0]) || 0;
-      const numB = Number((b.giro_label || "").split(" ")[0]) || 0;
-      if (numB !== numA) return numB - numA;
-      return (b.id || 0) - (a.id || 0); // fallback: id più alto = inserito più di recente
-    })[0];
+  const applyParsed = useCallback((arrayBuffer) => {
+    try {
+      const r = parseEaggrega(arrayBuffer, titoli);
+      setRighe(r.righe);
+      setAggregato(r.aggregato);
+      setAggregatoClienti(r.aggregatoClienti);
+      setStep("preview");
+    } catch (err) {
+      alert("Errore lettura file: " + err.message);
+    }
   }, [titoli]);
-
-  // Logica di parsing/aggregazione, condivisa tra upload manuale (handleFile) e
-  // download automatico da RPN (syncFromRpn): entrambe finiscono qui con lo stesso
-  // ArrayBuffer, così la Verifica e l'Import restano identici in entrambi i casi.
-  const processArrayBuffer = useCallback((arrayBuffer) => {
-      const XLSX = window.XLSX;
-      try {
-        const wb = XLSX.read(arrayBuffer, { type: "array" });
-        const sheetName = wb.SheetNames.find(n => n.toLowerCase().includes("pianifica")) || wb.SheetNames[0];
-        const ws = wb.Sheets[sheetName];
-
-        // Leggi con header:1 per avere sia nomi che posizioni
-        const dataRaw = XLSX.utils.sheet_to_json(ws, { defval: "", header: 1 });
-        // Prima riga = headers
-        const headers = dataRaw[0] ? dataRaw[0].map(h => String(h || "").trim()) : [];
-        // Righe dati come oggetti keyed per nome colonna
-        const data = XLSX.utils.sheet_to_json(ws, { defval: "" });
-        setRighe(data);
-
-        const aggMap = {};
-        const aggCliMap = {};
-
-        data.forEach(row => {
-          const ean = String(row["EAN"] || "").trim();
-          const gruppoRaw = row["Gruppo cliente"];
-          const qta = parseInt(row["Pren (Qtà)"]) || 0;
-          const codiceCliente = String(row["Codice cliente"] || "").trim();
-          const nomeCliente = String(row["Nome Cliente"] || "").trim();
-          if (!ean || qta === 0) return;
-
-          // Colonne aggiuntive: F=5 (N. ordine cliente), S=18 (sconto occ.), U=20 (pagamento occ.)
-          const numOrdineCliente = String(leggiCella(row, "N. ordine cliente", 5, headers) || leggiCella(row, "Ordine cliente", 5, headers) || "").trim();
-          const scontoOccRaw = leggiCella(row, "Sconto occasionale", 18, headers) || leggiCella(row, "Sc. occas.", 18, headers) || "";
-          const scontoOcc = parseFloat(String(scontoOccRaw).replace(",", ".")) || 0;
-          const pagamentoOcc = String(leggiCella(row, "Pagamento occasionale", 20, headers) || leggiCella(row, "Pag. occas.", 20, headers) || leggiCella(row, "Pag(occ)", 20, headers) || "").trim();
-
-          let canale = "INDIPENDENTI_ALTRE_CATENE";
-          if (gruppoRaw !== "" && gruppoRaw !== null && gruppoRaw !== undefined) {
-            const gruppoInt = parseInt(parseFloat(gruppoRaw));
-            if (!isNaN(gruppoInt) && gruppoInt !== 0) {
-              canale = GRUPPI_CANALE[gruppoInt] || "INDIPENDENTI_ALTRE_CATENE";
-            }
-          }
-
-          const key = `${ean}__${canale}`;
-          if (!aggMap[key]) aggMap[key] = { ean, canale, qta: 0 };
-          aggMap[key].qta += qta;
-
-          if (codiceCliente) {
-            const keyC = `${codiceCliente}__${ean}__${canale}`;
-            if (!aggCliMap[keyC]) aggCliMap[keyC] = {
-              codice_cliente: codiceCliente,
-              nome_cliente: nomeCliente,
-              ean, canale, qta: 0,
-              sconto_occasionale: scontoOcc > 0 ? scontoOcc : null,
-              pagamento_occasionale: pagamentoOcc || null,
-              num_ordine_cliente: numOrdineCliente || null,
-            };
-            aggCliMap[keyC].qta += qta;
-            // Se una riga ha sconto/pagamento/ordine, lo salviamo (prende il primo non-null trovato)
-            if (scontoOcc > 0 && !aggCliMap[keyC].sconto_occasionale) aggCliMap[keyC].sconto_occasionale = scontoOcc;
-            if (pagamentoOcc && !aggCliMap[keyC].pagamento_occasionale) aggCliMap[keyC].pagamento_occasionale = pagamentoOcc;
-            if (numOrdineCliente && !aggCliMap[keyC].num_ordine_cliente) aggCliMap[keyC].num_ordine_cliente = numOrdineCliente;
-          }
-        });
-
-        const result = Object.values(aggMap).map(r => {
-          const titolo = trovaTitoloPerEan(r.ean);
-          return { ...r, titolo: titolo?.titolo ?? "— non trovato —", found: !!titolo, titolo_id: titolo?.id };
-        }).sort((a, b) => a.ean.localeCompare(b.ean));
-
-        const resultClienti = Object.values(aggCliMap).map(r => {
-          const titolo = trovaTitoloPerEan(r.ean);
-          return { ...r, found: !!titolo, titolo_id: titolo?.id };
-        });
-
-        setAggregato(result);
-        setAggregatoClienti(resultClienti);
-        setStep("preview");
-      } catch (err) {
-        alert("Errore lettura file: " + err.message);
-      }
-  }, [trovaTitoloPerEan]);
 
   const handleFile = useCallback((e) => {
     const f = e.target.files[0];
     if (!f) return;
     const reader = new FileReader();
-    reader.onload = (evt) => processArrayBuffer(evt.target.result);
+    reader.onload = (evt) => applyParsed(evt.target.result);
     reader.readAsArrayBuffer(f);
-  }, [processArrayBuffer]);
+  }, [applyParsed]);
 
-  // Giri disponibili (esclude EXTRA), più recente per primo — stessa logica di ordinamento
-  // già usata altrove in GiroManager (anno desc poi numero desc).
+  // Giri disponibili (esclude EXTRA), più recente per primo.
   const giriDisponibili = useMemo(() => {
     const set = new Set(titoli.map(t => t.giro_label).filter(l => l && l !== "EXTRA" && !l.startsWith("EXTRA")));
     return [...set].sort((a, b) => {
@@ -193,25 +61,14 @@ export default function ModuloPrenotato({ token, titoli, onImportDone }) {
     setSyncingRpn(true);
     setRpnError(null);
     try {
-      const res = await fetch(
-        `${SUPABASE_URL}/functions/v1/giro-prenotato-sync?giro_label=${encodeURIComponent(giroLabelSel)}`,
-        { headers: { Authorization: `Bearer ${token}`, apikey: SUPABASE_KEY } }
-      );
-      if (!res.ok) {
-        const body = await res.json().catch(() => ({}));
-        if (body.error === "RPN_NOT_CONNECTED") {
-          throw new Error("Account RPN non collegato: ricollega il tuo account RPN in BookUp.");
-        }
-        throw new Error(body.message || body.error || `Errore ${res.status}`);
-      }
-      const arrayBuffer = await res.arrayBuffer();
-      processArrayBuffer(arrayBuffer);
+      const arrayBuffer = await fetchPrenotatoRpn(token, giroLabelSel);
+      applyParsed(arrayBuffer);
     } catch (err) {
       setRpnError(err.message);
     } finally {
       setSyncingRpn(false);
     }
-  }, [giroLabelSel, token, processArrayBuffer]);
+  }, [giroLabelSel, token, applyParsed]);
 
   const riepilogoCanale = useMemo(() => {
     const map = {};
@@ -224,55 +81,13 @@ export default function ModuloPrenotato({ token, titoli, onImportDone }) {
 
   const handleImport = async () => {
     setImporting(true);
-
-    const rCanali = await fetch(`${SUPABASE_URL}/rest/v1/canali?select=id,codice`, {
-      headers: { "apikey": SUPABASE_KEY, "Authorization": `Bearer ${token}` }
-    });
-    const canaliDB = await rCanali.json();
-    const canaleMap = {};
-    canaliDB.forEach(c => { canaleMap[c.codice] = c.id; });
-
-    const validi = aggregato.filter(r => r.found && r.titolo_id);
-    const payload = validi.map(r => ({
-      titolo_id: r.titolo_id,
-      canale_id: canaleMap[r.canale] || null,
-      quantita: r.qta,
-    })).filter(r => r.canale_id !== null);
-
-    const res1 = await fetch(`${SUPABASE_URL}/rest/v1/rpc/upsert_prenotato`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json", "apikey": SUPABASE_KEY, "Authorization": `Bearer ${token}` },
-      body: JSON.stringify({ payload }),
-    });
-
-    const validiClienti = aggregatoClienti.filter(r => r.found && r.titolo_id);
-    const payloadClienti = validiClienti.map(r => ({
-      codice_cliente: r.codice_cliente,
-      nome_cliente: r.nome_cliente,
-      canale_id: canaleMap[r.canale] || null,
-      titolo_id: r.titolo_id,
-      quantita: r.qta,
-      sconto_occasionale: r.sconto_occasionale ?? null,
-      pagamento_occasionale: r.pagamento_occasionale ?? null,
-      num_ordine_cliente: r.num_ordine_cliente ?? null,
-    })).filter(r => r.canale_id !== null);
-
-    for (let i = 0; i < payloadClienti.length; i += 500) {
-      const batch = payloadClienti.slice(i, i + 500);
-      await fetch(`${SUPABASE_URL}/rest/v1/rpc/upsert_prenotato_clienti`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json", "apikey": SUPABASE_KEY, "Authorization": `Bearer ${token}` },
-        body: JSON.stringify({ payload: batch }),
-      });
-    }
-
-    if (res1.ok) {
-      setDone({ ok: payload.length, totQta: totaleFound });
+    try {
+      const result = await importAggregato(token, aggregato, aggregatoClienti);
+      setDone(result);
       setStep("result");
       onImportDone && onImportDone();
-    } else {
-      const err = await res1.json();
-      alert("Errore import: " + JSON.stringify(err));
+    } catch (err) {
+      alert(err.message);
     }
     setImporting(false);
   };
