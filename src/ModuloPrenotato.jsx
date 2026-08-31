@@ -82,14 +82,13 @@ export default function ModuloPrenotato({ token, titoli, onImportDone }) {
     })[0];
   }, [titoli]);
 
-  const handleFile = useCallback((e) => {
-    const f = e.target.files[0];
-    if (!f) return;
-    const XLSX = window.XLSX;
-    const reader = new FileReader();
-    reader.onload = (evt) => {
+  // Logica di parsing/aggregazione, condivisa tra upload manuale (handleFile) e
+  // download automatico da RPN (syncFromRpn): entrambe finiscono qui con lo stesso
+  // ArrayBuffer, così la Verifica e l'Import restano identici in entrambi i casi.
+  const processArrayBuffer = useCallback((arrayBuffer) => {
+      const XLSX = window.XLSX;
       try {
-        const wb = XLSX.read(evt.target.result, { type: "array" });
+        const wb = XLSX.read(arrayBuffer, { type: "array" });
         const sheetName = wb.SheetNames.find(n => n.toLowerCase().includes("pianifica")) || wb.SheetNames[0];
         const ws = wb.Sheets[sheetName];
 
@@ -164,9 +163,55 @@ export default function ModuloPrenotato({ token, titoli, onImportDone }) {
       } catch (err) {
         alert("Errore lettura file: " + err.message);
       }
-    };
-    reader.readAsArrayBuffer(f);
   }, [trovaTitoloPerEan]);
+
+  const handleFile = useCallback((e) => {
+    const f = e.target.files[0];
+    if (!f) return;
+    const reader = new FileReader();
+    reader.onload = (evt) => processArrayBuffer(evt.target.result);
+    reader.readAsArrayBuffer(f);
+  }, [processArrayBuffer]);
+
+  // Giri disponibili (esclude EXTRA), più recente per primo — stessa logica di ordinamento
+  // già usata altrove in GiroManager (anno desc poi numero desc).
+  const giriDisponibili = useMemo(() => {
+    const set = new Set(titoli.map(t => t.giro_label).filter(l => l && l !== "EXTRA" && !l.startsWith("EXTRA")));
+    return [...set].sort((a, b) => {
+      const [na, ya] = a.split(" "); const [nb, yb] = b.split(" ");
+      return Number(yb) - Number(ya) || Number(nb) - Number(na);
+    });
+  }, [titoli]);
+
+  const [giroLabelRpn, setGiroLabelRpn] = useState("");
+  const [syncingRpn, setSyncingRpn] = useState(false);
+  const [rpnError, setRpnError] = useState(null);
+  const giroLabelSel = giroLabelRpn || giriDisponibili[0] || "";
+
+  const syncFromRpn = useCallback(async () => {
+    if (!giroLabelSel) return;
+    setSyncingRpn(true);
+    setRpnError(null);
+    try {
+      const res = await fetch(
+        `${SUPABASE_URL}/functions/v1/giro-prenotato-sync?giro_label=${encodeURIComponent(giroLabelSel)}`,
+        { headers: { Authorization: `Bearer ${token}`, apikey: SUPABASE_KEY } }
+      );
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({}));
+        if (body.error === "RPN_NOT_CONNECTED") {
+          throw new Error("Account RPN non collegato: ricollega il tuo account RPN in BookUp.");
+        }
+        throw new Error(body.message || body.error || `Errore ${res.status}`);
+      }
+      const arrayBuffer = await res.arrayBuffer();
+      processArrayBuffer(arrayBuffer);
+    } catch (err) {
+      setRpnError(err.message);
+    } finally {
+      setSyncingRpn(false);
+    }
+  }, [giroLabelSel, token, processArrayBuffer]);
 
   const riepilogoCanale = useMemo(() => {
     const map = {};
@@ -250,6 +295,28 @@ export default function ModuloPrenotato({ token, titoli, onImportDone }) {
 
       {step === "upload" && (
         <div style={{ maxWidth: 500 }}>
+          <div style={{ background: T.surface, border: `1px solid ${T.border}`, borderRadius: 6, padding: 20, marginBottom: 16 }}>
+            <div style={{ color: T.textMid, fontSize: "10px", textTransform: "uppercase", letterSpacing: "0.1em", marginBottom: 12 }}>Aggiorna da RPN</div>
+            <div style={{ display: "flex", gap: 8, marginBottom: rpnError ? 10 : 0 }}>
+              <select
+                style={{ ...css.input, flex: 1 }}
+                value={giroLabelSel}
+                onChange={e => setGiroLabelRpn(e.target.value)}
+                disabled={syncingRpn}
+              >
+                {giriDisponibili.map(g => <option key={g} value={g}>GIRO {g}</option>)}
+              </select>
+              <button style={css.btn("accent")} onClick={syncFromRpn} disabled={syncingRpn || !giroLabelSel}>
+                {syncingRpn ? "Scarico da RPN..." : "📡 Aggiorna da RPN"}
+              </button>
+            </div>
+            {rpnError && (
+              <div style={{ color: T.red, fontSize: "11px", marginTop: 4 }}>{rpnError}</div>
+            )}
+          </div>
+
+          <div style={{ textAlign: "center", color: T.textDim, fontSize: "11px", margin: "12px 0" }}>oppure</div>
+
           <div style={{ border: `2px dashed ${T.borderHi}`, borderRadius: 6, padding: 40, textAlign: "center", marginBottom: 20 }}>
             <div style={{ fontSize: "32px", marginBottom: 12 }}>📂</div>
             <div style={{ color: T.text, marginBottom: 8 }}>Carica il file "Pianifica Visite"</div>
