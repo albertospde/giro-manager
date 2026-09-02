@@ -3,7 +3,7 @@ import ModuloImport, { ImportSpalmatura } from "./ModuloImport.jsx";
 import ModuloCaricoSemplice from "./ModuloCaricoSemplice.jsx";
 import ModuloPrenotato from "./ModuloPrenotato.jsx";
 import ModuloAvanzamento from "./ModuloAvanzamento.jsx";
-import { fetchPrenotatoRpn, parseEaggrega, importAggregato } from "./rpnPrenotatoSync.js";
+import { fetchPrenotatoRpn, fetchPrenotatoRpnCedola, parseEaggrega, importAggregato } from "./rpnPrenotatoSync.js";
 
 const SUPABASE_URL = "https://tdflwenlylhctxssatax.supabase.co";
 const SUPABASE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InRkZmx3ZW5seWxoY3R4c3NhdGF4Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzYzMzgyNzYsImV4cCI6MjA5MTkxNDI3Nn0.l35qEL7LOvyYuI1McQlVqj4vbyTqmlevcmqWbTGYi2Q";
@@ -1499,22 +1499,27 @@ function ModuloFineGiro({ titoli, prenotato, canali, token, ruolo, spalmatura, u
   const [filterAccount, setFilterAccount] = useState([]);
   useEffect(() => { if (ruolo === 'agente' && userAccount) { setFilterAccount(prev => prev.length > 0 ? prev : [userAccount]); } }, [ruolo, userAccount]);
 
-  // Bottone "Aggiorna da RPN" della pagina Fine Giro: attivo solo con un singolo giro
-  // selezionato in tendina (serve sapere quale giro chiedere a RPN).
+  // Bottone "Aggiorna da RPN" della pagina Fine Giro: attivo con un singolo Giro
+  // selezionato, OPPURE una singola cedola Extra (le extra su RPN non hanno un giro,
+  // si cercano per nome cedola — vedi rpnPrenotatoSync.js).
   const [rpnSync, setRpnSync] = useState({ status: "idle", error: null, preview: null }); // idle | loading | preview | importing | done
   const rpnGiroTarget = giroLabelSel.length === 1 ? giroLabelSel[0] : null;
+  const rpnCedolaTarget = giroLabelSel.length === 0 && extraSel.length === 1 ? extraSel[0] : null;
+  const rpnTargetLabel = rpnGiroTarget ? `Giro ${rpnGiroTarget}` : rpnCedolaTarget;
 
   const avviaSyncRpn = useCallback(async () => {
-    if (!rpnGiroTarget) return;
+    if (!rpnGiroTarget && !rpnCedolaTarget) return;
     setRpnSync({ status: "loading", error: null, preview: null });
     try {
-      const arrayBuffer = await fetchPrenotatoRpn(token, rpnGiroTarget);
+      const arrayBuffer = rpnGiroTarget
+        ? await fetchPrenotatoRpn(token, rpnGiroTarget)
+        : await fetchPrenotatoRpnCedola(token, rpnCedolaTarget);
       const parsed = parseEaggrega(arrayBuffer, titoli);
       setRpnSync({ status: "preview", error: null, preview: parsed });
     } catch (err) {
       setRpnSync({ status: "idle", error: err.message, preview: null });
     }
-  }, [rpnGiroTarget, token, titoli]);
+  }, [rpnGiroTarget, rpnCedolaTarget, token, titoli]);
 
   const confermaImportRpn = useCallback(async () => {
     if (!rpnSync.preview) return;
@@ -1600,7 +1605,7 @@ function ModuloFineGiro({ titoli, prenotato, canali, token, ruolo, spalmatura, u
       .filter(t => filterAccount.length === 0 || filterAccount.includes(t.account_editore))
       .filter(t => filterPromozione.length === 0 || filterPromozione.includes(normPromo(t.promozione)))
       .filter(t => { if (!search) return true; const q = search.toLowerCase(); return t.titolo?.toLowerCase().includes(q) || t.ean?.includes(q); })
-      .sort((a, b) => (a.n_cedola ?? "").localeCompare(b.n_cedola ?? "") || ((a.ranking_editore ?? 99) - (b.ranking_editore ?? 99)) || (a.editore_nome ?? "").localeCompare(b.editore_nome ?? "") || (a.posizione ?? 0) - (b.posizione ?? 0));
+      .sort((a, b) => (a.ranking_editore ?? 99) - (b.ranking_editore ?? 99) || (a.ranking_titolo ?? 99) - (b.ranking_titolo ?? 99));
   }, [titoli, giroLabelSel, extraSel, cedolaSel, filterEditori, filterAccount, filterPromozione, search]);
 
   const macrogruppiVis = ruolo === "agente" ? MACROGRUPPI.filter(mg => mg.id === "RETE" || mg.id === "GROSSISTI") : MACROGRUPPI;
@@ -1895,8 +1900,8 @@ function ModuloFineGiro({ titoli, prenotato, canali, token, ruolo, spalmatura, u
         <button
           style={{ ...css.btn("accent"), marginLeft: "auto" }}
           onClick={avviaSyncRpn}
-          disabled={!rpnGiroTarget || rpnSync.status === "loading"}
-          title={!rpnGiroTarget ? "Seleziona un solo Giro per aggiornare da RPN" : undefined}
+          disabled={(!rpnGiroTarget && !rpnCedolaTarget) || rpnSync.status === "loading"}
+          title={(!rpnGiroTarget && !rpnCedolaTarget) ? "Seleziona un solo Giro o una sola Cedola Extra per aggiornare da RPN" : undefined}
         >
           {rpnSync.status === "loading" ? "Scarico da RPN..." : "📡 Aggiorna da RPN"}
         </button>
@@ -1914,7 +1919,7 @@ function ModuloFineGiro({ titoli, prenotato, canali, token, ruolo, spalmatura, u
       {(rpnSync.status === "preview" || rpnSync.status === "importing") && rpnSync.preview && (
         <div style={{ padding: "14px 20px", borderBottom: `1px solid ${T.border}`, background: T.surface }}>
           <div style={{ color: T.textMid, fontSize: "10px", textTransform: "uppercase", letterSpacing: "0.1em", marginBottom: 10 }}>
-            Anteprima da RPN — Giro {rpnGiroTarget}
+            Anteprima da RPN — {rpnTargetLabel}
           </div>
           <div style={{ display: "flex", gap: 12, flexWrap: "wrap", marginBottom: 12 }}>
             {[
@@ -1940,7 +1945,7 @@ function ModuloFineGiro({ titoli, prenotato, canali, token, ruolo, spalmatura, u
 
       {rpnSync.status === "done" && (
         <div style={{ padding: "10px 20px", borderBottom: `1px solid ${T.border}`, background: T.green + "18", color: T.green, fontSize: "12px", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-          <span>✅ Prenotato aggiornato da RPN per il Giro {rpnGiroTarget}.</span>
+          <span>✅ Prenotato aggiornato da RPN per {rpnTargetLabel}.</span>
           <button style={{ ...css.btn(), fontSize: "11px", padding: "3px 10px" }} onClick={() => setRpnSync({ status: "idle", error: null, preview: null })}>Chiudi</button>
         </div>
       )}
