@@ -319,6 +319,7 @@ function EditModal({ titolo, siblings = [], onSave, onClose, onDelete, token }) 
     const editableFields = [
       "titolo","autore","editore_nome","ean","prezzo","uscita","formato","eta",
       "account_editore","promozione","obiettivo_assegnato","obiettivo_raggiunto","posizione","ranking_editore",
+      "n_cedola",
       "il_triangolo","top_100","ean_gemello_1","titolo_gemello_1","ean_gemello_2",
       "titolo_gemello_2","ean_gemello_3","titolo_gemello_3","note_comunicazione","note"
     ];
@@ -358,7 +359,7 @@ function EditModal({ titolo, siblings = [], onSave, onClose, onDelete, token }) 
           <button style={css.btn()} onClick={onClose}>✕</button>
         </div>
         <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
-          {[["titolo","Titolo","full"],["autore","Autore"],["editore_nome","Editore"],["ean","EAN"],["prezzo","Prezzo"],["uscita","Uscita"],["formato","Formato"],["eta","Età"],["posizione","Posizione per editore"],["ranking_editore","Ranking editore"],["account_editore","Account"],["promozione","Promozione"],["obiettivo_assegnato","Obiettivo assegnato"],["obiettivo_raggiunto","Obiettivo raggiunto"]].map(([k, label, span]) => (
+          {[["titolo","Titolo","full"],["autore","Autore"],["editore_nome","Editore"],["ean","EAN"],["n_cedola","N° Cedola"],["prezzo","Prezzo"],["uscita","Uscita"],["formato","Formato"],["eta","Età"],["posizione","Posizione per editore"],["ranking_editore","Ranking editore"],["account_editore","Account"],["promozione","Promozione"],["obiettivo_assegnato","Obiettivo assegnato"],["obiettivo_raggiunto","Obiettivo raggiunto"]].map(([k, label, span]) => (
             <div key={k} style={span === "full" ? { gridColumn: "1/-1" } : {}}>
               <label style={{ color: T.textMid, fontSize: "10px", letterSpacing: "0.08em", textTransform: "uppercase", display: "block", marginBottom: 4 }}>{label}</label>
               <input style={{ ...css.input, width: "100%", boxSizing: "border-box" }} value={form[k] ?? ""} onChange={set(k)} />
