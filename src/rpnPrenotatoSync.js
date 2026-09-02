@@ -61,8 +61,18 @@ function trovaTitoloPerEan(titoli, ean) {
 // Scarica il file "Pianifica Visite" da RPN tramite la edge function
 // (login + download RPN gestiti lato server, riusa le credenziali già collegate in BookUp).
 export async function fetchPrenotatoRpn(token, giroLabel) {
+  return fetchPrenotatoRpnByParam(token, "giro_label", giroLabel);
+}
+
+// Cedole extra (non associate a nessun giro su RPN): si selezionano per nome cedola
+// invece che per giro, con un endpoint diverso lato edge function.
+export async function fetchPrenotatoRpnCedola(token, cedolaNome) {
+  return fetchPrenotatoRpnByParam(token, "cedola_nome", cedolaNome);
+}
+
+async function fetchPrenotatoRpnByParam(token, paramName, paramValue) {
   const res = await fetch(
-    `${SUPABASE_URL}/functions/v1/giro-prenotato-sync?giro_label=${encodeURIComponent(giroLabel)}`,
+    `${SUPABASE_URL}/functions/v1/giro-prenotato-sync?${paramName}=${encodeURIComponent(paramValue)}`,
     { headers: { Authorization: `Bearer ${token}`, apikey: SUPABASE_KEY } }
   );
   if (!res.ok) {
