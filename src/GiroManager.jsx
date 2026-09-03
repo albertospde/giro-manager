@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo, useCallback } from "react";
+import { useState, useEffect, useMemo, useCallback, useRef } from "react";
 import ModuloImport, { ImportSpalmatura } from "./ModuloImport.jsx";
 import ModuloCaricoSemplice from "./ModuloCaricoSemplice.jsx";
 import ModuloPrenotato from "./ModuloPrenotato.jsx";
@@ -3949,6 +3949,8 @@ function ModuloAnticipiLancio({ token, userEmail }) {
   const [editingId, setEditingId] = useState(null);
   const [saving, setSaving] = useState(false);
   const [cercandoTitolo, setCercandoTitolo] = useState(false);
+  const [cercaEanEsito, setCercaEanEsito] = useState(null); // { ok: bool, msg: string } — esito visibile della ricerca EAN, non solo un toast che sparisce
+  const ultimoEanCercato = useRef("");
   const [toast, setToast] = useState(null);
   const [firma, setFirma] = useState(() => localStorage.getItem("anticipiLancio_firma") || "");
   const [numeroLancio, setNumeroLancio] = useState("");
@@ -3969,7 +3971,7 @@ function ModuloAnticipiLancio({ token, userEmail }) {
   }, [token]);
   useEffect(() => { loadData(); }, [loadData]);
 
-  const apriNuovo = () => { setEditingId(null); setForm(emptyForm); setShowForm(true); };
+  const apriNuovo = () => { setEditingId(null); setForm(emptyForm); setCercaEanEsito(null); ultimoEanCercato.current = ""; setShowForm(true); };
 
   const apriModifica = (row) => {
     setEditingId(row.id);
@@ -3984,17 +3986,22 @@ function ModuloAnticipiLancio({ token, userEmail }) {
       data_consegna_desiderata: row.data_consegna_desiderata || "",
       note: row.note || "",
     });
+    setCercaEanEsito(null);
+    ultimoEanCercato.current = row.ean || "";
     setShowForm(true);
   };
 
-  const cercaTitolo = async () => {
-    const ean = form.ean.trim();
-    if (!ean) { showToast("Inserisci prima l'EAN", "err"); return; }
+  const cercaTitolo = async (eanOverride) => {
+    const ean = (eanOverride ?? form.ean).trim();
+    if (!ean) { setCercaEanEsito(null); return; }
+    if (ean === ultimoEanCercato.current && cercaEanEsito) return; // già cercato per questo EAN, evita richieste doppie
+    ultimoEanCercato.current = ean;
     setCercandoTitolo(true);
+    setCercaEanEsito(null);
     try {
       const t = await cercaTitoloDaEan(ean, token);
       if (!t) {
-        showToast("Nessun titolo trovato su BookUp per questo EAN", "err");
+        setCercaEanEsito({ ok: false, msg: "Nessun titolo trovato su BookUp per questo EAN" });
       } else {
         setForm(f => ({
           ...f,
@@ -4003,11 +4010,11 @@ function ModuloAnticipiLancio({ token, userEmail }) {
           editore: t.publisher || f.editore,
           prezzo: t.price != null ? String(t.price) : f.prezzo,
         }));
-        showToast("Dati titolo recuperati da BookUp");
+        setCercaEanEsito({ ok: true, msg: `Dati recuperati da BookUp: ${t.title || "titolo trovato"}` });
       }
     } catch (e) {
-      if (e.status === 428) showToast("Account Messaggerie Libri non collegato in BookUp", "err");
-      else showToast("Errore ricerca titolo: " + e.message, "err");
+      if (e.status === 428) setCercaEanEsito({ ok: false, msg: "Account Messaggerie Libri non collegato in BookUp (sezione Consultazione Titoli)" });
+      else setCercaEanEsito({ ok: false, msg: "Errore ricerca titolo: " + e.message });
     }
     setCercandoTitolo(false);
   };
@@ -4160,12 +4167,22 @@ function ModuloAnticipiLancio({ token, userEmail }) {
               <div style={{ gridColumn: "1/-1", display: "flex", gap: 8, alignItems: "flex-end" }}>
                 <div style={{ flex: 1 }}>
                   <label style={{ color: T.textMid, fontSize: "10px", textTransform: "uppercase", letterSpacing: "0.08em", display: "block", marginBottom: 4 }}>EAN *</label>
-                  <input style={{ ...css.input, width: "100%", boxSizing: "border-box" }} value={form.ean} onChange={e => setForm(f => ({ ...f, ean: e.target.value }))} />
+                  <input
+                    style={{ ...css.input, width: "100%", boxSizing: "border-box" }}
+                    value={form.ean}
+                    onChange={e => setForm(f => ({ ...f, ean: e.target.value }))}
+                    onBlur={e => cercaTitolo(e.target.value)}
+                  />
                 </div>
-                <button type="button" style={css.btn()} onClick={cercaTitolo} disabled={cercandoTitolo}>
-                  {cercandoTitolo ? "Ricerca..." : "🔍 Cerca da BookUp"}
+                <button type="button" style={css.btn()} onClick={() => cercaTitolo()} disabled={cercandoTitolo}>
+                  {cercandoTitolo ? "Ricerca..." : "🔍 Ricerca da BookUp"}
                 </button>
               </div>
+              {(cercandoTitolo || cercaEanEsito) && (
+                <div style={{ gridColumn: "1/-1", fontSize: "11px", marginTop: -6, color: cercandoTitolo ? T.textMid : (cercaEanEsito.ok ? T.green : "#e8a838") }}>
+                  {cercandoTitolo ? "Ricerca su BookUp in corso..." : cercaEanEsito.msg}
+                </div>
+              )}
               <div style={{ gridColumn: "1/-1" }}>
                 <label style={{ color: T.textMid, fontSize: "10px", textTransform: "uppercase", letterSpacing: "0.08em", display: "block", marginBottom: 4 }}>Titolo</label>
                 <input style={{ ...css.input, width: "100%", boxSizing: "border-box" }} value={form.titolo} onChange={e => setForm(f => ({ ...f, titolo: e.target.value }))} />
