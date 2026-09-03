@@ -3926,7 +3926,6 @@ function ModuloVerificaLanciAmazon({ token, titoli, prenotato, canali }) {
 function ModuloAnticipiLancio({ token, userEmail }) {
   const [data, setData] = useState([]);
   const [loading, setLoading] = useState(true);
-  const [template, setTemplate] = useState(null);
   const [filterStato, setFilterStato] = useState("attivi"); // attivi | da_gestire | notificato | gestito | tutti
   const [search, setSearch] = useState("");
   const [selected, setSelected] = useState(new Set());
@@ -3934,25 +3933,23 @@ function ModuloAnticipiLancio({ token, userEmail }) {
   const [editingId, setEditingId] = useState(null);
   const [saving, setSaving] = useState(false);
   const [toast, setToast] = useState(null);
-  const emptyForm = { codice_cliente: "", ean: "", quantita: "", sconto_occasionale: "", pagamento_occasionale: "", numero_ordine: "", note: "" };
+  const [firma, setFirma] = useState(() => localStorage.getItem("anticipiLancio_firma") || "");
+  const emptyForm = { codice_cliente: "", ean: "", quantita: "", sconto_occasionale: "", pagamento_occasionale: "", numero_ordine: "", data_consegna_desiderata: "", note: "" };
   const [form, setForm] = useState(emptyForm);
 
   const showToast = (msg, type = "ok") => { setToast({ msg, type }); setTimeout(() => setToast(null), 3500); };
 
+  useEffect(() => { localStorage.setItem("anticipiLancio_firma", firma); }, [firma]);
+
   const loadData = useCallback(() => {
     if (!token) return;
     setLoading(true);
-    sbFetch("novita_fuori_lancio?select=*,lanci_settimanali(num_lancio,anno_lancio,titolo,editore)&order=created_at.desc", token).then(d => {
+    sbFetch("novita_fuori_lancio?select=*,lanci_settimanali(num_lancio,anno_lancio,titolo,autore,editore,prezzo)&order=created_at.desc", token).then(d => {
       setData(Array.isArray(d) ? d : []);
       setLoading(false);
     });
   }, [token]);
   useEffect(() => { loadData(); }, [loadData]);
-
-  useEffect(() => {
-    if (!token) return;
-    sbFetch("mail_templates?select=*&key=eq.anticipo_lancio", token).then(d => { if (Array.isArray(d) && d[0]) setTemplate(d[0]); });
-  }, [token]);
 
   const apriNuovo = () => { setEditingId(null); setForm(emptyForm); setShowForm(true); };
 
@@ -3965,6 +3962,7 @@ function ModuloAnticipiLancio({ token, userEmail }) {
       sconto_occasionale: row.sconto_occasionale != null ? String(row.sconto_occasionale) : "",
       pagamento_occasionale: row.pagamento_occasionale || "",
       numero_ordine: row.numero_ordine || "",
+      data_consegna_desiderata: row.data_consegna_desiderata || "",
       note: row.note || "",
     });
     setShowForm(true);
@@ -3982,6 +3980,7 @@ function ModuloAnticipiLancio({ token, userEmail }) {
       sconto_occasionale: form.sconto_occasionale ? parseFloat(String(form.sconto_occasionale).replace(",", ".")) : null,
       pagamento_occasionale: form.pagamento_occasionale.trim() || null,
       numero_ordine: form.numero_ordine.trim() || null,
+      data_consegna_desiderata: form.data_consegna_desiderata || null,
       note: form.note.trim() || null,
     };
     if (editingId) {
@@ -4044,6 +4043,18 @@ function ModuloAnticipiLancio({ token, userEmail }) {
     if (r.ok) { setData(prev => prev.map(x => x.id === id ? { ...x, stato: "da_gestire", gestito_at: null } : x)); showToast("Riaperto"); }
   };
 
+  const updateNumeroOrdine = async (id, value) => {
+    const row = data.find(x => x.id === id);
+    if ((row.numero_ordine || "") === value) return;
+    const r = await fetch(`${SUPABASE_URL}/rest/v1/novita_fuori_lancio?id=eq.${id}`, {
+      method: "PATCH",
+      headers: { "apikey": SUPABASE_KEY, "Authorization": `Bearer ${token}`, "Content-Type": "application/json", "Prefer": "return=minimal" },
+      body: JSON.stringify({ numero_ordine: value.trim() || null }),
+    });
+    if (r.ok) setData(prev => prev.map(x => x.id === id ? { ...x, numero_ordine: value.trim() || null } : x));
+    else showToast("Errore salvataggio Ordine MELI", "err");
+  };
+
   const eliminaRiga = async (id) => {
     if (!confirm("Eliminare questa riga?")) return;
     const r = await fetch(`${SUPABASE_URL}/rest/v1/novita_fuori_lancio?id=eq.${id}`, {
@@ -4072,16 +4083,41 @@ function ModuloAnticipiLancio({ token, userEmail }) {
 
   const toggleSelect = (id) => setSelected(prev => { const n = new Set(prev); n.has(id) ? n.delete(id) : n.add(id); return n; });
 
-  const creaMail = (row) => {
-    if (!template) { showToast("Template mail non disponibile", "err"); return; }
-    const lancioLabel = row.lanci_settimanali ? `${row.lanci_settimanali.num_lancio}/${row.lanci_settimanali.anno_lancio}` : "(non ancora lanciato)";
-    const corpo = (template.corpo || "")
-      .replaceAll("{cliente}", row.codice_cliente)
-      .replaceAll("{lancio}", lancioLabel)
-      .replaceAll("{ean}", row.ean);
-    const subject = encodeURIComponent(template.oggetto || "Anticipo lancio");
-    const body = encodeURIComponent(corpo);
-    window.location.href = `mailto:?subject=${subject}&body=${body}`;
+  const creaMail = () => {
+    const righeSel = dataFiltrata.filter(r => selected.has(r.id));
+    if (righeSel.length === 0) { showToast("Seleziona almeno una riga", "err"); return; }
+    const senzaLancio = righeSel.filter(r => !r.lanci_settimanali);
+    if (senzaLancio.length > 0) {
+      showToast(`${senzaLancio.length} riga/e selezionata/e non è/sono ancora agganciata/e a un lancio`, "err");
+      return;
+    }
+    const lanci = [...new Set(righeSel.map(r => `${r.lanci_settimanali.num_lancio}/${r.lanci_settimanali.anno_lancio}`))];
+    const subject = `Anticipi Lancio - Lancio ${lanci.join(", ")}`;
+
+    const righeTesto = righeSel.map(r => {
+      const l = r.lanci_settimanali;
+      const parti = [
+        `Cliente ${r.codice_cliente}`,
+        `EAN ${r.ean}`,
+        l.titolo,
+        l.autore,
+        l.editore,
+        l.prezzo != null ? `€ ${Number(l.prezzo).toFixed(2)}` : null,
+        `Qtà ${r.quantita}`,
+        r.sconto_occasionale != null ? `Sc.Occ ${r.sconto_occasionale}%` : null,
+        r.pagamento_occasionale ? `Pag.Occ ${r.pagamento_occasionale}` : null,
+        r.data_consegna_desiderata ? `Consegna desiderata ${fmtDataIt(r.data_consegna_desiderata)}` : null,
+        r.numero_ordine ? `Ord. MELI ${r.numero_ordine}` : null,
+      ].filter(Boolean);
+      return "- " + parti.join(" - ");
+    }).join("\n");
+
+    const corpo = `Buongiorno,\n\ndi seguito vi segnalo uno o più ordini da gestire con anticipo lancio:\n\n${righeTesto}\n\nGrazie di una conferma di presa in carico.\n\n${firma || "[Firma]"}`;
+
+    window.location.href = `mailto:gestione.lancio@meli.it?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(corpo)}`;
+
+    righeSel.forEach(r => segnaGestito(r.id));
+    setSelected(new Set());
   };
 
   const exportMessaggerie = () => {
@@ -4136,13 +4172,17 @@ function ModuloAnticipiLancio({ token, userEmail }) {
                 ["codice_cliente", "Codice/i cliente *", "full"],
                 ["ean", "EAN *"], ["quantita", "Quantità *"],
                 ["sconto_occasionale", "Sconto occasionale (%)"], ["pagamento_occasionale", "Pagamento occasionale"],
-                ["numero_ordine", "N° ordine", "full"],
+                ["numero_ordine", "Ordine MELI"],
               ].map(([k, label, span]) => (
                 <div key={k} style={span === "full" ? { gridColumn: "1/-1" } : {}}>
                   <label style={{ color: T.textMid, fontSize: "10px", textTransform: "uppercase", letterSpacing: "0.08em", display: "block", marginBottom: 4 }}>{label}</label>
                   <input style={{ ...css.input, width: "100%", boxSizing: "border-box" }} value={form[k]} onChange={e => setForm(f => ({ ...f, [k]: e.target.value }))} placeholder={k === "codice_cliente" ? "es. 12345, 67890" : ""} />
                 </div>
               ))}
+              <div>
+                <label style={{ color: T.textMid, fontSize: "10px", textTransform: "uppercase", letterSpacing: "0.08em", display: "block", marginBottom: 4 }}>Data consegna desiderata</label>
+                <input type="date" style={{ ...css.input, width: "100%", boxSizing: "border-box" }} value={form.data_consegna_desiderata} onChange={e => setForm(f => ({ ...f, data_consegna_desiderata: e.target.value }))} />
+              </div>
             </div>
             {editingId && form.ean && (
               <div style={{ color: "#e8a838", fontSize: "11px", marginTop: 8 }}>
@@ -4167,8 +4207,10 @@ function ModuloAnticipiLancio({ token, userEmail }) {
           <button key={k} style={css.btn(filterStato === k ? "accent" : "default")} onClick={() => setFilterStato(k)}>{label}</button>
         ))}
         <input style={{ ...css.input, width: 200 }} placeholder="Cerca cliente / EAN / ordine..." value={search} onChange={e => setSearch(e.target.value)} />
+        <input style={{ ...css.input, width: 180 }} placeholder="Firma per la mail..." value={firma} onChange={e => setFirma(e.target.value)} />
         <div style={{ marginLeft: "auto", display: "flex", gap: 8 }}>
           <button style={css.btn()} onClick={exportMessaggerie}>↓ Export Messaggerie{selected.size > 0 ? ` (${selected.size})` : ""}</button>
+          <button style={{ ...css.btn(), borderColor: T.accent, color: T.accent }} onClick={creaMail} disabled={selected.size === 0}>✉️ Crea mail{selected.size > 0 ? ` (${selected.size})` : ""}</button>
           <button style={{ ...css.btn(), borderColor: T.green, color: T.green }} onClick={apriNuovo}>+ Nuovo</button>
         </div>
       </div>
@@ -4189,11 +4231,15 @@ function ModuloAnticipiLancio({ token, userEmail }) {
               <th style={css.th}>Stato</th>
               <th style={css.th}>Cliente/i</th>
               <th style={css.th}>EAN</th>
-              <th style={css.th}>Titolo (se lanciato)</th>
+              <th style={css.th}>Titolo</th>
+              <th style={css.th}>Autore</th>
+              <th style={css.th}>Editore</th>
+              <th style={css.th}>Prezzo</th>
               <th style={css.th}>Qtà</th>
               <th style={css.th}>Sconto occ.</th>
               <th style={css.th}>Pag. occ.</th>
-              <th style={css.th}>N° ordine</th>
+              <th style={css.th}>Ordine MELI</th>
+              <th style={css.th}>Consegna des.</th>
               <th style={css.th}>Note</th>
               <th style={css.th}></th>
             </tr>
@@ -4206,18 +4252,29 @@ function ModuloAnticipiLancio({ token, userEmail }) {
                   {r.stato === "gestito" && <Badge label="Gestito" color={T.green} />}
                   {r.stato === "notificato" && <Badge label="🔔 Notificato" color="#e8a838" />}
                   {r.stato === "da_gestire" && <Badge label="Da gestire" color={T.textMid} />}
+                  {r.lanci_settimanali && <div style={{ fontSize: "10px", color: T.textDim, marginTop: 2 }}>lancio {r.lanci_settimanali.num_lancio}/{r.lanci_settimanali.anno_lancio}</div>}
                 </td>
                 <td style={{ ...css.td, fontWeight: "600" }}>{r.codice_cliente}</td>
                 <td style={{ ...css.td, fontFamily: "monospace", fontSize: "11px", color: T.textMid }}>{r.ean}</td>
-                <td style={{ ...css.td, color: T.accent, maxWidth: 200 }}>{r.lanci_settimanali ? `${r.lanci_settimanali.titolo} (lancio ${r.lanci_settimanali.num_lancio}/${r.lanci_settimanali.anno_lancio})` : <span style={{ color: T.textDim }}>—</span>}</td>
+                <td style={{ ...css.td, color: T.accent, maxWidth: 200 }}>{r.lanci_settimanali?.titolo || <span style={{ color: T.textDim }}>—</span>}</td>
+                <td style={{ ...css.td, color: T.textMid, maxWidth: 130, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{r.lanci_settimanali?.autore || "—"}</td>
+                <td style={css.td}>{r.lanci_settimanali?.editore || "—"}</td>
+                <td style={css.td}>{r.lanci_settimanali?.prezzo != null ? `€ ${Number(r.lanci_settimanali.prezzo).toFixed(2)}` : "—"}</td>
                 <td style={css.td}>{r.quantita}</td>
                 <td style={css.td}>{r.sconto_occasionale != null ? `${r.sconto_occasionale}%` : "—"}</td>
                 <td style={css.td}>{r.pagamento_occasionale || "—"}</td>
-                <td style={css.td}>{r.numero_ordine || "—"}</td>
+                <td style={css.td}>
+                  <input
+                    style={{ ...css.input, width: 90, padding: "3px 6px", fontSize: "11px" }}
+                    defaultValue={r.numero_ordine || ""}
+                    placeholder="—"
+                    onBlur={e => updateNumeroOrdine(r.id, e.target.value)}
+                  />
+                </td>
+                <td style={css.td}>{fmtDataIt(r.data_consegna_desiderata)}</td>
                 <td style={{ ...css.td, maxWidth: 160, fontSize: "11px", color: T.textMid, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }} title={r.note}>{r.note || ""}</td>
                 <td style={{ ...css.td, whiteSpace: "nowrap" }}>
                   <button title="Modifica" style={{ ...css.btn(), padding: "2px 6px", fontSize: "11px", marginRight: 4 }} onClick={() => apriModifica(r)}>✎</button>
-                  <button title="Crea mail" style={{ ...css.btn(), padding: "2px 6px", fontSize: "11px", marginRight: 4 }} onClick={() => creaMail(r)}>✉️</button>
                   {r.stato !== "gestito" ? (
                     <button title="Segna gestito" style={{ ...css.btn(), padding: "2px 6px", fontSize: "11px", color: T.green, borderColor: T.green, marginRight: 4 }} onClick={() => segnaGestito(r.id)}>✓</button>
                   ) : (
