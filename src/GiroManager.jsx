@@ -3923,6 +3923,22 @@ function ModuloVerificaLanciAmazon({ token, titoli, prenotato, canali }) {
   );
 }
 // ─── MODULO ANTICIPI LANCIO ────────────────────────────────────────────────
+const RPN_TITOLI_BASE = "https://tdflwenlylhctxssatax.supabase.co/functions/v1/rpn-sync";
+
+async function cercaTitoloDaEan(ean, token) {
+  const res = await fetch(`${RPN_TITOLI_BASE}/titoli-search?query=${encodeURIComponent(ean)}`, {
+    headers: { "Authorization": `Bearer ${token}`, "Content-Type": "application/json" },
+  });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) {
+    const err = new Error(data.message || data.error || `Errore ${res.status}`);
+    err.status = res.status;
+    throw err;
+  }
+  const titles = data.titles || [];
+  return titles.find(t => t.ean === ean) || titles[0] || null;
+}
+
 function ModuloAnticipiLancio({ token, userEmail }) {
   const [data, setData] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -3932,9 +3948,11 @@ function ModuloAnticipiLancio({ token, userEmail }) {
   const [showForm, setShowForm] = useState(false);
   const [editingId, setEditingId] = useState(null);
   const [saving, setSaving] = useState(false);
+  const [cercandoTitolo, setCercandoTitolo] = useState(false);
   const [toast, setToast] = useState(null);
   const [firma, setFirma] = useState(() => localStorage.getItem("anticipiLancio_firma") || "");
-  const emptyForm = { codice_cliente: "", ean: "", quantita: "", sconto_occasionale: "", pagamento_occasionale: "", numero_ordine: "", data_consegna_desiderata: "", note: "" };
+  const [numeroLancio, setNumeroLancio] = useState("");
+  const emptyForm = { codice_cliente: "", ean: "", titolo: "", autore: "", editore: "", prezzo: "", quantita: "", data_consegna_desiderata: "", note: "" };
   const [form, setForm] = useState(emptyForm);
 
   const showToast = (msg, type = "ok") => { setToast({ msg, type }); setTimeout(() => setToast(null), 3500); };
@@ -3944,7 +3962,7 @@ function ModuloAnticipiLancio({ token, userEmail }) {
   const loadData = useCallback(() => {
     if (!token) return;
     setLoading(true);
-    sbFetch("novita_fuori_lancio?select=*,lanci_settimanali(num_lancio,anno_lancio,titolo,autore,editore,prezzo)&order=created_at.desc", token).then(d => {
+    sbFetch("novita_fuori_lancio?select=*,lanci_settimanali(num_lancio,anno_lancio)&order=created_at.desc", token).then(d => {
       setData(Array.isArray(d) ? d : []);
       setLoading(false);
     });
@@ -3958,14 +3976,40 @@ function ModuloAnticipiLancio({ token, userEmail }) {
     setForm({
       codice_cliente: row.codice_cliente || "",
       ean: row.ean || "",
+      titolo: row.titolo || "",
+      autore: row.autore || "",
+      editore: row.editore || "",
+      prezzo: row.prezzo != null ? String(row.prezzo) : "",
       quantita: row.quantita != null ? String(row.quantita) : "",
-      sconto_occasionale: row.sconto_occasionale != null ? String(row.sconto_occasionale) : "",
-      pagamento_occasionale: row.pagamento_occasionale || "",
-      numero_ordine: row.numero_ordine || "",
       data_consegna_desiderata: row.data_consegna_desiderata || "",
       note: row.note || "",
     });
     setShowForm(true);
+  };
+
+  const cercaTitolo = async () => {
+    const ean = form.ean.trim();
+    if (!ean) { showToast("Inserisci prima l'EAN", "err"); return; }
+    setCercandoTitolo(true);
+    try {
+      const t = await cercaTitoloDaEan(ean, token);
+      if (!t) {
+        showToast("Nessun titolo trovato su BookUp per questo EAN", "err");
+      } else {
+        setForm(f => ({
+          ...f,
+          titolo: t.title || f.titolo,
+          autore: t.author || f.autore,
+          editore: t.publisher || f.editore,
+          prezzo: t.price != null ? String(t.price) : f.prezzo,
+        }));
+        showToast("Dati titolo recuperati da BookUp");
+      }
+    } catch (e) {
+      if (e.status === 428) showToast("Account Messaggerie Libri non collegato in BookUp", "err");
+      else showToast("Errore ricerca titolo: " + e.message, "err");
+    }
+    setCercandoTitolo(false);
   };
 
   const salvaForm = async () => {
@@ -3976,15 +4020,15 @@ function ModuloAnticipiLancio({ token, userEmail }) {
     const payload = {
       codice_cliente: form.codice_cliente.trim(),
       ean: form.ean.trim(),
+      titolo: form.titolo.trim() || null,
+      autore: form.autore.trim() || null,
+      editore: form.editore.trim() || null,
+      prezzo: form.prezzo ? parseFloat(String(form.prezzo).replace(",", ".")) : null,
       quantita: parseInt(form.quantita, 10) || 0,
-      sconto_occasionale: form.sconto_occasionale ? parseFloat(String(form.sconto_occasionale).replace(",", ".")) : null,
-      pagamento_occasionale: form.pagamento_occasionale.trim() || null,
-      numero_ordine: form.numero_ordine.trim() || null,
       data_consegna_desiderata: form.data_consegna_desiderata || null,
       note: form.note.trim() || null,
     };
     if (editingId) {
-      // Se cambia l'EAN, ripristina lo stato a "da_gestire" e stacca il lancio, così il trigger può ri-matchare da capo
       const rigaOriginale = data.find(x => x.id === editingId);
       if (rigaOriginale && rigaOriginale.ean !== payload.ean) {
         payload.stato = "da_gestire";
@@ -4043,18 +4087,6 @@ function ModuloAnticipiLancio({ token, userEmail }) {
     if (r.ok) { setData(prev => prev.map(x => x.id === id ? { ...x, stato: "da_gestire", gestito_at: null } : x)); showToast("Riaperto"); }
   };
 
-  const updateNumeroOrdine = async (id, value) => {
-    const row = data.find(x => x.id === id);
-    if ((row.numero_ordine || "") === value) return;
-    const r = await fetch(`${SUPABASE_URL}/rest/v1/novita_fuori_lancio?id=eq.${id}`, {
-      method: "PATCH",
-      headers: { "apikey": SUPABASE_KEY, "Authorization": `Bearer ${token}`, "Content-Type": "application/json", "Prefer": "return=minimal" },
-      body: JSON.stringify({ numero_ordine: value.trim() || null }),
-    });
-    if (r.ok) setData(prev => prev.map(x => x.id === id ? { ...x, numero_ordine: value.trim() || null } : x));
-    else showToast("Errore salvataggio Ordine MELI", "err");
-  };
-
   const eliminaRiga = async (id) => {
     if (!confirm("Eliminare questa riga?")) return;
     const r = await fetch(`${SUPABASE_URL}/rest/v1/novita_fuori_lancio?id=eq.${id}`, {
@@ -4070,7 +4102,7 @@ function ModuloAnticipiLancio({ token, userEmail }) {
     else if (filterStato !== "tutti") result = result.filter(r => r.stato === filterStato);
     if (search) {
       const q = search.toLowerCase();
-      result = result.filter(r => r.codice_cliente?.toLowerCase().includes(q) || r.ean?.includes(q) || r.numero_ordine?.toLowerCase().includes(q));
+      result = result.filter(r => r.codice_cliente?.toLowerCase().includes(q) || r.ean?.includes(q) || r.titolo?.toLowerCase().includes(q));
     }
     return result;
   }, [data, filterStato, search]);
@@ -4086,28 +4118,19 @@ function ModuloAnticipiLancio({ token, userEmail }) {
   const creaMail = () => {
     const righeSel = dataFiltrata.filter(r => selected.has(r.id));
     if (righeSel.length === 0) { showToast("Seleziona almeno una riga", "err"); return; }
-    const senzaLancio = righeSel.filter(r => !r.lanci_settimanali);
-    if (senzaLancio.length > 0) {
-      showToast(`${senzaLancio.length} riga/e selezionata/e non è/sono ancora agganciata/e a un lancio`, "err");
-      return;
-    }
-    const lanci = [...new Set(righeSel.map(r => `${r.lanci_settimanali.num_lancio}/${r.lanci_settimanali.anno_lancio}`))];
-    const subject = `Anticipi Lancio - Lancio ${lanci.join(", ")}`;
+    if (!numeroLancio.trim()) { showToast("Indica il numero di lancio a cui trasmetti", "err"); return; }
 
+    const subject = `Anticipi Lancio - Lancio ${numeroLancio.trim()}`;
     const righeTesto = righeSel.map(r => {
-      const l = r.lanci_settimanali;
       const parti = [
         `Cliente ${r.codice_cliente}`,
         `EAN ${r.ean}`,
-        l.titolo,
-        l.autore,
-        l.editore,
-        l.prezzo != null ? `€ ${Number(l.prezzo).toFixed(2)}` : null,
+        r.titolo,
+        r.autore,
+        r.editore,
+        r.prezzo != null ? `€ ${Number(r.prezzo).toFixed(2)}` : null,
         `Qtà ${r.quantita}`,
-        r.sconto_occasionale != null ? `Sc.Occ ${r.sconto_occasionale}%` : null,
-        r.pagamento_occasionale ? `Pag.Occ ${r.pagamento_occasionale}` : null,
         r.data_consegna_desiderata ? `Consegna desiderata ${fmtDataIt(r.data_consegna_desiderata)}` : null,
-        r.numero_ordine ? `Ord. MELI ${r.numero_ordine}` : null,
       ].filter(Boolean);
       return "- " + parti.join(" - ");
     }).join("\n");
@@ -4120,44 +4143,6 @@ function ModuloAnticipiLancio({ token, userEmail }) {
     setSelected(new Set());
   };
 
-  const exportMessaggerie = () => {
-    const righe = selected.size > 0 ? dataFiltrata.filter(r => selected.has(r.id)) : dataFiltrata.filter(r => r.stato !== "gestito");
-    if (righe.length === 0) { showToast("Nessuna riga da esportare", "err"); return; }
-    const XLSX = window.XLSX;
-    const header = [
-      "Cod. cliente \n(max 10 caratteri)",
-      "Tipo ordine \n(vd elenco)                                      ",
-      "Cod. campagna\n(max 8 caratteri)",
-      "EAN",
-      "Copie ",
-      "Sovrasc. occas.",
-      "Pag. occas.",
-      "N. ord. Cliente \n(max 30 caratteri)",
-      "Tenuta prenotazioni S/N",
-      "Data consegna tassativa \n(GG/MM/AAAA)",
-      "motivo tassativa\n(vd elenco)",
-      "Nota di testata da riportare in bolla (max 30 caratteri)",
-      "Nuovo destinatario - Ragione sociale",
-      "Nuovo destinatario - Indirizzo",
-      "Nuovo destinatario - Località",
-      "Nuovo destinatario - CAP",
-      "Nuovo destinatario - Provincia",
-      "Nuovo destinatario - Nazione"
-    ];
-    const rows = righe.map(r => [
-      r.codice_cliente, "Anticipo lancio", "", r.ean, r.quantita,
-      r.sconto_occasionale > 0 ? r.sconto_occasionale : "",
-      r.pagamento_occasionale || "",
-      r.numero_ordine || "",
-      "", "", "", "", "", "", "", "", "", ""
-    ]);
-    const ws = XLSX.utils.aoa_to_sheet([header, ...rows]);
-    ws["!cols"] = [10,15,10,14,8,12,12,20,10,20,15,30,25,25,20,8,8,8].map(w => ({ wch: w }));
-    const wb = XLSX.utils.book_new();
-    XLSX.utils.book_append_sheet(wb, ws, "Ordini");
-    XLSX.writeFile(wb, `Anticipi_Lancio_${new Date().toISOString().slice(0,10)}.xlsx`);
-  };
-
   if (loading) return <div style={{ flex: 1, display: "flex", alignItems: "center", justifyContent: "center", color: T.textMid }}>Caricamento...</div>;
 
   return (
@@ -4165,20 +4150,42 @@ function ModuloAnticipiLancio({ token, userEmail }) {
       {/* MODAL NUOVO / MODIFICA ANTICIPO */}
       {showForm && (
         <div style={{ position: "fixed", inset: 0, background: "#000a", zIndex: 200, display: "flex", alignItems: "center", justifyContent: "center" }} onClick={() => { setShowForm(false); setEditingId(null); }}>
-          <div style={{ background: T.surface, border: `1px solid ${T.borderHi}`, borderRadius: 6, padding: 28, width: 460 }} onClick={e => e.stopPropagation()}>
+          <div style={{ background: T.surface, border: `1px solid ${T.borderHi}`, borderRadius: 6, padding: 28, width: 480 }} onClick={e => e.stopPropagation()}>
             <div style={{ color: T.accent, fontWeight: "700", fontSize: "13px", marginBottom: 20 }}>{editingId ? "✎ MODIFICA ANTICIPO LANCIO" : "NUOVO ANTICIPO LANCIO"}</div>
             <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
-              {[
-                ["codice_cliente", "Codice/i cliente *", "full"],
-                ["ean", "EAN *"], ["quantita", "Quantità *"],
-                ["sconto_occasionale", "Sconto occasionale (%)"], ["pagamento_occasionale", "Pagamento occasionale"],
-                ["numero_ordine", "Ordine MELI"],
-              ].map(([k, label, span]) => (
-                <div key={k} style={span === "full" ? { gridColumn: "1/-1" } : {}}>
-                  <label style={{ color: T.textMid, fontSize: "10px", textTransform: "uppercase", letterSpacing: "0.08em", display: "block", marginBottom: 4 }}>{label}</label>
-                  <input style={{ ...css.input, width: "100%", boxSizing: "border-box" }} value={form[k]} onChange={e => setForm(f => ({ ...f, [k]: e.target.value }))} placeholder={k === "codice_cliente" ? "es. 12345, 67890" : ""} />
+              <div style={{ gridColumn: "1/-1" }}>
+                <label style={{ color: T.textMid, fontSize: "10px", textTransform: "uppercase", letterSpacing: "0.08em", display: "block", marginBottom: 4 }}>Codice/i cliente *</label>
+                <input style={{ ...css.input, width: "100%", boxSizing: "border-box" }} value={form.codice_cliente} onChange={e => setForm(f => ({ ...f, codice_cliente: e.target.value }))} placeholder="es. 12345, 67890" />
+              </div>
+              <div style={{ gridColumn: "1/-1", display: "flex", gap: 8, alignItems: "flex-end" }}>
+                <div style={{ flex: 1 }}>
+                  <label style={{ color: T.textMid, fontSize: "10px", textTransform: "uppercase", letterSpacing: "0.08em", display: "block", marginBottom: 4 }}>EAN *</label>
+                  <input style={{ ...css.input, width: "100%", boxSizing: "border-box" }} value={form.ean} onChange={e => setForm(f => ({ ...f, ean: e.target.value }))} />
                 </div>
-              ))}
+                <button type="button" style={css.btn()} onClick={cercaTitolo} disabled={cercandoTitolo}>
+                  {cercandoTitolo ? "Ricerca..." : "🔍 Cerca da BookUp"}
+                </button>
+              </div>
+              <div style={{ gridColumn: "1/-1" }}>
+                <label style={{ color: T.textMid, fontSize: "10px", textTransform: "uppercase", letterSpacing: "0.08em", display: "block", marginBottom: 4 }}>Titolo</label>
+                <input style={{ ...css.input, width: "100%", boxSizing: "border-box" }} value={form.titolo} onChange={e => setForm(f => ({ ...f, titolo: e.target.value }))} />
+              </div>
+              <div>
+                <label style={{ color: T.textMid, fontSize: "10px", textTransform: "uppercase", letterSpacing: "0.08em", display: "block", marginBottom: 4 }}>Autore</label>
+                <input style={{ ...css.input, width: "100%", boxSizing: "border-box" }} value={form.autore} onChange={e => setForm(f => ({ ...f, autore: e.target.value }))} />
+              </div>
+              <div>
+                <label style={{ color: T.textMid, fontSize: "10px", textTransform: "uppercase", letterSpacing: "0.08em", display: "block", marginBottom: 4 }}>Editore</label>
+                <input style={{ ...css.input, width: "100%", boxSizing: "border-box" }} value={form.editore} onChange={e => setForm(f => ({ ...f, editore: e.target.value }))} />
+              </div>
+              <div>
+                <label style={{ color: T.textMid, fontSize: "10px", textTransform: "uppercase", letterSpacing: "0.08em", display: "block", marginBottom: 4 }}>Prezzo</label>
+                <input style={{ ...css.input, width: "100%", boxSizing: "border-box" }} value={form.prezzo} onChange={e => setForm(f => ({ ...f, prezzo: e.target.value }))} />
+              </div>
+              <div>
+                <label style={{ color: T.textMid, fontSize: "10px", textTransform: "uppercase", letterSpacing: "0.08em", display: "block", marginBottom: 4 }}>Quantità *</label>
+                <input style={{ ...css.input, width: "100%", boxSizing: "border-box" }} value={form.quantita} onChange={e => setForm(f => ({ ...f, quantita: e.target.value }))} />
+              </div>
               <div>
                 <label style={{ color: T.textMid, fontSize: "10px", textTransform: "uppercase", letterSpacing: "0.08em", display: "block", marginBottom: 4 }}>Data consegna desiderata</label>
                 <input type="date" style={{ ...css.input, width: "100%", boxSizing: "border-box" }} value={form.data_consegna_desiderata} onChange={e => setForm(f => ({ ...f, data_consegna_desiderata: e.target.value }))} />
@@ -4206,10 +4213,10 @@ function ModuloAnticipiLancio({ token, userEmail }) {
         {[["attivi","Attivi"],["da_gestire","Da gestire"],["notificato","Notificato"],["gestito","Gestiti"],["tutti","Tutti"]].map(([k, label]) => (
           <button key={k} style={css.btn(filterStato === k ? "accent" : "default")} onClick={() => setFilterStato(k)}>{label}</button>
         ))}
-        <input style={{ ...css.input, width: 200 }} placeholder="Cerca cliente / EAN / ordine..." value={search} onChange={e => setSearch(e.target.value)} />
-        <input style={{ ...css.input, width: 180 }} placeholder="Firma per la mail..." value={firma} onChange={e => setFirma(e.target.value)} />
-        <div style={{ marginLeft: "auto", display: "flex", gap: 8 }}>
-          <button style={css.btn()} onClick={exportMessaggerie}>↓ Export Messaggerie{selected.size > 0 ? ` (${selected.size})` : ""}</button>
+        <input style={{ ...css.input, width: 200 }} placeholder="Cerca cliente / EAN / titolo..." value={search} onChange={e => setSearch(e.target.value)} />
+        <div style={{ marginLeft: "auto", display: "flex", gap: 8, alignItems: "center" }}>
+          <input style={{ ...css.input, width: 100 }} placeholder="N° lancio" value={numeroLancio} onChange={e => setNumeroLancio(e.target.value)} />
+          <input style={{ ...css.input, width: 160 }} placeholder="Firma per la mail..." value={firma} onChange={e => setFirma(e.target.value)} />
           <button style={{ ...css.btn(), borderColor: T.accent, color: T.accent }} onClick={creaMail} disabled={selected.size === 0}>✉️ Crea mail{selected.size > 0 ? ` (${selected.size})` : ""}</button>
           <button style={{ ...css.btn(), borderColor: T.green, color: T.green }} onClick={apriNuovo}>+ Nuovo</button>
         </div>
@@ -4236,9 +4243,6 @@ function ModuloAnticipiLancio({ token, userEmail }) {
               <th style={css.th}>Editore</th>
               <th style={css.th}>Prezzo</th>
               <th style={css.th}>Qtà</th>
-              <th style={css.th}>Sconto occ.</th>
-              <th style={css.th}>Pag. occ.</th>
-              <th style={css.th}>Ordine MELI</th>
               <th style={css.th}>Consegna des.</th>
               <th style={css.th}>Note</th>
               <th style={css.th}></th>
@@ -4256,21 +4260,11 @@ function ModuloAnticipiLancio({ token, userEmail }) {
                 </td>
                 <td style={{ ...css.td, fontWeight: "600" }}>{r.codice_cliente}</td>
                 <td style={{ ...css.td, fontFamily: "monospace", fontSize: "11px", color: T.textMid }}>{r.ean}</td>
-                <td style={{ ...css.td, color: T.accent, maxWidth: 200 }}>{r.lanci_settimanali?.titolo || <span style={{ color: T.textDim }}>—</span>}</td>
-                <td style={{ ...css.td, color: T.textMid, maxWidth: 130, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{r.lanci_settimanali?.autore || "—"}</td>
-                <td style={css.td}>{r.lanci_settimanali?.editore || "—"}</td>
-                <td style={css.td}>{r.lanci_settimanali?.prezzo != null ? `€ ${Number(r.lanci_settimanali.prezzo).toFixed(2)}` : "—"}</td>
+                <td style={{ ...css.td, color: T.accent, maxWidth: 200 }}>{r.titolo || <span style={{ color: T.textDim }}>—</span>}</td>
+                <td style={{ ...css.td, color: T.textMid, maxWidth: 130, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{r.autore || "—"}</td>
+                <td style={css.td}>{r.editore || "—"}</td>
+                <td style={css.td}>{r.prezzo != null ? `€ ${Number(r.prezzo).toFixed(2)}` : "—"}</td>
                 <td style={css.td}>{r.quantita}</td>
-                <td style={css.td}>{r.sconto_occasionale != null ? `${r.sconto_occasionale}%` : "—"}</td>
-                <td style={css.td}>{r.pagamento_occasionale || "—"}</td>
-                <td style={css.td}>
-                  <input
-                    style={{ ...css.input, width: 90, padding: "3px 6px", fontSize: "11px" }}
-                    defaultValue={r.numero_ordine || ""}
-                    placeholder="—"
-                    onBlur={e => updateNumeroOrdine(r.id, e.target.value)}
-                  />
-                </td>
                 <td style={css.td}>{fmtDataIt(r.data_consegna_desiderata)}</td>
                 <td style={{ ...css.td, maxWidth: 160, fontSize: "11px", color: T.textMid, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }} title={r.note}>{r.note || ""}</td>
                 <td style={{ ...css.td, whiteSpace: "nowrap" }}>
@@ -4299,7 +4293,6 @@ function ModuloAnticipiLancio({ token, userEmail }) {
     </div>
   );
 }
-
 const MODULES = [
   { id: "dashboard", label: "Dashboard", icon: "◈" },
   { id: "calendariogiri", label: "Calendario Giri", icon: "📅" },
