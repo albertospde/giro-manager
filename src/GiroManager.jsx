@@ -1606,7 +1606,7 @@ function ModuloFineGiro({ titoli, prenotato, canali, token, ruolo, spalmatura, u
       .filter(t => filterAccount.length === 0 || filterAccount.includes(t.account_editore))
       .filter(t => filterPromozione.length === 0 || filterPromozione.includes(normPromo(t.promozione)))
       .filter(t => { if (!search) return true; const q = search.toLowerCase(); return t.titolo?.toLowerCase().includes(q) || t.ean?.includes(q); })
-      .sort((a, b) => (a.ranking_editore ?? 99) - (b.ranking_editore ?? 99) || (a.ranking_titolo ?? 99) - (b.ranking_titolo ?? 99));
+      .sort((a, b) => (a.n_cedola ?? "").localeCompare(b.n_cedola ?? "") || ((a.ranking_editore ?? 99) - (b.ranking_editore ?? 99)) || (a.editore_nome ?? "").localeCompare(b.editore_nome ?? "") || (a.posizione ?? 0) - (b.posizione ?? 0));
   }, [titoli, giroLabelSel, extraSel, cedolaSel, filterEditori, filterAccount, filterPromozione, search]);
 
   const macrogruppiVis = ruolo === "agente" ? MACROGRUPPI.filter(mg => mg.id === "RETE" || mg.id === "GROSSISTI") : MACROGRUPPI;
