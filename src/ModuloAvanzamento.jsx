@@ -1086,7 +1086,7 @@ export default function ModuloAvanzamento({ titoli, prenotato, canali, token, ru
                       {n.obiettivo_giri > 0 && <span style={{ color: pct >= 80 ? T.green : pct >= 50 ? T.accent : T.red, fontSize: "10px", fontWeight: "700" }}>{pct}%</span>}
                     </div>
                   </td>
-                  <td style={{ ...css.td, textAlign: "center" }}>{n.manuale && n.copie_lanciate > 0 ? <span style={css.tag("#e8a838")}>SBL/RIFO</span> : (n.num_lancio || "—")}</td>
+                  <td style={{ ...css.td, textAlign: "center" }}>{n.manuale && n.copie_lanciate > 0 ? <span style={css.tag("#e8a838")}>SBL/RIFO {n.copie_lanciate.toLocaleString("it")}</span> : (n.num_lancio || "—")}</td>
                   <td style={css.td}>
                     {isEditingThis ? (
                       <div style={{ display: "flex", gap: 4, alignItems: "center" }}>
