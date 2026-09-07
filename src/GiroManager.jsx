@@ -3954,7 +3954,7 @@ function ModuloAnticipiLancio({ token, userEmail }) {
   const [toast, setToast] = useState(null);
   const [firma, setFirma] = useState(() => localStorage.getItem("anticipiLancio_firma") || "");
   const [numeroLancio, setNumeroLancio] = useState("");
-  const emptyForm = { codice_cliente: "", ean: "", titolo: "", autore: "", editore: "", prezzo: "", quantita: "", data_consegna_desiderata: "", note: "" };
+  const emptyForm = { codice_cliente: "", ean: "", titolo: "", autore: "", editore: "", prezzo: "", quantita: "", numero_ordine: "", data_consegna_desiderata: "", note: "" };
   const [form, setForm] = useState(emptyForm);
 
   const showToast = (msg, type = "ok") => { setToast({ msg, type }); setTimeout(() => setToast(null), 3500); };
@@ -3983,6 +3983,7 @@ function ModuloAnticipiLancio({ token, userEmail }) {
       editore: row.editore || "",
       prezzo: row.prezzo != null ? String(row.prezzo) : "",
       quantita: row.quantita != null ? String(row.quantita) : "",
+      numero_ordine: row.numero_ordine || "",
       data_consegna_desiderata: row.data_consegna_desiderata || "",
       note: row.note || "",
     });
@@ -4032,6 +4033,7 @@ function ModuloAnticipiLancio({ token, userEmail }) {
       editore: form.editore.trim() || null,
       prezzo: form.prezzo ? parseFloat(String(form.prezzo).replace(",", ".")) : null,
       quantita: parseInt(form.quantita, 10) || 0,
+      numero_ordine: form.numero_ordine.trim() || null,
       data_consegna_desiderata: form.data_consegna_desiderata || null,
       note: form.note.trim() || null,
     };
@@ -4114,11 +4116,16 @@ function ModuloAnticipiLancio({ token, userEmail }) {
     return result;
   }, [data, filterStato, search]);
 
-  const counts = useMemo(() => ({
-    da_gestire: data.filter(r => r.stato === "da_gestire").length,
-    notificato: data.filter(r => r.stato === "notificato").length,
-    gestito: data.filter(r => r.stato === "gestito").length,
-  }), [data]);
+  const counts = useMemo(() => {
+    const da_gestire = data.filter(r => r.stato === "da_gestire").length;
+    const notificato = data.filter(r => r.stato === "notificato").length;
+    return {
+      da_gestire,
+      notificato,
+      totale_da_gestire: da_gestire + notificato, // totale tra "da gestire" e "notificati"
+      gestito: data.filter(r => r.stato === "gestito").length,
+    };
+  }, [data]);
 
   const toggleSelect = (id) => setSelected(prev => { const n = new Set(prev); n.has(id) ? n.delete(id) : n.add(id); return n; });
 
@@ -4137,6 +4144,7 @@ function ModuloAnticipiLancio({ token, userEmail }) {
         r.editore,
         r.prezzo != null ? `€ ${Number(r.prezzo).toFixed(2)}` : null,
         `Qtà ${r.quantita}`,
+        r.numero_ordine ? `N° ordine ${r.numero_ordine}` : null,
         r.data_consegna_desiderata ? `Consegna desiderata ${fmtDataIt(r.data_consegna_desiderata)}` : null,
       ].filter(Boolean);
       return "- " + parti.join(" - ");
@@ -4204,6 +4212,10 @@ function ModuloAnticipiLancio({ token, userEmail }) {
                 <input style={{ ...css.input, width: "100%", boxSizing: "border-box" }} value={form.quantita} onChange={e => setForm(f => ({ ...f, quantita: e.target.value }))} />
               </div>
               <div>
+                <label style={{ color: T.textMid, fontSize: "10px", textTransform: "uppercase", letterSpacing: "0.08em", display: "block", marginBottom: 4 }}>N° ordine</label>
+                <input style={{ ...css.input, width: "100%", boxSizing: "border-box" }} value={form.numero_ordine} onChange={e => setForm(f => ({ ...f, numero_ordine: e.target.value }))} placeholder="inserimento manuale" />
+              </div>
+              <div>
                 <label style={{ color: T.textMid, fontSize: "10px", textTransform: "uppercase", letterSpacing: "0.08em", display: "block", marginBottom: 4 }}>Data consegna desiderata</label>
                 <input type="date" style={{ ...css.input, width: "100%", boxSizing: "border-box" }} value={form.data_consegna_desiderata} onChange={e => setForm(f => ({ ...f, data_consegna_desiderata: e.target.value }))} />
               </div>
@@ -4232,16 +4244,22 @@ function ModuloAnticipiLancio({ token, userEmail }) {
         ))}
         <input style={{ ...css.input, width: 200 }} placeholder="Cerca cliente / EAN / titolo..." value={search} onChange={e => setSearch(e.target.value)} />
         <div style={{ marginLeft: "auto", display: "flex", gap: 8, alignItems: "center" }}>
-          <input style={{ ...css.input, width: 100 }} placeholder="N° lancio" value={numeroLancio} onChange={e => setNumeroLancio(e.target.value)} />
-          <input style={{ ...css.input, width: 160 }} placeholder="Firma per la mail..." value={firma} onChange={e => setFirma(e.target.value)} />
-          <button style={{ ...css.btn(), borderColor: T.accent, color: T.accent }} onClick={creaMail} disabled={selected.size === 0}>✉️ Crea mail{selected.size > 0 ? ` (${selected.size})` : ""}</button>
-          <button style={{ ...css.btn(), borderColor: T.green, color: T.green }} onClick={apriNuovo}>+ Nuovo</button>
+          <div>
+            <label style={{ color: selected.size > 0 && !numeroLancio.trim() ? "#e8a838" : T.textMid, fontSize: "9px", textTransform: "uppercase", letterSpacing: "0.06em", display: "block", marginBottom: 2 }}>N° lancio da trasmettere *</label>
+            <input style={{ ...css.input, width: 120, borderColor: selected.size > 0 && !numeroLancio.trim() ? "#e8a838" : undefined }} placeholder="es. 38" value={numeroLancio} onChange={e => setNumeroLancio(e.target.value)} />
+          </div>
+          <div>
+            <label style={{ color: T.textMid, fontSize: "9px", textTransform: "uppercase", letterSpacing: "0.06em", display: "block", marginBottom: 2 }}>Firma mail</label>
+            <input style={{ ...css.input, width: 160 }} placeholder="Firma per la mail..." value={firma} onChange={e => setFirma(e.target.value)} />
+          </div>
+          <button style={{ ...css.btn(), borderColor: T.accent, color: T.accent, alignSelf: "flex-end" }} onClick={creaMail} disabled={selected.size === 0}>✉️ Crea mail{selected.size > 0 ? ` (${selected.size})` : ""}</button>
+          <button style={{ ...css.btn(), borderColor: T.green, color: T.green, alignSelf: "flex-end" }} onClick={apriNuovo}>+ Nuovo</button>
         </div>
       </div>
 
       {/* KPI */}
       <div style={{ padding: "14px 20px", borderBottom: `1px solid ${T.border}`, display: "flex", gap: 12 }}>
-        <KpiCard label="Da gestire" value={counts.da_gestire} color={T.textMid} />
+        <KpiCard label="Da gestire" value={counts.totale_da_gestire} color={T.textMid} />
         <KpiCard label="🔔 Notificati" value={counts.notificato} color="#e8a838" />
         <KpiCard label="Gestiti" value={counts.gestito} color={T.green} />
       </div>
@@ -4260,6 +4278,7 @@ function ModuloAnticipiLancio({ token, userEmail }) {
               <th style={css.th}>Editore</th>
               <th style={css.th}>Prezzo</th>
               <th style={css.th}>Qtà</th>
+              <th style={css.th}>N° ordine</th>
               <th style={css.th}>Consegna des.</th>
               <th style={css.th}>Note</th>
               <th style={css.th}></th>
@@ -4282,6 +4301,7 @@ function ModuloAnticipiLancio({ token, userEmail }) {
                 <td style={css.td}>{r.editore || "—"}</td>
                 <td style={css.td}>{r.prezzo != null ? `€ ${Number(r.prezzo).toFixed(2)}` : "—"}</td>
                 <td style={css.td}>{r.quantita}</td>
+                <td style={{ ...css.td, fontFamily: "monospace", fontSize: "11px" }}>{r.numero_ordine || "—"}</td>
                 <td style={css.td}>{fmtDataIt(r.data_consegna_desiderata)}</td>
                 <td style={{ ...css.td, maxWidth: 160, fontSize: "11px", color: T.textMid, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }} title={r.note}>{r.note || ""}</td>
                 <td style={{ ...css.td, whiteSpace: "nowrap" }}>
