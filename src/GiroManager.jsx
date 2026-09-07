@@ -2246,6 +2246,7 @@ function ModuloLanciSettimanali({ token, titoli, prenotato, canali, ruolo, userA
         const cedole = haLiveCedole ? cedoleLive : (r.cedole_manual ? r.cedole_manual.split(",").map(s => s.trim()).filter(Boolean) : []);
         const prenFineGiro = haLiveFG ? prenFineGiroLive : (r.pren_fine_giro_manual || 0);
         const prenAmazon = haLiveAmazon ? prenAmazonLive : (r.pren_amazon_manual || 0);
+        const cedIntegrativa = r.ced_integrativa_manual || 0; // sempre manuale, si somma sottobanco al Totale F.G.
 
         const prenSenzaAmazon = prenFineGiro - prenAmazon;
         // Teorico = prenotato trasmesso (o iscritto) + amazon
@@ -2264,6 +2265,8 @@ function ModuloLanciSettimanali({ token, titoli, prenotato, canali, ruolo, userA
           ...r,
           cedole,
           pren_fine_giro: prenFineGiro,
+          ced_integrativa: cedIntegrativa,
+          ced_integrativa_nota: r.ced_integrativa_nota || "",
           pren_amazon: prenAmazon,
           pren_senza_amazon: prenSenzaAmazon,
           pren_stampatore: prenStampatore,
@@ -2316,7 +2319,7 @@ function ModuloLanciSettimanali({ token, titoli, prenotato, canali, ruolo, userA
     const valoreLanciate = d.reduce((s, r) => s + (r.prezzo || 0) * (r.prenotato_iscrizione || 0), 0);
     const valoreTrasmesso = d.reduce((s, r) => s + (r.prezzo || 0) * (r.prenotato_trasmesso ?? 0), 0);
     const haTrasmesso = d.some(r => r.prenotato_trasmesso !== null);
-    const totFineGiro = d.reduce((s, r) => s + (r.pren_fine_giro || 0), 0);
+    const totFineGiro = d.reduce((s, r) => s + (r.pren_fine_giro || 0) + (r.ced_integrativa || 0), 0); // F.G. + Ced.Int. sommati sottobanco
     const totAmazon = d.reduce((s, r) => s + (r.pren_amazon || 0), 0);
     const totTeorico = d.reduce((s, r) => s + (r.teorico || 0), 0);
     const valoreFineGiro = d.reduce((s, r) => s + (r.prezzo || 0) * (r.pren_fine_giro || 0), 0);
@@ -2356,9 +2359,9 @@ function ModuloLanciSettimanali({ token, titoli, prenotato, canali, ruolo, userA
     setData(prev => prev.map(r => r.id === id ? { ...r, giorno_uscita_override: value || null } : r));
   };
 
-  // Salva valore manuale (cedole, fine giro, amazon) su DB
+  // Salva valore manuale (cedole, fine giro, amazon, cedole integrative) su DB
   const saveManualCell = async (id, field, value) => {
-    const dbField = field === "cedole" ? "cedole_manual" : field === "fg" ? "pren_fine_giro_manual" : "pren_amazon_manual";
+    const dbField = field === "cedole" ? "cedole_manual" : field === "fg" ? "pren_fine_giro_manual" : field === "cedint" ? "ced_integrativa_manual" : "pren_amazon_manual";
     const dbValue = field === "cedole" ? (value || null) : (parseInt(value) || null);
     await fetch(`${SUPABASE_URL}/rest/v1/lanci_settimanali?id=eq.${id}`, {
       method: "PATCH",
@@ -2367,6 +2370,18 @@ function ModuloLanciSettimanali({ token, titoli, prenotato, canali, ruolo, userA
     });
     setData(prev => prev.map(r => r.id === id ? { ...r, [dbField]: dbValue } : r));
     setEditCell(null);
+  };
+
+  // Salva nota cedole integrative (letta solo al passaggio del mouse)
+  const saveCedIntNota = async (id, notaAttuale) => {
+    const nota = window.prompt("Nota cedole integrative:", notaAttuale || "");
+    if (nota === null) return; // annullato
+    await fetch(`${SUPABASE_URL}/rest/v1/lanci_settimanali?id=eq.${id}`, {
+      method: "PATCH",
+      headers: { "apikey": SUPABASE_KEY, "Authorization": `Bearer ${token}`, "Content-Type": "application/json", "Prefer": "return=minimal" },
+      body: JSON.stringify({ ced_integrativa_nota: nota.trim() || null }),
+    });
+    setData(prev => prev.map(r => r.id === id ? { ...r, ced_integrativa_nota: nota.trim() || null } : r));
   };
 
   // Upload handler
@@ -2520,10 +2535,10 @@ if (!r.ok) throw new Error(await r.text());
   // Export Excel
   const exportExcel = () => {
     const XLSX = window.XLSX;
-    const headers = ["LANCIO","CEDOLA","EAN","TITOLO","AUTORE","COD.EDITORE","EDITORE","PREZZO","F.G.","P.O. MELI","AMAZON","TOT.TEORICO","FG VS TOT","DI CUI STAMPATORE","GIORNO USCITA"];
+    const headers = ["LANCIO","CEDOLA","EAN","TITOLO","AUTORE","COD.EDITORE","EDITORE","PREZZO","F.G.","CED.INT.","P.O. MELI","AMAZON","TOT.TEORICO","FG VS TOT","DI CUI STAMPATORE","GIORNO USCITA"];
     const rows = dataFiltrata.map(r => [
       r.num_lancio, r.cedole.join(", "), r.ean, r.titolo, r.autore, r.codice_editore, r.editore, r.prezzo,
-      r.pren_fine_giro, r.prenotato_trasmesso ?? "", r.pren_amazon, r.teorico, r.delta_portale, r.pren_stampatore || "", r.giorno_uscita
+      r.pren_fine_giro, r.ced_integrativa || "", r.prenotato_trasmesso ?? "", r.pren_amazon, r.teorico, r.delta_portale, r.pren_stampatore || "", r.giorno_uscita
     ]);
     // Riepilogo editori
     const rH = ["EDITORE","TITOLI","LANCIATE","TRASMESSE","FINE GIRO","AMAZON","VALORE"];
@@ -2629,6 +2644,7 @@ if (!r.ok) throw new Error(await r.text());
               <th style={css.th}>€</th>
               <th style={css.th}>Cedole</th>
               <th style={{ ...css.th, cursor: "pointer" }} onClick={() => toggleSort("pren_fine_giro")}>F.G.{sortIcon("pren_fine_giro")}</th>
+              <th style={css.th} title="Quantità extra inserita a mano, sommata al totale F.G.">Ced.Int.</th>
               <th style={{ ...css.th, cursor: "pointer" }} onClick={() => toggleSort("prenotato_trasmesso")}>P.O. Meli{sortIcon("prenotato_trasmesso")}</th>
               <th style={{ ...css.th, cursor: "pointer", color: "#e8a838" }} onClick={() => toggleSort("pren_amazon")}>Amazon{sortIcon("pren_amazon")}</th>
               <th style={{ ...css.th, cursor: "pointer" }} onClick={() => toggleSort("teorico")}>Tot. Teorico{sortIcon("teorico")}</th>
@@ -2684,6 +2700,24 @@ if (!r.ok) throw new Error(await r.text());
                       onClick={() => setEditCell({ id: r.id, field: "fg", value: String(r.pren_fine_giro_manual || r.pren_fine_giro || "") })}>
                       <span style={{ color: r.pren_fine_giro > 0 ? (r.is_manual_fg ? "#e8a838" : T.purple) : T.textDim }}>{r.pren_fine_giro > 0 ? r.pren_fine_giro.toLocaleString("it") : "—"}</span>
                       <span style={{ color: T.accent, fontSize: "10px" }}>✎</span>
+                    </div>
+                  )}
+                </td>
+                <td style={{ ...css.td, fontWeight: "600" }}>
+                  {editCell?.id === r.id && editCell?.field === "cedint" ? (
+                    <div style={{ display: "flex", gap: 3, alignItems: "center" }}>
+                      <input type="number" style={{ ...css.input, width: 60, padding: "2px 5px", fontSize: "11px" }} value={editCell.value} autoFocus
+                        onChange={e => setEditCell(p => ({ ...p, value: e.target.value }))}
+                        onKeyDown={e => { if (e.key === "Enter") saveManualCell(r.id, "cedint", editCell.value); if (e.key === "Escape") setEditCell(null); }} />
+                      <button style={{ ...css.btn("accent"), padding: "1px 5px", fontSize: "10px" }} onClick={() => saveManualCell(r.id, "cedint", editCell.value)}>✓</button>
+                    </div>
+                  ) : (
+                    <div style={{ display: "flex", alignItems: "center", gap: 4 }} title={r.ced_integrativa_nota || "Nessuna nota — clic sulla 📝 per aggiungerne una"}>
+                      <span style={{ cursor: "pointer", color: r.ced_integrativa > 0 ? "#e8a838" : T.textDim }}
+                        onClick={() => setEditCell({ id: r.id, field: "cedint", value: String(r.ced_integrativa_manual || "") })}>
+                        {r.ced_integrativa > 0 ? r.ced_integrativa.toLocaleString("it") : "—"}
+                      </span>
+                      <span style={{ color: T.accent, fontSize: "10px", cursor: "pointer" }} onClick={() => saveCedIntNota(r.id, r.ced_integrativa_nota)}>📝</span>
                     </div>
                   )}
                 </td>
