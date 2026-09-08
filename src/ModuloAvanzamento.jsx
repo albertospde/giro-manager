@@ -522,9 +522,13 @@ export default function ModuloAvanzamento({ titoli, prenotato, canali, token, ru
   const valoriPerAnnoMese = useMemo(() => {
     // IMPORTANTE: aggrega per anno/mese di data_messa_in_vendita, NON per anno del giro.
     // Un titolo della cedola 2025 lanciato nel 2026 va in 2026, non in 2025.
+    // FIX: esclude i titoli sbloccati in rifornimento (manuale=true, num_lancio assente):
+    // il fatturato mensile/trend deve riflettere solo i lanci veri, altrimenti valori di
+    // rifornimento (spesso grandi) sporcano il confronto anno su anno e la proiezione.
     const map = {};
     novitaArricchite.forEach(n => {
       if (!n.data_messa_in_vendita || !n.valore_lancio || n.valore_lancio === 0) return;
+      if (n.manuale && !n.num_lancio) return;
       const match = String(n.data_messa_in_vendita).match(/^(\d{4})-(\d{2})/);
       if (!match) return;
       const anno = parseInt(match[1]);
@@ -550,17 +554,32 @@ export default function ModuloAvanzamento({ titoli, prenotato, canali, token, ru
       ? novitaFiltrate.filter(n => getAnnoRecord(n) === filterAnno)
       : novitaFiltrate;
 
+    // FIX: "lancio" (settimanale formale) e "sblocco in rifornimento" (conversione BookUp
+    // di prenotazioni in ordini reali via "Da novità a rifornimento") sono concetti distinti.
+    // Un titolo è "sbloccato in rifornimento" solo se manuale=true E num_lancio assente —
+    // un titolo manuale CON num_lancio è un lancio vero inserito a mano, va contato come lanciato.
+    const isRifornimento = n => n.manuale && !n.num_lancio;
+
     const totTitoli = novitaAnno.length;
-    const lanciati = novitaAnno.filter(n => n.copie_lanciate > 0 && !n.manuale);
+    const lanciati = novitaAnno.filter(n => n.copie_lanciate > 0 && !isRifornimento(n));
     const numLanciati = lanciati.length;
     const valoreLancio = lanciati.reduce((s, n) => s + (n.valore_lancio || 0), 0);
-    const sbloccati = novitaAnno.filter(n => n.copie_lanciate > 0 && n.manuale);
+    const sbloccati = novitaAnno.filter(n => n.copie_lanciate > 0 && isRifornimento(n));
     const numSbloccati = sbloccati.length;
-    const valoreSbloccato = sbloccati.reduce((s, n) => s + (n.valore_lancio || 0), 0);
+    // Valore teorico = prezzo anagrafica × copie sbloccate, non il valore_lancio salvato:
+    // Amazon/canale potrebbe non aver ancora effettivamente inserito l'ordine, è una stima
+    const valoreSbloccato = sbloccati.reduce((s, n) => s + (n.prezzo || 0) * (n.copie_lanciate || 0), 0);
     const totTrasmessi = numLanciati + numSbloccati;
     const pctAvanzamento = totTitoli > 0 ? Math.round(totTrasmessi / totTitoli * 100) : 0;
+    // Avanzamento novità: solo sul sotto-insieme "gestito come novità" (esclusi gli
+    // sbloccati in rifornimento, che non passano mai da un lancio vero e proprio)
+    const totNovitaGestite = totTitoli - numSbloccati;
+    const pctAvanzamentoNovita = totNovitaGestite > 0 ? Math.round(numLanciati / totNovitaGestite * 100) : 0;
     const nonTrasmessi = totTitoli - totTrasmessi;
     const valPrenotato = novitaAnno.reduce((s, n) => s + (n.prezzo || 0) * n.prenotato_giri, 0);
+    // Valore prenotato esclusi i titoli già sbloccati in rifornimento (altrimenti quel
+    // valore viene contato sia come "prenotato" sia come "sbloccato")
+    const valPrenotatoNetto = novitaAnno.reduce((s, n) => isRifornimento(n) ? s : s + (n.prezzo || 0) * n.prenotato_giri, 0);
     const nonLanciati = novitaAnno.filter(n => n.prenotato_giri > 0 && (!n.copie_lanciate || n.copie_lanciate === 0));
     const copieNonLanciate = nonLanciati.reduce((s, n) => s + n.prenotato_giri, 0);
     const valNonLanciato = nonLanciati.reduce((s, n) => s + (n.prezzo || 0) * n.prenotato_giri, 0);
@@ -575,9 +594,9 @@ export default function ModuloAvanzamento({ titoli, prenotato, canali, token, ru
     const proiezione = ytdCorrente + pipeline + (futuriPrev * trend);
     const haFatturatoPrec = totaleAnnoPrev > 0;
     return {
-      totTitoli, nonTrasmessi, valPrenotato,
+      totTitoli, nonTrasmessi, valPrenotato, valPrenotatoNetto,
       numLanciati, valoreLancio, numSbloccati, valoreSbloccato,
-      totTrasmessi, pctAvanzamento,
+      totTrasmessi, pctAvanzamento, pctAvanzamentoNovita, totNovitaGestite,
       copieNonLanciate, valNonLanciato, numNonLanciati: nonLanciati.length,
       ytdCorrente, totaleAnnoPrev, ytdPrev, trend, pipeline, proiezione, haFatturatoPrec, meseCorrente,
     };
@@ -888,7 +907,7 @@ export default function ModuloAvanzamento({ titoli, prenotato, canali, token, ru
     const headers = ["CEDOLA","EAN","TITOLO","AUTORE","EDITORE","PREZZO","PRENOTATO TOTALE","N. LANCIO","COPIE LANCIATE","VALORE LANCIO","DATA MESSA IN VENDITA","SV","RE"];
     const rows = novitaFiltrate.map(n => [
       n.nome_cedola, n.ean, n.titolo, n.autore, n.editore, n.prezzo,
-      n.prenotato_giri, (n.manuale && n.copie_lanciate > 0) ? "SBL/RIFO" : (n.num_lancio || ""), n.copie_lanciate,
+      n.prenotato_giri, (n.manuale && !n.num_lancio) ? "SBL/RIFO" : (n.num_lancio || ""), n.copie_lanciate,
       n.valore_lancio, fmtDate(n.data_messa_in_vendita), n.stato_vendita || "", n.risposta_editore || ""
     ]);
     const ws = XLSX.utils.aoa_to_sheet([headers, ...rows]);
@@ -969,11 +988,14 @@ export default function ModuloAvanzamento({ titoli, prenotato, canali, token, ru
         )}
         <div style={{ display: "flex", gap: 12, flexWrap: "wrap" }}>
           <KpiCard label={`Titoli novità ${filterAnno || ""}`} value={kpi.totTitoli.toLocaleString("it")} color={T.text} sub={`${kpi.nonTrasmessi} da lanciare/sbloccare`} />
+          <KpiCard label={`Titoli novità lanciati ${filterAnno || ""}`} value={kpi.numLanciati.toLocaleString("it")} color={T.text} sub={`${kpi.nonTrasmessi} da lanciare`} />
           <KpiCard label="Valore prenotato" value={`€ ${kpi.valPrenotato.toLocaleString("it", { maximumFractionDigits: 0 })}`} color={T.green} />
+          <KpiCard label="Valore prenotato (escl. sbloccati)" value={`€ ${kpi.valPrenotatoNetto.toLocaleString("it", { maximumFractionDigits: 0 })}`} color={T.green} />
           <KpiCard label="Valore lancio" value={`€ ${kpi.valoreLancio.toLocaleString("it", { maximumFractionDigits: 0 })}`} color={T.accent} sub={`${kpi.numLanciati} titoli lanciati`} />
-          <KpiCard label="Valore SBL/Rifornimento" value={`€ ${kpi.valoreSbloccato.toLocaleString("it", { maximumFractionDigits: 0 })}`} color="#e8a838" sub={`${kpi.numSbloccati} titoli sbloccati`} />
+          <KpiCard label={`Titoli sbloccati ${filterAnno || ""}`} value={kpi.numSbloccati.toLocaleString("it")} color="#e8a838" />
+          <KpiCard label="Valore sbloccati" value={`€ ${kpi.valoreSbloccato.toLocaleString("it", { maximumFractionDigits: 0 })}`} color="#e8a838" sub="valore finito nei rifornimenti (teorico)" />
           <div style={{ background: T.surface, border: `1px solid ${T.border}`, borderRadius: 4, padding: "16px 20px", minWidth: 200 }}>
-            <div style={{ color: T.textMid, fontSize: "10px", letterSpacing: "0.1em", textTransform: "uppercase", marginBottom: 8 }}>Avanzamento</div>
+            <div style={{ color: T.textMid, fontSize: "10px", letterSpacing: "0.1em", textTransform: "uppercase", marginBottom: 8 }}>Avanzamento totale</div>
             <div style={{ color: kpi.pctAvanzamento >= 80 ? T.green : kpi.pctAvanzamento >= 50 ? T.accent : T.red, fontSize: "28px", fontWeight: "700", lineHeight: 1, marginBottom: 8 }}>{kpi.pctAvanzamento}%</div>
             <div style={{ height: 8, background: T.borderHi, borderRadius: 4, overflow: "hidden", display: "flex" }}>
               <div style={{ width: `${Math.round(kpi.numLanciati / Math.max(kpi.totTitoli, 1) * 100)}%`, height: "100%", background: T.accent }} />
@@ -984,7 +1006,8 @@ export default function ModuloAvanzamento({ titoli, prenotato, canali, token, ru
               <span style={{ color: "#e8a838" }}>● {kpi.numSbloccati} sbloccati</span>
             </div>
           </div>
-          <KpiCard label="Pren. non lanciato" value={`€ ${kpi.valNonLanciato.toLocaleString("it", { maximumFractionDigits: 0 })}`} color={T.red} sub={`${kpi.copieNonLanciate.toLocaleString("it")} copie · ${kpi.numNonLanciati} titoli`} />
+          <KpiCard label="Avanzamento novità" value={`${kpi.pctAvanzamentoNovita}%`} color={kpi.pctAvanzamentoNovita >= 80 ? T.green : kpi.pctAvanzamentoNovita >= 50 ? T.accent : T.red} sub={`${kpi.numLanciati} di ${kpi.totNovitaGestite} (esclusi sbloccati)`} />
+          <KpiCard label="Pren. non ancora lanciato/sbloccato" value={`€ ${kpi.valNonLanciato.toLocaleString("it", { maximumFractionDigits: 0 })}`} color={T.red} sub={`${kpi.copieNonLanciate.toLocaleString("it")} copie · ${kpi.numNonLanciati} titoli`} />
           <div style={{ background: T.surface, border: `1px solid ${T.border}`, borderRadius: 4, padding: "16px 20px", minWidth: 200, cursor: "pointer" }} onClick={() => setShowProiezione(p => !p)}>
             <div style={{ color: T.textMid, fontSize: "10px", letterSpacing: "0.1em", textTransform: "uppercase", marginBottom: 8, display: "flex", justifyContent: "space-between" }}>
               Proiezione anno <span>{showProiezione ? "▲" : "▼"}</span>
@@ -1110,8 +1133,11 @@ export default function ModuloAvanzamento({ titoli, prenotato, canali, token, ru
             {novitaFiltrate.map((n, i) => {
               const pct = n.obiettivo_giri > 0 ? Math.round(n.prenotato_giri / n.obiettivo_giri * 100) : 0;
               const isEditingThis = editingEan === n.ean;
+              // Sbloccato in rifornimento (BookUp "Da novità a rifornimento"): manuale=true
+              // E nessun num_lancio — diverso da un lancio vero inserito a mano
+              const isRif = n.manuale && !n.num_lancio;
               return (
-                <tr key={n.ean || i} style={{ background: i % 2 === 0 ? "transparent" : T.surface + "66" }}>
+                <tr key={n.ean || i} style={{ background: isRif ? "#1a1f38" : (i % 2 === 0 ? "transparent" : T.surface + "66"), opacity: isRif ? 0.6 : 1 }}>
                   <td style={{ ...css.td, color: T.textMid, fontSize: "10px", whiteSpace: "nowrap" }}>{n.nome_cedola}</td>
                   <td style={{ ...css.td, fontFamily: "monospace", fontSize: "11px", color: T.textMid }}>{n.ean}</td>
                   <td style={{ ...css.td, maxWidth: 220 }}><div style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", fontWeight: "600" }}>{n.titolo}</div></td>
@@ -1124,7 +1150,7 @@ export default function ModuloAvanzamento({ titoli, prenotato, canali, token, ru
                       {n.obiettivo_giri > 0 && <span style={{ color: pct >= 80 ? T.green : pct >= 50 ? T.accent : T.red, fontSize: "10px", fontWeight: "700" }}>{pct}%</span>}
                     </div>
                   </td>
-                  <td style={{ ...css.td, textAlign: "center" }}>{n.manuale && n.copie_lanciate > 0 ? <span style={css.tag("#e8a838")}>SBL/RIFO {n.copie_lanciate.toLocaleString("it")}</span> : (n.num_lancio || "—")}</td>
+                  <td style={{ ...css.td, textAlign: "center" }}>{isRif ? <span style={css.tag("#e8a838")}>SBL/RIFO {n.copie_lanciate.toLocaleString("it")}</span> : (n.num_lancio || "—")}</td>
                   <td style={css.td}>
                     {isEditingThis ? (
                       <div style={{ display: "flex", gap: 4, alignItems: "center" }}>
