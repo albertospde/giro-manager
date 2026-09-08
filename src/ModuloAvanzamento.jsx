@@ -23,6 +23,7 @@ const css = {
 };
 
 const MESI_IT = { gennaio:0, febbraio:1, marzo:2, aprile:3, maggio:4, giugno:5, luglio:6, agosto:7, settembre:8, ottobre:9, novembre:10, dicembre:11 };
+const MESI_IT_ABBR = { gen:0, feb:1, mar:2, apr:3, mag:4, giu:5, lug:6, ago:7, set:8, ott:9, nov:10, dic:11 };
 
 const sbFetch = async (path, token) => {
   const r = await fetch(`${SUPABASE_URL}/rest/v1/${path}`, {
@@ -82,7 +83,21 @@ function SearchableMultiSelect({ values, onChange, options, placeholder = "Tutti
 
 function parseDataIt(str) {
   if (!str) return null;
-  const parts = String(str).trim().split(/\s+/);
+  const s = String(str).trim();
+  // FIX: formato abbreviato "02-gen-26" (giorno-MeseAbbr-anno2cifre, coi trattini) —
+  // diverso dal formato "2 gennaio 2026" per esteso gestito sotto, presente in alcuni
+  // export del catalogo
+  const abbr = s.match(/^(\d{1,2})[-\/](\w{3})[-\/](\d{2,4})$/i);
+  if (abbr) {
+    const [, giornoAbbr, meseAbbr, annoAbbr] = abbr;
+    const mAbbr = MESI_IT_ABBR[meseAbbr.toLowerCase()];
+    if (mAbbr === undefined) return null;
+    let yAbbr = parseInt(annoAbbr);
+    if (isNaN(yAbbr)) return null;
+    if (yAbbr < 100) yAbbr += 2000;
+    return new Date(yAbbr, mAbbr, parseInt(giornoAbbr) || 1);
+  }
+  const parts = s.split(/\s+/);
   if (parts.length < 2) return null;
   // Formato "giorno mese anno" (es. "2 gennaio 2026") oppure "giorno mese" (senza anno)
   let giorno, mese, anno;
@@ -594,7 +609,13 @@ export default function ModuloAvanzamento({ titoli, prenotato, canali, token, ru
     const futuriPrev = Object.entries(annoPrecPerMese).filter(([m]) => Number(m) > meseCorrente).reduce((s, [, v]) => s + v, 0);
     const trend = ytdPrev > 0 ? ytdCorrente / ytdPrev : 1;
     const pipeline = valNonLanciato;
-    const proiezione = ytdCorrente + pipeline + (futuriPrev * trend);
+    // FIX: la proiezione non dipende più dal totale mensile per data_messa_in_vendita
+    // (spesso assente, vedi tabella "Confronto anno su anno" — fragile). Si basa invece
+    // su valori già certi/stimati che abbiamo comunque: quanto è stato realmente lanciato,
+    // quanto teoricamente sbloccato in rifornimento, e quanto resta ancora in pipeline
+    // (prenotato non ancora lanciato né sbloccato). Il trend vs anno precedente resta
+    // visibile come confronto informativo, non entra più nel calcolo.
+    const proiezione = valoreLancio + valoreSbloccato + pipeline;
     const haFatturatoPrec = totaleAnnoPrev > 0;
     return {
       totTitoli, nonTrasmessi, valPrenotato, valPrenotatoNetto,
@@ -1020,7 +1041,7 @@ export default function ModuloAvanzamento({ titoli, prenotato, canali, token, ru
             </div>
             <div style={{ color: T.purple, fontSize: "24px", fontWeight: "700", lineHeight: 1, marginBottom: 4 }}>€ {kpi.proiezione.toLocaleString("it", { maximumFractionDigits: 0 })}</div>
             <div style={{ color: T.textMid, fontSize: "10px" }}>
-              {kpi.haFatturatoPrec ? `trend ${kpi.trend >= 1 ? "+" : ""}${Math.round((kpi.trend - 1) * 100)}% vs ${annoPrev}` : "carica fatturato anno prec."}
+              lancio + sbloccati + pipeline
             </div>
           </div>
         </div>
@@ -1082,34 +1103,43 @@ export default function ModuloAvanzamento({ titoli, prenotato, canali, token, ru
             </div>
             <div style={{ display: "flex", gap: 16, fontSize: "11px", color: T.textMid, flexWrap: "wrap", padding: "12px 0", borderTop: `1px solid ${T.border}` }}>
               <div>
-                <div style={{ fontSize: "9px", textTransform: "uppercase", letterSpacing: "0.06em", marginBottom: 3 }}>YTD {annoRif}</div>
-                <div style={{ color: T.accent, fontWeight: "700", fontSize: "16px" }}>€ {kpi.ytdCorrente.toLocaleString("it", { maximumFractionDigits: 0 })}</div>
+                <div style={{ fontSize: "9px", textTransform: "uppercase", letterSpacing: "0.06em", marginBottom: 3 }}>Valore lancio {annoRif}</div>
+                <div style={{ color: T.accent, fontWeight: "700", fontSize: "16px" }}>€ {kpi.valoreLancio.toLocaleString("it", { maximumFractionDigits: 0 })}</div>
               </div>
-              {kpi.haFatturatoPrec && <div>
-                <div style={{ fontSize: "9px", textTransform: "uppercase", letterSpacing: "0.06em", marginBottom: 3 }}>YTD {annoPrev}</div>
-                <div style={{ color: T.textMid, fontWeight: "700", fontSize: "16px" }}>€ {kpi.ytdPrev.toLocaleString("it", { maximumFractionDigits: 0 })}</div>
-              </div>}
               <div>
-                <div style={{ fontSize: "9px", textTransform: "uppercase", letterSpacing: "0.06em", marginBottom: 3 }}>Pipeline (pren. da lanciare)</div>
-                <div style={{ color: "#e8a838", fontWeight: "700", fontSize: "16px" }}>€ {kpi.pipeline.toLocaleString("it", { maximumFractionDigits: 0 })}</div>
+                <div style={{ fontSize: "9px", textTransform: "uppercase", letterSpacing: "0.06em", marginBottom: 3 }}>Valore sbloccati (teorico)</div>
+                <div style={{ color: "#e8a838", fontWeight: "700", fontSize: "16px" }}>€ {kpi.valoreSbloccato.toLocaleString("it", { maximumFractionDigits: 0 })}</div>
               </div>
-              {kpi.haFatturatoPrec && <div>
-                <div style={{ fontSize: "9px", textTransform: "uppercase", letterSpacing: "0.06em", marginBottom: 3 }}>Trend vs {annoPrev}</div>
-                <div style={{ color: kpi.trend >= 1 ? T.green : T.red, fontWeight: "700", fontSize: "16px" }}>{kpi.trend >= 1 ? "+" : ""}{Math.round((kpi.trend - 1) * 100)}%</div>
-              </div>}
+              <div>
+                <div style={{ fontSize: "9px", textTransform: "uppercase", letterSpacing: "0.06em", marginBottom: 3 }}>Pipeline (pren. da lanciare/sbloccare)</div>
+                <div style={{ color: T.red, fontWeight: "700", fontSize: "16px" }}>€ {kpi.pipeline.toLocaleString("it", { maximumFractionDigits: 0 })}</div>
+              </div>
               <div>
                 <div style={{ fontSize: "9px", textTransform: "uppercase", letterSpacing: "0.06em", marginBottom: 3 }}>🔮 Proiezione {annoRif}</div>
                 <div style={{ color: T.purple, fontWeight: "700", fontSize: "20px" }}>€ {kpi.proiezione.toLocaleString("it", { maximumFractionDigits: 0 })}</div>
               </div>
             </div>
             <div style={{ fontSize: "10px", color: T.textDim, fontStyle: "italic", marginTop: 4 }}>
-              {kpi.haFatturatoPrec
-                ? `Proiezione = YTD ${annoRif} + pipeline prenotato + (mesi futuri ${annoPrev} × trend ${Math.round(kpi.trend * 100)}%). Include stima giro 4 e giro 5.`
-                : `Carica il fatturato ${annoPrev} con il bottone "↑ Fatturato ${annoPrev}" per avere una proiezione basata sul confronto anno su anno.`
-              }
+              Proiezione = Valore lancio (realizzato) + Valore sbloccati (teorico rifornimento) + Pipeline (prenotato ancora da lanciare/sbloccare).
             </div>
+            {kpi.haFatturatoPrec && (
+              <div style={{ display: "flex", gap: 16, fontSize: "11px", color: T.textMid, flexWrap: "wrap", padding: "10px 0", marginTop: 6, borderTop: `1px solid ${T.border}` }}>
+                <div>
+                  <div style={{ fontSize: "9px", textTransform: "uppercase", letterSpacing: "0.06em", marginBottom: 3 }}>YTD {annoRif} (da mese vendita)</div>
+                  <div style={{ color: T.textMid, fontWeight: "700", fontSize: "14px" }}>€ {kpi.ytdCorrente.toLocaleString("it", { maximumFractionDigits: 0 })}</div>
+                </div>
+                <div>
+                  <div style={{ fontSize: "9px", textTransform: "uppercase", letterSpacing: "0.06em", marginBottom: 3 }}>YTD {annoPrev}</div>
+                  <div style={{ color: T.textMid, fontWeight: "700", fontSize: "14px" }}>€ {kpi.ytdPrev.toLocaleString("it", { maximumFractionDigits: 0 })}</div>
+                </div>
+                <div>
+                  <div style={{ fontSize: "9px", textTransform: "uppercase", letterSpacing: "0.06em", marginBottom: 3 }}>Trend vs {annoPrev} (solo confronto)</div>
+                  <div style={{ color: kpi.trend >= 1 ? T.green : T.red, fontWeight: "700", fontSize: "14px" }}>{kpi.trend >= 1 ? "+" : ""}{Math.round((kpi.trend - 1) * 100)}%</div>
+                </div>
+              </div>
+            )}
             <div style={{ fontSize: "10px", color: T.textDim, marginTop: 6 }}>
-              ⓘ I valori <span style={{ color: T.accent }}>{annoRif}</span> sono calcolati dal campo <b>valore_lancio</b> caricato via CSV (aggregato per mese di messa in vendita). Se un mese risulta -% rispetto all'anno precedente, verifica che il CSV sia aggiornato con tutti i titoli del mese.
+              ⓘ YTD/Trend sono un confronto informativo (richiedono <b>data_messa_in_vendita</b> compilata sui titoli, spesso assente) e non entrano più nel calcolo della proiezione.
             </div>
           </div>
         )}
