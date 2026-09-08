@@ -774,6 +774,13 @@ export default function ModuloAvanzamento({ titoli, prenotato, canali, token, ru
       const existingByEan = {};
       novitaDB.forEach(n => { if (n.ean) existingByEan[n.ean] = n; });
 
+      // FIX: se il file caricato non contiene le colonne Copie/Valore/Num.Lancio, non
+      // vanno azzerate quelle già salvate sui titoli esistenti — il file potrebbe essere
+      // un semplice aggiornamento di Stato Vendita/Risposta Editore/Data, senza quei dati.
+      const hasNumLancioCol = colMap.num_lancio !== undefined;
+      const hasCopieCol = colMap.copie !== undefined;
+      const hasValoreCol = colMap.valore !== undefined;
+
       const toInsert = [];
       const toUpdate = [];
       // FIX: per i record "manuale" (es. impostati da BookUp con "Da novità a rifornimento")
@@ -793,9 +800,9 @@ export default function ModuloAvanzamento({ titoli, prenotato, canali, token, ru
           if (statoChanged) toUpdateStatoOnly.push(row);
           else skipped++;
         } else {
-          const changed = row.num_lancio !== existing.num_lancio ||
-            row.copie_lanciate !== existing.copie_lanciate ||
-            Math.abs((row.valore_lancio || 0) - (existing.valore_lancio || 0)) > 0.01 ||
+          const changed = (hasNumLancioCol && row.num_lancio !== existing.num_lancio) ||
+            (hasCopieCol && row.copie_lanciate !== existing.copie_lanciate) ||
+            (hasValoreCol && Math.abs((row.valore_lancio || 0) - (existing.valore_lancio || 0)) > 0.01) ||
             row.data_messa_in_vendita !== existing.data_messa_in_vendita ||
             row.stato_vendita !== existing.stato_vendita ||
             row.risposta_editore !== existing.risposta_editore;
@@ -818,17 +825,20 @@ export default function ModuloAvanzamento({ titoli, prenotato, canali, token, ru
       }
 
       for (const row of toUpdate) {
+        // FIX: aggiorna solo i campi effettivamente presenti nel file caricato, per non
+        // azzerare num_lancio/copie/valore già salvati quando il CSV non li contiene
+        const body = {
+          data_messa_in_vendita: row.data_messa_in_vendita,
+          stato_vendita: row.stato_vendita,
+          risposta_editore: row.risposta_editore,
+        };
+        if (hasNumLancioCol) body.num_lancio = row.num_lancio;
+        if (hasCopieCol) body.copie_lanciate = row.copie_lanciate;
+        if (hasValoreCol) body.valore_lancio = row.valore_lancio;
         await fetch(`${SUPABASE_URL}/rest/v1/titoli_novita?ean=eq.${encodeURIComponent(row.ean)}`, {
           method: "PATCH",
           headers: { "apikey": SUPABASE_KEY, "Authorization": `Bearer ${token}`, "Content-Type": "application/json", "Prefer": "return=minimal" },
-          body: JSON.stringify({
-            num_lancio: row.num_lancio,
-            copie_lanciate: row.copie_lanciate,
-            valore_lancio: row.valore_lancio,
-            data_messa_in_vendita: row.data_messa_in_vendita,
-            stato_vendita: row.stato_vendita,
-            risposta_editore: row.risposta_editore,
-          }),
+          body: JSON.stringify(body),
         });
       }
 
