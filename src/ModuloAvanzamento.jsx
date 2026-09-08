@@ -566,7 +566,7 @@ export default function ModuloAvanzamento({ titoli, prenotato, canali, token, ru
     const lanciati = novitaAnno.filter(n => n.copie_lanciate > 0 && !isRifornimento(n));
     const numLanciati = lanciati.length;
     const valoreLancio = lanciati.reduce((s, n) => s + (n.valore_lancio || 0), 0);
-    const sbloccati = novitaAnno.filter(n => n.copie_lanciate > 0 && isRifornimento(n));
+    const sbloccati = novitaAnno.filter(n => isRifornimento(n));
     const numSbloccati = sbloccati.length;
     // Valore teorico = prezzo anagrafica × copie sbloccate, non il valore_lancio salvato:
     // Amazon/canale potrebbe non aver ancora effettivamente inserito l'ordine, è una stima
@@ -582,7 +582,7 @@ export default function ModuloAvanzamento({ titoli, prenotato, canali, token, ru
     // Valore prenotato esclusi i titoli già sbloccati in rifornimento (altrimenti quel
     // valore viene contato sia come "prenotato" sia come "sbloccato")
     const valPrenotatoNetto = novitaAnno.reduce((s, n) => isRifornimento(n) ? s : s + (n.prezzo || 0) * n.prenotato_giri, 0);
-    const nonLanciati = novitaAnno.filter(n => n.prenotato_giri > 0 && (!n.copie_lanciate || n.copie_lanciate === 0));
+    const nonLanciati = novitaAnno.filter(n => n.prenotato_giri > 0 && (!n.copie_lanciate || n.copie_lanciate === 0) && !isRifornimento(n));
     const copieNonLanciate = nonLanciati.reduce((s, n) => s + n.prenotato_giri, 0);
     const valNonLanciato = nonLanciati.reduce((s, n) => s + (n.prezzo || 0) * n.prenotato_giri, 0);
     const oggi = new Date();
