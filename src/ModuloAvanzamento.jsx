@@ -733,6 +733,10 @@ export default function ModuloAvanzamento({ titoli, prenotato, canali, token, ru
 
       const toInsert = [];
       const toUpdate = [];
+      // FIX: per i record "manuale" (es. impostati da BookUp con "Da novità a rifornimento")
+      // num_lancio/copie_lanciate/valore_lancio restano protetti, ma Stato Vendita e
+      // Risposta Editore sono dati di catalogo e vanno comunque tenuti aggiornati.
+      const toUpdateStatoOnly = [];
       let skipped = 0;
 
       soloGiri.forEach(row => {
@@ -740,7 +744,11 @@ export default function ModuloAvanzamento({ titoli, prenotato, canali, token, ru
         if (!existing) {
           toInsert.push(row);
         } else if (existing.manuale) {
-          skipped++;
+          const statoChanged = row.stato_vendita !== existing.stato_vendita ||
+            row.risposta_editore !== existing.risposta_editore ||
+            row.data_messa_in_vendita !== existing.data_messa_in_vendita;
+          if (statoChanged) toUpdateStatoOnly.push(row);
+          else skipped++;
         } else {
           const changed = row.num_lancio !== existing.num_lancio ||
             row.copie_lanciate !== existing.copie_lanciate ||
@@ -781,7 +789,21 @@ export default function ModuloAvanzamento({ titoli, prenotato, canali, token, ru
         });
       }
 
-      const msg = `${toInsert.length} nuovi · ${toUpdate.length} aggiornati · ${skipped} invariati${nonNeiGiri.length > 0 ? ` · ⚠ ${nonNeiGiri.length} EAN esclusi (non in nessun Giro), vedi banner sopra la tabella` : ""}`;
+      // Record manuale: aggiorna SOLO Stato Vendita / Risposta Editore / Data Vendita,
+      // senza toccare num_lancio/copie_lanciate/valore_lancio (dati di rifornimento BookUp)
+      for (const row of toUpdateStatoOnly) {
+        await fetch(`${SUPABASE_URL}/rest/v1/titoli_novita?ean=eq.${encodeURIComponent(row.ean)}`, {
+          method: "PATCH",
+          headers: { "apikey": SUPABASE_KEY, "Authorization": `Bearer ${token}`, "Content-Type": "application/json", "Prefer": "return=minimal" },
+          body: JSON.stringify({
+            stato_vendita: row.stato_vendita,
+            risposta_editore: row.risposta_editore,
+            data_messa_in_vendita: row.data_messa_in_vendita,
+          }),
+        });
+      }
+
+      const msg = `${toInsert.length} nuovi · ${toUpdate.length} aggiornati · ${toUpdateStatoOnly.length} SV/RE aggiornati (manuale) · ${skipped} invariati${nonNeiGiri.length > 0 ? ` · ⚠ ${nonNeiGiri.length} EAN esclusi (non in nessun Giro), vedi banner sopra la tabella` : ""}`;
       showToast(msg, nonNeiGiri.length > 0 ? "err" : "ok");
       await loadNovita();
 
