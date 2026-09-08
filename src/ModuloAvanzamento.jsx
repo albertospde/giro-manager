@@ -522,13 +522,13 @@ export default function ModuloAvanzamento({ titoli, prenotato, canali, token, ru
   const valoriPerAnnoMese = useMemo(() => {
     // IMPORTANTE: aggrega per anno/mese di data_messa_in_vendita, NON per anno del giro.
     // Un titolo della cedola 2025 lanciato nel 2026 va in 2026, non in 2025.
-    // FIX: esclude i titoli sbloccati in rifornimento (manuale=true, num_lancio assente):
-    // il fatturato mensile/trend deve riflettere solo i lanci veri, altrimenti valori di
-    // rifornimento (spesso grandi) sporcano il confronto anno su anno e la proiezione.
+    // FIX: esclude i titoli sbloccati in rifornimento (SV1/RE1, senza num_lancio, con
+    // copie > 0): il fatturato mensile/trend deve riflettere solo i lanci veri, altrimenti
+    // valori di rifornimento (spesso grandi) sporcano il confronto anno su anno e la proiezione.
     const map = {};
     novitaArricchite.forEach(n => {
       if (!n.data_messa_in_vendita || !n.valore_lancio || n.valore_lancio === 0) return;
-      if (n.manuale && !n.num_lancio) return;
+      if (!n.num_lancio && n.copie_lanciate > 0 && n.stato_vendita === "1" && n.risposta_editore === "1") return;
       const match = String(n.data_messa_in_vendita).match(/^(\d{4})-(\d{2})/);
       if (!match) return;
       const anno = parseInt(match[1]);
@@ -554,11 +554,11 @@ export default function ModuloAvanzamento({ titoli, prenotato, canali, token, ru
       ? novitaFiltrate.filter(n => getAnnoRecord(n) === filterAnno)
       : novitaFiltrate;
 
-    // FIX: "lancio" (settimanale formale) e "sblocco in rifornimento" (conversione BookUp
-    // di prenotazioni in ordini reali via "Da novità a rifornimento") sono concetti distinti.
-    // Un titolo è "sbloccato in rifornimento" solo se manuale=true E num_lancio assente —
-    // un titolo manuale CON num_lancio è un lancio vero inserito a mano, va contato come lanciato.
-    const isRifornimento = n => n.manuale && !n.num_lancio;
+    // FIX: "sbloccato in rifornimento" = titolo SV1/RE1 (in commercio, disponibile),
+    // senza un numero di lancio formale, ma con copie effettivamente movimentate — a
+    // prescindere dal flag manuale, che si è rivelato non affidabile da solo (perdeva
+    // titoli sbloccati non marcati manuale).
+    const isRifornimento = n => !n.num_lancio && n.copie_lanciate > 0 && n.stato_vendita === "1" && n.risposta_editore === "1";
 
     const totTitoli = novitaAnno.length;
     const lanciati = novitaAnno.filter(n => n.copie_lanciate > 0 && !isRifornimento(n));
@@ -905,11 +905,14 @@ export default function ModuloAvanzamento({ titoli, prenotato, canali, token, ru
   const exportExcel = () => {
     const XLSX = window.XLSX;
     const headers = ["CEDOLA","EAN","TITOLO","AUTORE","EDITORE","PREZZO","PRENOTATO TOTALE","N. LANCIO","COPIE LANCIATE","VALORE LANCIO","DATA MESSA IN VENDITA","SV","RE"];
-    const rows = novitaFiltrate.map(n => [
-      n.nome_cedola, n.ean, n.titolo, n.autore, n.editore, n.prezzo,
-      n.prenotato_giri, (n.manuale && !n.num_lancio) ? "SBL/RIFO" : (n.num_lancio || ""), n.copie_lanciate,
-      n.valore_lancio, fmtDate(n.data_messa_in_vendita), n.stato_vendita || "", n.risposta_editore || ""
-    ]);
+    const rows = novitaFiltrate.map(n => {
+      const isRif = !n.num_lancio && n.copie_lanciate > 0 && n.stato_vendita === "1" && n.risposta_editore === "1";
+      return [
+        n.nome_cedola, n.ean, n.titolo, n.autore, n.editore, n.prezzo,
+        n.prenotato_giri, isRif ? "SBL/RIFO" : (n.num_lancio || ""), isRif ? "" : n.copie_lanciate,
+        isRif ? "" : n.valore_lancio, fmtDate(n.data_messa_in_vendita), n.stato_vendita || "", n.risposta_editore || ""
+      ];
+    });
     const ws = XLSX.utils.aoa_to_sheet([headers, ...rows]);
     const wb = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(wb, ws, `Novità ${filterAnno || "Tutti"}`);
@@ -1133,9 +1136,8 @@ export default function ModuloAvanzamento({ titoli, prenotato, canali, token, ru
             {novitaFiltrate.map((n, i) => {
               const pct = n.obiettivo_giri > 0 ? Math.round(n.prenotato_giri / n.obiettivo_giri * 100) : 0;
               const isEditingThis = editingEan === n.ean;
-              // Sbloccato in rifornimento (BookUp "Da novità a rifornimento"): manuale=true
-              // E nessun num_lancio — diverso da un lancio vero inserito a mano
-              const isRif = n.manuale && !n.num_lancio;
+              // Sbloccato in rifornimento: SV1/RE1, senza num_lancio, con copie movimentate
+              const isRif = !n.num_lancio && n.copie_lanciate > 0 && n.stato_vendita === "1" && n.risposta_editore === "1";
               return (
                 <tr key={n.ean || i} style={{ background: isRif ? "#1a1f38" : (i % 2 === 0 ? "transparent" : T.surface + "66"), opacity: isRif ? 0.6 : 1 }}>
                   <td style={{ ...css.td, color: T.textMid, fontSize: "10px", whiteSpace: "nowrap" }}>{n.nome_cedola}</td>
@@ -1150,7 +1152,7 @@ export default function ModuloAvanzamento({ titoli, prenotato, canali, token, ru
                       {n.obiettivo_giri > 0 && <span style={{ color: pct >= 80 ? T.green : pct >= 50 ? T.accent : T.red, fontSize: "10px", fontWeight: "700" }}>{pct}%</span>}
                     </div>
                   </td>
-                  <td style={{ ...css.td, textAlign: "center" }}>{isRif ? <span style={css.tag("#e8a838")}>SBL/RIFO {n.copie_lanciate.toLocaleString("it")}</span> : (n.num_lancio || "—")}</td>
+                  <td style={{ ...css.td, textAlign: "center" }}>{n.num_lancio || "—"}</td>
                   <td style={css.td}>
                     {isEditingThis ? (
                       <div style={{ display: "flex", gap: 4, alignItems: "center" }}>
@@ -1159,6 +1161,10 @@ export default function ModuloAvanzamento({ titoli, prenotato, canali, token, ru
                           onKeyDown={e => { if (e.key === "Enter") saveInlineEdit(n.ean, editingVal); if (e.key === "Escape") setEditingEan(null); }} />
                         <button style={{ ...css.btn("accent"), padding: "2px 8px", fontSize: "11px" }} onClick={() => saveInlineEdit(n.ean, editingVal)}>✓</button>
                       </div>
+                    ) : isRif ? (
+                      // Non realistico mostrare le copie di rifornimento come "copie lanciate":
+                      // il dato teorico va nei box Titoli sbloccati / Valore sbloccati, non qui
+                      <span style={{ color: T.textDim }}>—</span>
                     ) : (
                       <div style={{ display: "flex", alignItems: "center", gap: 6, cursor: "pointer" }}
                         onClick={() => { setEditingEan(n.ean); setEditingVal(String(n.copie_lanciate || 0)); }}>
@@ -1167,7 +1173,7 @@ export default function ModuloAvanzamento({ titoli, prenotato, canali, token, ru
                       </div>
                     )}
                   </td>
-                  <td style={{ ...css.td, textAlign: "right", whiteSpace: "nowrap" }}>{n.valore_lancio > 0 ? `€ ${n.valore_lancio.toLocaleString("it", { maximumFractionDigits: 0 })}` : "—"}</td>
+                  <td style={{ ...css.td, textAlign: "right", whiteSpace: "nowrap" }}>{isRif ? "—" : (n.valore_lancio > 0 ? `€ ${n.valore_lancio.toLocaleString("it", { maximumFractionDigits: 0 })}` : "—")}</td>
                   <td style={{ ...css.td, whiteSpace: "nowrap" }}>{fmtDate(n.data_messa_in_vendita)}</td>
                   <td style={{ ...css.td, color: T.textMid, fontSize: "11px" }}>{n.stato_vendita || "—"}</td>
                   <td style={{ ...css.td, color: T.textMid, fontSize: "11px" }}>{n.risposta_editore || "—"}</td>
