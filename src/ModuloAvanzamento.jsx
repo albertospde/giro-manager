@@ -568,9 +568,10 @@ export default function ModuloAvanzamento({ titoli, prenotato, canali, token, ru
     const valoreLancio = lanciati.reduce((s, n) => s + (n.valore_lancio || 0), 0);
     const sbloccati = novitaAnno.filter(n => isRifornimento(n));
     const numSbloccati = sbloccati.length;
-    // Valore teorico = prezzo anagrafica × copie sbloccate, non il valore_lancio salvato:
-    // Amazon/canale potrebbe non aver ancora effettivamente inserito l'ordine, è una stima
-    const valoreSbloccato = sbloccati.reduce((s, n) => s + (n.prezzo || 0) * (n.copie_lanciate || 0), 0);
+    // Valore teorico = prezzo anagrafica × copie PRENOTATE (non copie_lanciate, che per la
+    // maggior parte di questi titoli è 0/non affidabile): il prenotato rappresenta la
+    // domanda reale, è la base corretta per stimare cosa "sbloccherebbe" il rifornimento
+    const valoreSbloccato = sbloccati.reduce((s, n) => s + (n.prezzo || 0) * (n.prenotato_giri || 0), 0);
     const totTrasmessi = numLanciati + numSbloccati;
     const pctAvanzamento = totTitoli > 0 ? Math.round(totTrasmessi / totTitoli * 100) : 0;
     // Avanzamento novità: solo sul sotto-insieme "gestito come novità" (esclusi gli
