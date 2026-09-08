@@ -522,13 +522,14 @@ export default function ModuloAvanzamento({ titoli, prenotato, canali, token, ru
   const valoriPerAnnoMese = useMemo(() => {
     // IMPORTANTE: aggrega per anno/mese di data_messa_in_vendita, NON per anno del giro.
     // Un titolo della cedola 2025 lanciato nel 2026 va in 2026, non in 2025.
-    // FIX: esclude i titoli sbloccati in rifornimento (SV1/RE1, senza num_lancio, con
-    // copie > 0): il fatturato mensile/trend deve riflettere solo i lanci veri, altrimenti
-    // valori di rifornimento (spesso grandi) sporcano il confronto anno su anno e la proiezione.
+    // FIX: esclude i titoli sbloccati in rifornimento (senza num_lancio, stato diverso
+    // da "0 di prossima pubblicazione"): il fatturato mensile/trend deve riflettere solo
+    // i lanci veri, altrimenti valori di rifornimento sporcano il confronto anno su anno
+    // e la proiezione.
     const map = {};
     novitaArricchite.forEach(n => {
       if (!n.data_messa_in_vendita || !n.valore_lancio || n.valore_lancio === 0) return;
-      if (!n.num_lancio && n.copie_lanciate > 0 && n.stato_vendita === "1" && n.risposta_editore === "1") return;
+      if (!n.num_lancio && n.stato_vendita && n.stato_vendita !== "0") return;
       const match = String(n.data_messa_in_vendita).match(/^(\d{4})-(\d{2})/);
       if (!match) return;
       const anno = parseInt(match[1]);
@@ -554,11 +555,12 @@ export default function ModuloAvanzamento({ titoli, prenotato, canali, token, ru
       ? novitaFiltrate.filter(n => getAnnoRecord(n) === filterAnno)
       : novitaFiltrate;
 
-    // FIX: "sbloccato in rifornimento" = titolo SV1/RE1 (in commercio, disponibile),
-    // senza un numero di lancio formale, ma con copie effettivamente movimentate — a
-    // prescindere dal flag manuale, che si è rivelato non affidabile da solo (perdeva
-    // titoli sbloccati non marcati manuale).
-    const isRifornimento = n => !n.num_lancio && n.copie_lanciate > 0 && n.stato_vendita === "1" && n.risposta_editore === "1";
+    // FIX: "sbloccato in rifornimento" = titolo senza un numero di lancio formale, in
+    // uno stato di vendita diverso da "0 di prossima pubblicazione" (un titolo non ancora
+    // pubblicato non può essere sbloccato) — a prescindere dalle copie già movimentate:
+    // anche a 0 copie, se non ha un lancio ed è già "attivo" a catalogo, è da gestire
+    // come sblocco rifornimento, non lancio.
+    const isRifornimento = n => !n.num_lancio && n.stato_vendita && n.stato_vendita !== "0";
 
     const totTitoli = novitaAnno.length;
     const lanciati = novitaAnno.filter(n => n.copie_lanciate > 0 && !isRifornimento(n));
@@ -906,7 +908,7 @@ export default function ModuloAvanzamento({ titoli, prenotato, canali, token, ru
     const XLSX = window.XLSX;
     const headers = ["CEDOLA","EAN","TITOLO","AUTORE","EDITORE","PREZZO","PRENOTATO TOTALE","N. LANCIO","COPIE LANCIATE","VALORE LANCIO","DATA MESSA IN VENDITA","SV","RE"];
     const rows = novitaFiltrate.map(n => {
-      const isRif = !n.num_lancio && n.copie_lanciate > 0 && n.stato_vendita === "1" && n.risposta_editore === "1";
+      const isRif = !n.num_lancio && n.stato_vendita && n.stato_vendita !== "0";
       return [
         n.nome_cedola, n.ean, n.titolo, n.autore, n.editore, n.prezzo,
         n.prenotato_giri, isRif ? "SBL/RIFO" : (n.num_lancio || ""), isRif ? "" : n.copie_lanciate,
@@ -1136,8 +1138,9 @@ export default function ModuloAvanzamento({ titoli, prenotato, canali, token, ru
             {novitaFiltrate.map((n, i) => {
               const pct = n.obiettivo_giri > 0 ? Math.round(n.prenotato_giri / n.obiettivo_giri * 100) : 0;
               const isEditingThis = editingEan === n.ean;
-              // Sbloccato in rifornimento: SV1/RE1, senza num_lancio, con copie movimentate
-              const isRif = !n.num_lancio && n.copie_lanciate > 0 && n.stato_vendita === "1" && n.risposta_editore === "1";
+              // Sbloccato in rifornimento: senza num_lancio, stato diverso da
+              // "0 di prossima pubblicazione" (a prescindere dalle copie)
+              const isRif = !n.num_lancio && n.stato_vendita && n.stato_vendita !== "0";
               return (
                 <tr key={n.ean || i} style={{ background: isRif ? "#1a1f38" : (i % 2 === 0 ? "transparent" : T.surface + "66"), opacity: isRif ? 0.6 : 1 }}>
                   <td style={{ ...css.td, color: T.textMid, fontSize: "10px", whiteSpace: "nowrap" }}>{n.nome_cedola}</td>
