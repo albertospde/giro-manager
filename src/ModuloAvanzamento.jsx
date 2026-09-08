@@ -153,6 +153,8 @@ export default function ModuloAvanzamento({ titoli, prenotato, canali, token, ru
   const [toast, setToast] = useState(null);
   const [fatturato, setFatturato] = useState([]);
   const [showProiezione, setShowProiezione] = useState(false);
+  // Report persistente EAN esclusi dall'ultimo upload catalogo (non presenti in nessun Giro)
+  const [nonNeiGiriReport, setNonNeiGiriReport] = useState(null);
 
   const toggleSort = (key) => {
     if (sortKey === key) setSortDir(d => d === "asc" ? "desc" : "asc");
@@ -779,25 +781,30 @@ export default function ModuloAvanzamento({ titoli, prenotato, canali, token, ru
         });
       }
 
-      const msg = `${toInsert.length} nuovi · ${toUpdate.length} aggiornati · ${skipped} invariati${nonNeiGiri.length > 0 ? ` · ${nonNeiGiri.length} EAN non trovati nei giri` : ""}`;
-      showToast(msg);
+      const msg = `${toInsert.length} nuovi · ${toUpdate.length} aggiornati · ${skipped} invariati${nonNeiGiri.length > 0 ? ` · ⚠ ${nonNeiGiri.length} EAN esclusi (non in nessun Giro), vedi banner sopra la tabella` : ""}`;
+      showToast(msg, nonNeiGiri.length > 0 ? "err" : "ok");
       await loadNovita();
 
-      // Report EAN non trovati → download Excel automatico
-      if (nonNeiGiri.length > 0) {
-        const XLSX = window.XLSX;
-        const headers = ["EAN", "Num. Lancio", "Data Vendita", "Copie", "Valore €"];
-        const rows = nonNeiGiri.map(r => [r.ean, r.num_lancio || "", r.data_messa_in_vendita || "", r.copie_lanciate || 0, r.valore_lancio || 0]);
-        const ws = XLSX.utils.aoa_to_sheet([headers, ...rows]);
-        const wb = XLSX.utils.book_new();
-        XLSX.utils.book_append_sheet(wb, ws, "EAN non trovati");
-        XLSX.writeFile(wb, `EAN_non_trovati_${new Date().toISOString().slice(0,10)}.xlsx`);
-      }
+      // Report EAN esclusi perché non presenti in nessun Giro: banner persistente
+      // (niente più download automatico e silenzioso — l'utente lo scarica quando vuole)
+      setNonNeiGiriReport(nonNeiGiri.length > 0 ? nonNeiGiri : null);
     } catch (err) {
       showToast(err.message, "err");
     }
     setUploading(false);
     e.target.value = "";
+  };
+
+  // Download manuale del report EAN esclusi (non in nessun Giro), richiamato dal banner
+  const downloadNonNeiGiriReport = () => {
+    if (!nonNeiGiriReport || nonNeiGiriReport.length === 0) return;
+    const XLSX = window.XLSX;
+    const headers = ["EAN", "Num. Lancio", "Data Vendita", "Copie", "Valore €", "Stato Vendita", "Risposta Editore"];
+    const rows = nonNeiGiriReport.map(r => [r.ean, r.num_lancio || "", r.data_messa_in_vendita || "", r.copie_lanciate || 0, r.valore_lancio || 0, r.stato_vendita || "", r.risposta_editore || ""]);
+    const ws = XLSX.utils.aoa_to_sheet([headers, ...rows]);
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, "EAN non trovati");
+    XLSX.writeFile(wb, `EAN_non_trovati_${new Date().toISOString().slice(0,10)}.xlsx`);
   };
 
   const saveManual = async () => {
@@ -929,6 +936,15 @@ export default function ModuloAvanzamento({ titoli, prenotato, canali, token, ru
             <button style={css.btn()} onClick={exportExcel}>↓ Excel</button>
           </div>
         </div>
+        {nonNeiGiriReport && nonNeiGiriReport.length > 0 && (
+          <div style={{ display: "flex", alignItems: "center", gap: 12, background: "#4a1a2a", border: `1px solid ${T.red}`, borderRadius: 4, padding: "10px 14px" }}>
+            <span style={{ color: T.red, fontSize: "12px", flex: 1 }}>
+              ⚠ Ultimo upload catalogo: <b>{nonNeiGiriReport.length} EAN</b> esclusi perché non presenti in nessun Giro — non compaiono in Avanzamento Novità.
+            </span>
+            <button style={{ ...css.btn(), borderColor: T.red, color: T.red }} onClick={downloadNonNeiGiriReport}>↓ Scarica elenco</button>
+            <button style={{ ...css.btn(), padding: "6px 10px" }} onClick={() => setNonNeiGiriReport(null)}>✕</button>
+          </div>
+        )}
         <div style={{ display: "flex", gap: 12, flexWrap: "wrap" }}>
           <KpiCard label={`Titoli novità ${filterAnno || ""}`} value={kpi.totTitoli.toLocaleString("it")} color={T.text} sub={`${kpi.nonTrasmessi} da lanciare/sbloccare`} />
           <KpiCard label="Valore prenotato" value={`€ ${kpi.valPrenotato.toLocaleString("it", { maximumFractionDigits: 0 })}`} color={T.green} />
