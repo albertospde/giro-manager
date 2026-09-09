@@ -599,6 +599,16 @@ function fmtDataIt(iso) {
   return `${d}/${m}/${y}`;
 }
 
+// Formatta un timestamp ISO (es. importato_at) come "gg/mm/aaaa hh:mm" in orario Europe/Rome.
+function fmtDataOraIt(iso) {
+  if (!iso) return null;
+  const d = new Date(iso);
+  if (isNaN(d)) return null;
+  const data = d.toLocaleDateString("it-IT", { day: "2-digit", month: "2-digit", year: "numeric", timeZone: "Europe/Rome" });
+  const ora = d.toLocaleTimeString("it-IT", { hour: "2-digit", minute: "2-digit", timeZone: "Europe/Rome" });
+  return `${data} ${ora}`;
+}
+
 const CAL_GIRI_EMPTY_FORM = { id: null, anno: null, giro: "", mesi: [], consegna_materiali: "", riunioni: "", inizio_giro: "", fine_giro: "", dati_a_editori: "" };
 
 function Modulocalendariogiri({ token, ruolo }) {
@@ -1508,6 +1518,22 @@ function ModuloFineGiro({ titoli, prenotato, canali, token, ruolo, spalmatura, u
   const rpnCedolaTarget = giroLabelSel.length === 0 && extraSel.length === 1 ? extraSel[0] : null;
   const rpnTargetLabel = rpnGiroTarget ? `Giro ${rpnGiroTarget}` : rpnCedolaTarget;
 
+  // Data/ora ultimo aggiornamento prenotato per il Giro o la Cedola Extra selezionati
+  // (basato su importato_at, valorizzato sia dall'import manuale che da "Aggiorna da RPN").
+  const titoliTargetRpn = useMemo(() => {
+    if (giroLabelSel.length > 0) return titoli.filter(t => giroLabelSel.includes(t.giro_label));
+    if (extraSel.length > 0) return titoli.filter(t => t.giro_label === "EXTRA" && extraSel.includes(t.n_cedola));
+    return [];
+  }, [titoli, giroLabelSel, extraSel]);
+
+  const ultimoAggiornamentoRpn = useMemo(() => {
+    if (titoliTargetRpn.length === 0) return null;
+    const idSet = new Set(titoliTargetRpn.map(t => t.id));
+    let max = null;
+    prenotato.forEach(p => { if (idSet.has(p.titolo_id) && p.importato_at && (!max || p.importato_at > max)) max = p.importato_at; });
+    return max;
+  }, [titoliTargetRpn, prenotato]);
+
   const avviaSyncRpn = useCallback(async () => {
     if (!rpnGiroTarget && !rpnCedolaTarget) return;
     setRpnSync({ status: "loading", error: null, preview: null });
@@ -1898,8 +1924,13 @@ function ModuloFineGiro({ titoli, prenotato, canali, token, ruolo, spalmatura, u
           &nbsp;·&nbsp; <span style={{ color: pctTot >= 80 ? T.green : pctTot >= 50 ? T.accent : T.red, fontWeight: "700" }}>{pctTot}%</span>
         </div>
         <button style={css.btn()} onClick={resetFiltri}>↺ Reset</button>
+        {(rpnGiroTarget || rpnCedolaTarget) && (
+          <div style={{ marginLeft: "auto", color: T.textMid, fontSize: "11px", whiteSpace: "nowrap" }}>
+            {ultimoAggiornamentoRpn ? <>Ultimo agg.: <span style={{ color: T.text, fontWeight: "600" }}>{fmtDataOraIt(ultimoAggiornamentoRpn)}</span></> : "Mai aggiornato da RPN"}
+          </div>
+        )}
         <button
-          style={{ ...css.btn("accent"), marginLeft: "auto" }}
+          style={{ ...css.btn("accent"), marginLeft: (rpnGiroTarget || rpnCedolaTarget) ? undefined : "auto" }}
           onClick={avviaSyncRpn}
           disabled={(!rpnGiroTarget && !rpnCedolaTarget) || rpnSync.status === "loading"}
           title={(!rpnGiroTarget && !rpnCedolaTarget) ? "Seleziona un solo Giro o una sola Cedola Extra per aggiornare da RPN" : undefined}
@@ -2129,6 +2160,47 @@ function ModuloLanciSettimanali({ token, titoli, prenotato, canali, ruolo, userA
 
   const [editCell, setEditCell] = useState(null); // { id, field, value }
   const [anticipiPopup, setAnticipiPopup] = useState(null); // array di righe novita_fuori_lancio notificate da questo upload
+
+  // Lancio della settimana corrente secondo Messaggerie (termine iscrizione = giovedì di
+  // questa settimana), per il tasto "+ Aggiungi lancio N". Si ricalcola da solo ogni
+  // settimana perché il backend rilegge sempre la data reale da Messaggerie.
+  const [lancioSettimana, setLancioSettimana] = useState(null); // { numero, numeroDb, anno }
+  const [aggiungendoLancio, setAggiungendoLancio] = useState(false);
+
+  useEffect(() => {
+    if (!token) return;
+    fetch(`${SUPABASE_URL}/functions/v1/giro-lanci-sync?check=1&anno=${new Date().getFullYear()}`, {
+      headers: { Authorization: `Bearer ${token}` },
+    })
+      .then(r => r.json())
+      .then(result => {
+        if (result.numero_lancio) setLancioSettimana({ numero: result.numero_lancio, numeroDb: result.numero_lancio_db, anno: result.anno_lancio });
+      })
+      .catch(() => {});
+  }, [token]);
+
+  const lancioSettimanaGiaPresente = useMemo(() => {
+    if (!lancioSettimana) return false;
+    return data.some(r => r.anno_lancio === lancioSettimana.anno && r.num_lancio === lancioSettimana.numeroDb);
+  }, [data, lancioSettimana]);
+
+  const handleAggiungiLancioSettimana = async () => {
+    if (!lancioSettimana || lancioSettimanaGiaPresente) return;
+    setAggiungendoLancio(true);
+    try {
+      const syncUrl = `${SUPABASE_URL}/functions/v1/giro-lanci-sync?numero=${lancioSettimana.numero}&anno=${lancioSettimana.anno}`;
+      const res = await fetch(syncUrl, { headers: { Authorization: `Bearer ${token}` } });
+      const result = await res.json();
+      if (!res.ok) throw new Error(result.message || result.error || "Errore sconosciuto");
+      showToast(`Lancio ${result.numero_lancio}/${result.anno_lancio} creato: ${result.titoli_sincronizzati} titoli`);
+      await loadData();
+      setFilterAnno(result.anno_lancio);
+      setFilterLancio([result.numero_lancio_db]);
+    } catch (err) {
+      showToast(err.message, "err");
+    }
+    setAggiungendoLancio(false);
+  };
 
   // Dopo un upload, controlla se qualche EAN caricato sblocca un anticipo lancio "da_gestire" → "notificato"
   const checkAnticipiNotificati = async (eans) => {
@@ -2558,9 +2630,14 @@ if (!r.ok) throw new Error(await r.text());
   if (data.length === 0) return (
     <div style={{ flex: 1, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 20, padding: 40 }}>
       <div style={{ fontSize: "48px", opacity: 0.3 }}>🚀</div>
-      <div style={{ color: T.textMid, fontSize: "14px", textAlign: "center", maxWidth: 400 }}>Nessun lancio caricato. Carica il file del lancio.</div>
-      <label style={{ ...css.btn("accent"), cursor: "pointer", padding: "10px 24px", fontSize: "13px" }}>
-        ↑ Carica primo lancio
+      <div style={{ color: T.textMid, fontSize: "14px", textAlign: "center", maxWidth: 400 }}>Nessun lancio caricato.</div>
+      {lancioSettimana && (
+        <button style={{ ...css.btn("accent"), padding: "10px 24px", fontSize: "13px" }} onClick={handleAggiungiLancioSettimana} disabled={aggiungendoLancio}>
+          {aggiungendoLancio ? "Aggiungo..." : `+ Aggiungi lancio ${lancioSettimana.numero}`}
+        </button>
+      )}
+      <label style={{ ...css.btn(), cursor: "pointer", padding: "10px 24px", fontSize: "13px" }}>
+        ↑ Carica primo lancio da file (fallback)
         <input type="file" accept=".xlsx,.xls,.csv" style={{ display: "none" }} onChange={(e) => handleUpload(e, "iscrizione")} />
       </label>
     </div>
@@ -2588,6 +2665,16 @@ if (!r.ok) throw new Error(await r.text());
           )}
         </div>
         <div style={{ marginLeft: "auto", display: "flex", gap: 8 }}>
+          {lancioSettimana && (
+            <button
+              style={{ ...css.btn(lancioSettimanaGiaPresente ? "default" : "accent"), opacity: lancioSettimanaGiaPresente ? 0.45 : 1, cursor: lancioSettimanaGiaPresente ? "default" : "pointer" }}
+              onClick={handleAggiungiLancioSettimana}
+              disabled={lancioSettimanaGiaPresente || aggiungendoLancio}
+              title={lancioSettimanaGiaPresente ? "Lancio della settimana già presente" : "Crea il lancio della settimana scaricandolo da Messaggerie"}
+            >
+              {aggiungendoLancio ? "Aggiungo..." : `+ Aggiungi lancio ${lancioSettimana.numero}`}
+            </button>
+          )}
           <button style={css.btn("accent")} onClick={handleAggiornaMessaggerie} disabled={syncingMessaggerie}>
             {syncingMessaggerie ? "Sincronizzo..." : "🔄 Aggiorna da Messaggerie"}
           </button>
