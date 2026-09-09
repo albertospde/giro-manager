@@ -2161,10 +2161,11 @@ function ModuloLanciSettimanali({ token, titoli, prenotato, canali, ruolo, userA
   const [editCell, setEditCell] = useState(null); // { id, field, value }
   const [anticipiPopup, setAnticipiPopup] = useState(null); // array di righe novita_fuori_lancio notificate da questo upload
 
-  // Lancio della settimana corrente secondo Messaggerie (termine iscrizione = giovedì di
-  // questa settimana), per il tasto "+ Aggiungi lancio N". Si ricalcola da solo ogni
-  // settimana perché il backend rilegge sempre la data reale da Messaggerie.
-  const [lancioSettimana, setLancioSettimana] = useState(null); // { numero, numeroDb, anno }
+  // Lanci attualmente APERTI per l'iscrizione su Messaggerie (ordinati per numero),
+  // per il tasto "+ Aggiungi lancio N": prendiamo il primo non ancora presente in
+  // lanci_settimanali. Si ricalcola da solo ogni settimana perché il backend
+  // rilegge sempre l'elenco reale da Messaggerie — nessun calcolo di date qui.
+  const [lanciAperti, setLanciAperti] = useState([]); // [{ numero_lancio, numero_lancio_db, anno_lancio, termine_iscrizione }]
   const [aggiungendoLancio, setAggiungendoLancio] = useState(false);
 
   useEffect(() => {
@@ -2173,22 +2174,21 @@ function ModuloLanciSettimanali({ token, titoli, prenotato, canali, ruolo, userA
       headers: { Authorization: `Bearer ${token}` },
     })
       .then(r => r.json())
-      .then(result => {
-        if (result.numero_lancio) setLancioSettimana({ numero: result.numero_lancio, numeroDb: result.numero_lancio_db, anno: result.anno_lancio });
-      })
+      .then(result => { if (Array.isArray(result.launches)) setLanciAperti(result.launches); })
       .catch(() => {});
   }, [token]);
 
-  const lancioSettimanaGiaPresente = useMemo(() => {
-    if (!lancioSettimana) return false;
-    return data.some(r => r.anno_lancio === lancioSettimana.anno && r.num_lancio === lancioSettimana.numeroDb);
-  }, [data, lancioSettimana]);
+  // Sempre il primo lancio aperto NON ancora presente in lanci_settimanali (o null se
+  // sono già tutti caricati): per questo il tasto, quando c'è, è sempre cliccabile.
+  const lancioSettimana = useMemo(() => {
+    return lanciAperti.find(l => !data.some(r => r.anno_lancio === l.anno_lancio && r.num_lancio === l.numero_lancio_db)) || null;
+  }, [lanciAperti, data]);
 
   const handleAggiungiLancioSettimana = async () => {
-    if (!lancioSettimana || lancioSettimanaGiaPresente) return;
+    if (!lancioSettimana) return;
     setAggiungendoLancio(true);
     try {
-      const syncUrl = `${SUPABASE_URL}/functions/v1/giro-lanci-sync?numero=${lancioSettimana.numero}&anno=${lancioSettimana.anno}`;
+      const syncUrl = `${SUPABASE_URL}/functions/v1/giro-lanci-sync?numero=${lancioSettimana.numero_lancio}&anno=${lancioSettimana.anno_lancio}`;
       const res = await fetch(syncUrl, { headers: { Authorization: `Bearer ${token}` } });
       const result = await res.json();
       if (!res.ok) throw new Error(result.message || result.error || "Errore sconosciuto");
@@ -2633,7 +2633,7 @@ if (!r.ok) throw new Error(await r.text());
       <div style={{ color: T.textMid, fontSize: "14px", textAlign: "center", maxWidth: 400 }}>Nessun lancio caricato.</div>
       {lancioSettimana && (
         <button style={{ ...css.btn("accent"), padding: "10px 24px", fontSize: "13px" }} onClick={handleAggiungiLancioSettimana} disabled={aggiungendoLancio}>
-          {aggiungendoLancio ? "Aggiungo..." : `+ Aggiungi lancio ${lancioSettimana.numero}`}
+          {aggiungendoLancio ? "Aggiungo..." : `+ Aggiungi lancio ${lancioSettimana.numero_lancio}`}
         </button>
       )}
       <label style={{ ...css.btn(), cursor: "pointer", padding: "10px 24px", fontSize: "13px" }}>
@@ -2667,12 +2667,12 @@ if (!r.ok) throw new Error(await r.text());
         <div style={{ marginLeft: "auto", display: "flex", gap: 8 }}>
           {lancioSettimana && (
             <button
-              style={{ ...css.btn(lancioSettimanaGiaPresente ? "default" : "accent"), opacity: lancioSettimanaGiaPresente ? 0.45 : 1, cursor: lancioSettimanaGiaPresente ? "default" : "pointer" }}
+              style={css.btn("accent")}
               onClick={handleAggiungiLancioSettimana}
-              disabled={lancioSettimanaGiaPresente || aggiungendoLancio}
-              title={lancioSettimanaGiaPresente ? "Lancio della settimana già presente" : "Crea il lancio della settimana scaricandolo da Messaggerie"}
+              disabled={aggiungendoLancio}
+              title="Crea questo lancio scaricandolo da Messaggerie"
             >
-              {aggiungendoLancio ? "Aggiungo..." : `+ Aggiungi lancio ${lancioSettimana.numero}`}
+              {aggiungendoLancio ? "Aggiungo..." : `+ Aggiungi lancio ${lancioSettimana.numero_lancio}`}
             </button>
           )}
           <button style={css.btn("accent")} onClick={handleAggiornaMessaggerie} disabled={syncingMessaggerie}>
