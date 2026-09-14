@@ -442,9 +442,11 @@ export default function ModuloImportRpn({ token, onImportDone }) {
                     {l.stato === "pending" ? "…" : l.stato === "ok" ? "✓" : "✗"}
                   </td>
                   <td style={{ ...css.td, color: T.textMid, fontSize: "11px" }}>
-                    {l.dettaglio && (l.dettaglio.errori?.length
-                      ? l.dettaglio.errori.join("; ")
-                      : `${l.dettaglio.creati ?? 0} creati, ${l.dettaglio.aggiornati ?? 0} aggiornati${l.dettaglio.ignorati ? `, ${l.dettaglio.ignorati} ignorati` : ""}`)}
+                    {l.dettaglio && (() => {
+                      const erroriVeri = (l.dettaglio.errori || []).filter(e => !e.startsWith("ℹ"));
+                      const base = `${l.dettaglio.creati ?? 0} creati, ${l.dettaglio.aggiornati ?? 0} aggiornati${l.dettaglio.ignorati ? `, ${l.dettaglio.ignorati} ignorati` : ""}`;
+                      return erroriVeri.length ? `${base} — ⚠ ${erroriVeri.join("; ")}` : base;
+                    })()}
                   </td>
                 </tr>
               ))}
