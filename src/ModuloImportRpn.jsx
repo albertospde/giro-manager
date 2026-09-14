@@ -233,6 +233,8 @@ export default function ModuloImportRpn({ token, onImportDone }) {
   const [selezionati, setSelezionati] = useState(new Set());
   const [importando, setImportando] = useState(false);
   const [log, setLog] = useState([]); // [{nome, tipo, stato: pending|ok|errore, dettaglio}]
+  const [extraQuery, setExtraQuery] = useState("");
+  const [extraOpen, setExtraOpen] = useState(false);
 
   const caricaElenco = useCallback(async () => {
     setLoadingElenco(true); setErroreElenco(null); setElenco([]); setSelezionati(new Set());
@@ -247,12 +249,19 @@ export default function ModuloImportRpn({ token, onImportDone }) {
 
   const statiDisponibili = [...new Set(elenco.map(c => c.stato).filter(Boolean))].sort();
 
-  const filtrati = elenco.filter(c => {
+  const passaAnnoStato = (c) => {
     if (anno && !(c.nome.includes(anno) || (c.giroNome || "").includes(anno))) return false;
-    if (ricerca && !c.nome.toUpperCase().includes(ricerca.toUpperCase())) return false;
     if (statoFiltro && c.stato !== statoFiltro) return false;
     return true;
-  });
+  };
+
+  const filtratiGiri = elenco.filter(c => c.tipo === "giro" && passaAnnoStato(c) && (!ricerca || c.nome.toUpperCase().includes(ricerca.toUpperCase())));
+
+  const extraCandidati = elenco
+    .filter(c => c.tipo === "extra" && passaAnnoStato(c) && (!extraQuery || c.nome.toUpperCase().includes(extraQuery.toUpperCase())))
+    .slice(0, 40); // limite risultati mostrati nella tendina, si affina scrivendo
+
+  const extraSelezionati = elenco.filter(c => c.tipo === "extra" && selezionati.has(c.key));
 
   const toggle = (key) => {
     setSelezionati(prev => {
@@ -261,13 +270,17 @@ export default function ModuloImportRpn({ token, onImportDone }) {
       return next;
     });
   };
-  const toggleTutti = () => {
-    const tuttiSelezionati = filtrati.length > 0 && filtrati.every(c => selezionati.has(c.key));
-    setSelezionati(tuttiSelezionati ? new Set() : new Set(filtrati.map(c => c.key)));
+  const toggleTuttiGiri = () => {
+    const tuttiSelezionati = filtratiGiri.length > 0 && filtratiGiri.every(c => selezionati.has(c.key));
+    setSelezionati(prev => {
+      const next = new Set(prev);
+      filtratiGiri.forEach(c => tuttiSelezionati ? next.delete(c.key) : next.add(c.key));
+      return next;
+    });
   };
 
   const handleImporta = async () => {
-    const daImportare = filtrati.filter(c => selezionati.has(c.key)); // ordine = ordine trovato su RPN
+    const daImportare = elenco.filter(c => selezionati.has(c.key)); // ordine = ordine trovato su RPN
     if (!daImportare.length) return;
     setImportando(true);
     setLog(daImportare.map(c => ({ nome: c.nome, tipo: c.tipo, stato: "pending" })));
@@ -307,13 +320,7 @@ export default function ModuloImportRpn({ token, onImportDone }) {
 
       {elenco.length > 0 && (
         <div>
-          <div style={{ display: "flex", gap: 8, marginBottom: 12, alignItems: "center" }}>
-            <input
-              placeholder="Cerca per nome cedola..."
-              value={ricerca}
-              onChange={e => setRicerca(e.target.value)}
-              style={{ background: T.surface, border: `1px solid ${T.border}`, borderRadius: 3, padding: "6px 10px", color: T.text, fontSize: "12px", flex: 1 }}
-            />
+          <div style={{ display: "flex", gap: 8, marginBottom: 16, alignItems: "center" }}>
             <input
               placeholder="Anno"
               value={anno}
@@ -329,39 +336,93 @@ export default function ModuloImportRpn({ token, onImportDone }) {
               {statiDisponibili.map(s => <option key={s} value={s}>{s}</option>)}
             </select>
             <button style={css.btn()} onClick={caricaElenco}>↻ Ricarica elenco</button>
-            <button style={css.btn("accent")} onClick={handleImporta} disabled={importando || selezionati.size === 0}>
-              {importando ? "Import in corso..." : `Importa ${selezionati.size} selezionate`}
-            </button>
+            <div style={{ marginLeft: "auto" }}>
+              <button style={css.btn("accent")} onClick={handleImporta} disabled={importando || selezionati.size === 0}>
+                {importando ? "Import in corso..." : `Importa ${selezionati.size} selezionate`}
+              </button>
+            </div>
           </div>
 
-          <div style={{ color: T.textMid, fontSize: "11px", marginBottom: 8 }}>{filtrati.length} cedole/giri trovati (anno "{anno}") — {selezionati.size} selezionati</div>
-
-          <div style={{ overflowX: "auto", maxHeight: 420, overflowY: "auto", border: `1px solid ${T.border}` }}>
+          {/* ─── GIRI ─── */}
+          <div style={{ color: T.text, fontWeight: "700", fontSize: "12px", marginBottom: 6 }}>Giri</div>
+          <input
+            placeholder="Cerca per nome giro..."
+            value={ricerca}
+            onChange={e => setRicerca(e.target.value)}
+            style={{ background: T.surface, border: `1px solid ${T.border}`, borderRadius: 3, padding: "6px 10px", color: T.text, fontSize: "12px", width: "100%", marginBottom: 8 }}
+          />
+          <div style={{ overflowX: "auto", maxHeight: 300, overflowY: "auto", border: `1px solid ${T.border}`, marginBottom: 24 }}>
             <table style={{ width: "100%", borderCollapse: "collapse" }}>
               <thead>
                 <tr>
-                  <th style={css.th}><input type="checkbox" checked={filtrati.length > 0 && filtrati.every(c => selezionati.has(c.key))} onChange={toggleTutti} /></th>
+                  <th style={css.th}><input type="checkbox" checked={filtratiGiri.length > 0 && filtratiGiri.every(c => selezionati.has(c.key))} onChange={toggleTuttiGiri} /></th>
                   <th style={css.th}>Nome cedola</th>
-                  <th style={css.th}>Tipo</th>
                   <th style={css.th}>Giro</th>
                   <th style={css.th}>Stato</th>
                   <th style={css.th}>N. titoli</th>
                 </tr>
               </thead>
               <tbody>
-                {filtrati.map((c, i) => (
+                {filtratiGiri.map((c, i) => (
                   <tr key={c.key} style={{ background: i % 2 === 0 ? "transparent" : T.surface + "66", cursor: "pointer" }} onClick={() => toggle(c.key)}>
                     <td style={css.td}><input type="checkbox" checked={selezionati.has(c.key)} onChange={() => toggle(c.key)} onClick={e => e.stopPropagation()} /></td>
                     <td style={{ ...css.td, fontWeight: "600" }}>{c.nome}</td>
-                    <td style={{ ...css.td, color: c.tipo === "giro" ? T.blue : T.accent }}>{c.tipo === "giro" ? "Giro" : "Cedola extra"}</td>
                     <td style={{ ...css.td, color: T.textMid }}>{c.giroNome ?? "—"}</td>
                     <td style={{ ...css.td, color: T.textMid }}>{c.stato ?? "—"}</td>
                     <td style={{ ...css.td, color: T.textMid, textAlign: "right" }}>{c.numeroTitoli}</td>
                   </tr>
                 ))}
+                {filtratiGiri.length === 0 && (
+                  <tr><td colSpan={5} style={{ ...css.td, color: T.textDim, textAlign: "center", padding: 16 }}>Nessun giro trovato</td></tr>
+                )}
               </tbody>
             </table>
           </div>
+
+          {/* ─── CEDOLE EXTRA: tendina ricercabile invece dell'elenco piatto ─── */}
+          <div style={{ color: T.text, fontWeight: "700", fontSize: "12px", marginBottom: 6 }}>Cedole extra</div>
+          <div style={{ position: "relative", marginBottom: 10 }}>
+            <input
+              placeholder="Cerca cedola extra per nome e clicca per aggiungerla..."
+              value={extraQuery}
+              onChange={e => { setExtraQuery(e.target.value); setExtraOpen(true); }}
+              onFocus={() => setExtraOpen(true)}
+              onBlur={() => setTimeout(() => setExtraOpen(false), 150)}
+              style={{ background: T.surface, border: `1px solid ${T.border}`, borderRadius: 3, padding: "6px 10px", color: T.text, fontSize: "12px", width: "100%" }}
+            />
+            {extraOpen && (
+              <div style={{ position: "absolute", top: "100%", left: 0, right: 0, zIndex: 10, background: T.surface, border: `1px solid ${T.borderHi}`, borderRadius: 3, maxHeight: 260, overflowY: "auto", boxShadow: "0 4px 12px rgba(0,0,0,0.4)" }}>
+                {extraCandidati.length === 0 && (
+                  <div style={{ padding: "10px 12px", color: T.textDim, fontSize: "12px" }}>Nessuna cedola extra trovata</div>
+                )}
+                {extraCandidati.map(c => {
+                  const sel = selezionati.has(c.key);
+                  return (
+                    <div
+                      key={c.key}
+                      onMouseDown={e => e.preventDefault()} // evita che il blur chiuda la tendina prima del click
+                      onClick={() => toggle(c.key)}
+                      style={{ padding: "7px 12px", fontSize: "12px", cursor: "pointer", display: "flex", justifyContent: "space-between", gap: 8, background: sel ? T.accent + "22" : "transparent", borderBottom: `1px solid ${T.border}22` }}
+                    >
+                      <span style={{ color: sel ? T.accent : T.text, fontWeight: sel ? "700" : "400" }}>{sel ? "✓ " : ""}{c.nome}</span>
+                      <span style={{ color: T.textMid, whiteSpace: "nowrap" }}>{c.stato ? `${c.stato} · ` : ""}{c.numeroTitoli} tit.</span>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+
+          {extraSelezionati.length > 0 && (
+            <div style={{ display: "flex", flexWrap: "wrap", gap: 6, marginBottom: 16 }}>
+              {extraSelezionati.map(c => (
+                <div key={c.key} style={{ display: "flex", alignItems: "center", gap: 6, background: T.accent + "22", border: `1px solid ${T.accent}66`, borderRadius: 12, padding: "3px 6px 3px 10px", fontSize: "11px", color: T.accent }}>
+                  {c.nome}
+                  <span onClick={() => toggle(c.key)} style={{ cursor: "pointer", fontWeight: "700", padding: "0 4px" }}>✕</span>
+                </div>
+              ))}
+            </div>
+          )}
         </div>
       )}
 
