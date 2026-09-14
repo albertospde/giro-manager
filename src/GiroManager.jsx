@@ -4523,6 +4523,7 @@ export default function App() {
   const deleteTitolo = useCallback(id => setTitoli(prev => prev.filter(t => t.id !== id)), []);
   const refreshDati = useCallback(() => {
     if (!session) return;
+    sbFetch("giri?select=*&order=anno.desc,numero.desc", session.token).then(data => { if (Array.isArray(data)) setGiriDB(data); });
     sbFetch("prenotato?select=*&limit=100000", session.token).then(data => { if (Array.isArray(data)) setPrenotato(data); });
     sbFetch("ranking_editori?select=editore_nome,ranking", session.token).then(reData => {
       const rankingMap = {};
@@ -4601,7 +4602,7 @@ export default function App() {
           {activeModule === "lanci" && <ModuloLanciSettimanali token={session.token} titoli={titoli} prenotato={prenotato} canali={canali} ruolo={ruolo} userAccount={userAccount} onNavigateAnticipi={() => setActiveModule("anticipilancio")} />}
           {activeModule === "verificalanci" && <ModuloVerificaLanciAmazon token={session.token} titoli={titoli} prenotato={prenotato} canali={canali} />}
           {activeModule === "anticipilancio" && <ModuloAnticipiLancio token={session.token} userEmail={session.user?.email} />}
-          {activeModule === "import" && <ModuloImport giriList={giriDB} token={session.token} />}
+          {activeModule === "import" && <ModuloImport giriList={giriDB} token={session.token} onImportDone={refreshDati} />}
           {activeModule === "spalmatura" && <ImportSpalmatura token={session.token} onImportDone={() => sbFetch("spalmatura_obiettivo?select=*", session.token).then(setSpalmatura)} />}
         </div>
       </div>
