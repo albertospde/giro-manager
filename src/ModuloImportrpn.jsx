@@ -55,12 +55,17 @@ async function fetchElencoCedole(token) {
     rpnSync(token, "giro-cedola-list"),
     rpnSync(token, "cedola-extra-list"),
   ]);
+  const statoDi = (c) => {
+    const v = c.stato ?? c.Stato ?? c.status ?? c.Status ?? c.statoDescrizione ?? null;
+    return v === null || v === undefined || v === "" ? null : String(v).trim();
+  };
   const elenco = [];
   (Array.isArray(giri) ? giri : []).forEach(g => {
     (g.cedolaSet || []).forEach(c => {
       elenco.push({
         key: `G-${c.id}`, cedolaId: c.id, nome: c.nome, tipo: "giro",
         giroId: g.id, giroNome: g.nome, numeroTitoli: c.numeroTitoli ?? 0,
+        stato: statoDi(c) ?? statoDi(g),
       });
     });
   });
@@ -68,6 +73,7 @@ async function fetchElencoCedole(token) {
     elenco.push({
       key: `X-${c.id}`, cedolaId: c.id, nome: c.nome, tipo: "extra",
       giroId: null, giroNome: null, numeroTitoli: c.numeroTitoli ?? 0,
+      stato: statoDi(c),
     });
   });
   return elenco;
@@ -199,6 +205,7 @@ export default function ModuloImportRpn({ token, onImportDone }) {
   const [erroreElenco, setErroreElenco] = useState(null);
   const [ricerca, setRicerca] = useState("");
   const [anno, setAnno] = useState(String(new Date().getFullYear()));
+  const [statoFiltro, setStatoFiltro] = useState("");
   const [selezionati, setSelezionati] = useState(new Set());
   const [importando, setImportando] = useState(false);
   const [log, setLog] = useState([]); // [{nome, tipo, stato: pending|ok|errore, dettaglio}]
@@ -214,9 +221,12 @@ export default function ModuloImportRpn({ token, onImportDone }) {
     setLoadingElenco(false);
   }, [token]);
 
+  const statiDisponibili = [...new Set(elenco.map(c => c.stato).filter(Boolean))].sort();
+
   const filtrati = elenco.filter(c => {
     if (anno && !(c.nome.includes(anno) || (c.giroNome || "").includes(anno))) return false;
     if (ricerca && !c.nome.toUpperCase().includes(ricerca.toUpperCase())) return false;
+    if (statoFiltro && c.stato !== statoFiltro) return false;
     return true;
   });
 
@@ -286,6 +296,14 @@ export default function ModuloImportRpn({ token, onImportDone }) {
               onChange={e => setAnno(e.target.value)}
               style={{ background: T.surface, border: `1px solid ${T.border}`, borderRadius: 3, padding: "6px 10px", color: T.text, fontSize: "12px", width: 80 }}
             />
+            <select
+              value={statoFiltro}
+              onChange={e => setStatoFiltro(e.target.value)}
+              style={{ background: T.surface, border: `1px solid ${T.border}`, borderRadius: 3, padding: "6px 10px", color: T.text, fontSize: "12px" }}
+            >
+              <option value="">Tutti gli stati</option>
+              {statiDisponibili.map(s => <option key={s} value={s}>{s}</option>)}
+            </select>
             <button style={css.btn()} onClick={caricaElenco}>↻ Ricarica elenco</button>
             <button style={css.btn("accent")} onClick={handleImporta} disabled={importando || selezionati.size === 0}>
               {importando ? "Import in corso..." : `Importa ${selezionati.size} selezionate`}
@@ -302,6 +320,7 @@ export default function ModuloImportRpn({ token, onImportDone }) {
                   <th style={css.th}>Nome cedola</th>
                   <th style={css.th}>Tipo</th>
                   <th style={css.th}>Giro</th>
+                  <th style={css.th}>Stato</th>
                   <th style={css.th}>N. titoli</th>
                 </tr>
               </thead>
@@ -312,6 +331,7 @@ export default function ModuloImportRpn({ token, onImportDone }) {
                     <td style={{ ...css.td, fontWeight: "600" }}>{c.nome}</td>
                     <td style={{ ...css.td, color: c.tipo === "giro" ? T.blue : T.accent }}>{c.tipo === "giro" ? "Giro" : "Cedola extra"}</td>
                     <td style={{ ...css.td, color: T.textMid }}>{c.giroNome ?? "—"}</td>
+                    <td style={{ ...css.td, color: T.textMid }}>{c.stato ?? "—"}</td>
                     <td style={{ ...css.td, color: T.textMid, textAlign: "right" }}>{c.numeroTitoli}</td>
                   </tr>
                 ))}
