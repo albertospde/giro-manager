@@ -123,7 +123,7 @@ async function importCedola(token, item, anagraficaMap) {
       account_editore: anagrafica?.account_editore ?? null,
       formato: FORMATO_DEFAULT,
       posizione: idx + 1,
-      giro_id: null, giro_label: null, n_cedola: item.nome,
+      giro_id: null, giro_label: item.tipo === "extra" ? "EXTRA" : null, n_cedola: item.nome,
     };
     if (!anagrafica) {
       if (ambiguo) errori.push(`${r.editore_nome}: nome ambiguo, corrisponde a più editori in anagrafica (${ambiguo.join(", ")}) — ean ${r.ean}`);
