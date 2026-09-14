@@ -1,0 +1,352 @@
+import { useState, useCallback } from "react";
+import { fetchAnagraficaEditori, resolveGiri } from "./ModuloImport.jsx";
+
+const SUPABASE_URL = "https://tdflwenlylhctxssatax.supabase.co";
+const SUPABASE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InRkZmx3ZW5seWxoY3R4c3NhdGF4Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzYzMzgyNzYsImV4cCI6MjA5MTkxNDI3Nn0.l35qEL7LOvyYuI1McQlVqj4vbyTqmlevcmqWbTGYi2Q";
+
+const T = {
+  bg: "#0f0f0f", surface: "#161616", border: "#252525", borderHi: "#333333",
+  text: "#e8e8e8", textMid: "#888888", textDim: "#444444",
+  accent: "#c8a96e", green: "#4caf7d", red: "#e05c5c", blue: "#5b8fd4",
+};
+const css = {
+  btn: (v = "default") => ({ padding: "6px 14px", border: `1px solid ${v === "accent" ? T.accent : v === "danger" ? T.red : T.border}`, background: v === "accent" ? T.accent : v === "danger" ? T.red + "22" : "transparent", color: v === "accent" ? "#000" : v === "danger" ? T.red : T.text, cursor: "pointer", fontSize: "12px", fontFamily: "inherit", borderRadius: 3, fontWeight: v === "accent" ? "700" : "400" }),
+  th: { padding: "7px 10px", textAlign: "left", color: T.textMid, fontWeight: "400", fontSize: "11px", letterSpacing: "0.06em", textTransform: "uppercase", borderBottom: `1px solid ${T.border}`, whiteSpace: "nowrap", background: T.surface },
+  td: { padding: "6px 10px", borderBottom: `1px solid ${T.border}22`, verticalAlign: "middle", fontSize: "12px" },
+};
+
+const FORMATO_DEFAULT = "Cover";
+// Parsa il nome giro RPN ("GIRO 5 2026" o "5 2026") in numero+anno.
+const GIRO_RPN_RE = /^(?:GIRO\s+)?(\d+)\s+(\d{4})$/i;
+
+// Campi "manuali" che RPN non fornisce mai: se il titolo esiste già, li riportiamo
+// invariati per non azzerare lavoro fatto a mano (obiettivi, note, promozioni...).
+const CAMPI_MANUALI = [
+  "obiettivo_assegnato", "il_triangolo", "top_100", "promozione",
+  "note_comunicazione", "note", "uscita",
+  "ean_gemello_1", "titolo_gemello_1", "ean_gemello_2", "titolo_gemello_2",
+  "ean_gemello_3", "titolo_gemello_3",
+];
+
+async function rpnSync(token, path) {
+  const res = await fetch(`${SUPABASE_URL}/functions/v1/rpn-sync/${path}`, {
+    headers: { Authorization: `Bearer ${token}`, apikey: SUPABASE_KEY },
+  });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) {
+    if (data.error === "RPN_NOT_CONNECTED") throw new Error("Account RPN non collegato: ricollegalo in Prenota.");
+    throw new Error(data.message || data.error || `Errore ${res.status} su ${path}`);
+  }
+  return data;
+}
+
+function normalizeTitolo(t) {
+  const ean = String(t.ean ?? t.Ean ?? "").trim();
+  const titolo = String(t.titolo ?? t.Titolo ?? "").trim().toUpperCase();
+  const autoreRaw = String(t.autore ?? t.Autore ?? "").trim().toUpperCase();
+  const editore_nome = String(t.editore ?? t.Editore ?? "").trim().toUpperCase();
+  const prezzo = Number(t.prezzo ?? t.Prezzo ?? 0) || null;
+  return { ean, titolo, autore: autoreRaw === "NESSUNO" || !autoreRaw ? null : autoreRaw, editore_nome, prezzo };
+}
+
+// ─── Carica l'elenco cedole/giri da RPN (giro-cedola-list + cedola-extra-list) ──
+async function fetchElencoCedole(token) {
+  const [giri, extra] = await Promise.all([
+    rpnSync(token, "giro-cedola-list"),
+    rpnSync(token, "cedola-extra-list"),
+  ]);
+  const elenco = [];
+  (Array.isArray(giri) ? giri : []).forEach(g => {
+    (g.cedolaSet || []).forEach(c => {
+      elenco.push({
+        key: `G-${c.id}`, cedolaId: c.id, nome: c.nome, tipo: "giro",
+        giroId: g.id, giroNome: g.nome, numeroTitoli: c.numeroTitoli ?? 0,
+      });
+    });
+  });
+  (Array.isArray(extra) ? extra : []).forEach(c => {
+    elenco.push({
+      key: `X-${c.id}`, cedolaId: c.id, nome: c.nome, tipo: "extra",
+      giroId: null, giroNome: null, numeroTitoli: c.numeroTitoli ?? 0,
+    });
+  });
+  return elenco;
+}
+
+// ─── Import di UNA cedola/giro selezionato ──────────────────────────────────
+async function importCedola(token, item, anagraficaMap) {
+  const { results } = await rpnSync(token, `titoli/${item.cedolaId}`);
+  const grezzi = (results || []).map(normalizeTitolo).filter(r => r.ean && r.editore_nome);
+  if (!grezzi.length) return { creati: 0, aggiornati: 0, ignorati: (results || []).length, errori: [] };
+
+  const errori = [];
+  let giroNumero = null, giroAnno = null;
+  if (item.tipo === "giro") {
+    const m = item.giroNome.trim().match(GIRO_RPN_RE);
+    if (!m) throw new Error(`Nome giro RPN non riconosciuto: "${item.giroNome}"`);
+    giroNumero = parseInt(m[1]); giroAnno = parseInt(m[2]);
+  }
+
+  // Risolvi anagrafica + n_cedola/giro per ogni titolo
+  const giroCombos = new Set();
+  const righe = grezzi.map((r, idx) => {
+    const anagrafica = anagraficaMap[r.editore_nome];
+    const out = {
+      ...r,
+      codice_editore: anagrafica?.codice_editore ?? null,
+      ranking_editore: anagrafica?.ranking ?? null,
+      account_editore: anagrafica?.account_editore ?? null,
+      formato: FORMATO_DEFAULT,
+      posizione: idx + 1,
+      giro_id: null, giro_label: null, n_cedola: item.nome,
+    };
+    if (!anagrafica) { errori.push(`${r.editore_nome}: non trovato in anagrafica (ean ${r.ean})`); return null; }
+    if (item.tipo === "giro") {
+      const categoria = anagrafica.cedola;
+      if (!categoria) { errori.push(`${r.editore_nome}: senza categoria cedola in anagrafica`); return null; }
+      out.giro_label = `${giroNumero} ${giroAnno}`;
+      out.n_cedola = `GIRO ${giroNumero} ${giroAnno} ${categoria}`;
+      out._giroKey = `${giroNumero}|${giroAnno}|${categoria}`;
+      giroCombos.add(out._giroKey);
+    }
+    return out;
+  }).filter(Boolean);
+
+  if (!righe.length) return { creati: 0, aggiornati: 0, ignorati: grezzi.length, errori };
+
+  if (item.tipo === "giro" && giroCombos.size) {
+    const giriMap = await resolveGiri(token, giroCombos);
+    righe.forEach(r => { r.giro_id = giriMap[r._giroKey] ?? null; delete r._giroKey; });
+  }
+
+  // Recupera i titoli già presenti per riportare i campi manuali e decidere update/insert
+  let esistentiMap = {};
+  if (item.tipo === "giro") {
+    const giroIds = [...new Set(righe.map(r => r.giro_id).filter(Boolean))];
+    if (giroIds.length) {
+      const res = await fetch(
+        `${SUPABASE_URL}/rest/v1/titoli?select=id,ean,giro_id,${CAMPI_MANUALI.join(",")}&giro_id=in.(${giroIds.join(",")})`,
+        { headers: { apikey: SUPABASE_KEY, Authorization: `Bearer ${token}` } }
+      );
+      const rows = await res.json();
+      rows.forEach(row => { esistentiMap[`${row.ean}__${row.giro_id}`] = row; });
+    }
+  } else {
+    const res = await fetch(
+      `${SUPABASE_URL}/rest/v1/titoli?select=id,ean,${CAMPI_MANUALI.join(",")}&n_cedola=eq.${encodeURIComponent(item.nome)}`,
+      { headers: { apikey: SUPABASE_KEY, Authorization: `Bearer ${token}` } }
+    );
+    const rows = await res.json();
+    rows.forEach(row => { esistentiMap[`${row.ean}__X`] = row; });
+  }
+
+  righe.forEach(r => {
+    const key = item.tipo === "giro" ? `${r.ean}__${r.giro_id}` : `${r.ean}__X`;
+    const esistente = esistentiMap[key];
+    r._esistenteId = esistente?.id ?? null;
+    CAMPI_MANUALI.forEach(f => { r[f] = esistente ? esistente[f] : (f === "il_triangolo" || f === "top_100" ? false : null); });
+  });
+
+  let creati = 0, aggiornati = 0;
+
+  if (item.tipo === "giro") {
+    // ON CONFLICT (ean, giro_id) funziona correttamente qui: upsert sicuro in un colpo solo.
+    const payload = righe.map(({ _esistenteId, ...r }) => r);
+    const res = await fetch(`${SUPABASE_URL}/rest/v1/rpc/upsert_titoli`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", apikey: SUPABASE_KEY, Authorization: `Bearer ${token}` },
+      body: JSON.stringify({ payload }),
+    });
+    if (!res.ok) throw new Error("upsert_titoli: " + JSON.stringify(await res.json().catch(() => ({}))));
+    creati = righe.filter(r => !r._esistenteId).length;
+    aggiornati = righe.filter(r => r._esistenteId).length;
+  } else {
+    // Cedole extra: giro_id è sempre NULL, il vincolo UNIQUE(ean, giro_id) non le distingue
+    // (NULL non genera conflitto in Postgres) — upsert_titoli da sola creerebbe duplicati
+    // a ogni risincronizzazione. Split esplicito: update by id per chi esiste già, insert per i nuovi.
+    const daAggiornare = righe.filter(r => r._esistenteId);
+    const daCreare = righe.filter(r => !r._esistenteId);
+
+    for (const r of daAggiornare) {
+      const { _esistenteId, ...body } = r;
+      const res = await fetch(`${SUPABASE_URL}/rest/v1/titoli?id=eq.${_esistenteId}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json", apikey: SUPABASE_KEY, Authorization: `Bearer ${token}`, Prefer: "return=minimal" },
+        body: JSON.stringify(body),
+      });
+      if (!res.ok) errori.push(`Errore aggiornamento ean ${r.ean}: ${await res.text()}`);
+      else aggiornati++;
+    }
+    if (daCreare.length) {
+      const payload = daCreare.map(({ _esistenteId, ...r }) => r);
+      const res = await fetch(`${SUPABASE_URL}/rest/v1/titoli`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", apikey: SUPABASE_KEY, Authorization: `Bearer ${token}`, Prefer: "return=minimal" },
+        body: JSON.stringify(payload),
+      });
+      if (!res.ok) errori.push(`Errore creazione: ${await res.text()}`);
+      else creati = daCreare.length;
+    }
+  }
+
+  return { creati, aggiornati, ignorati: grezzi.length - righe.length, errori };
+}
+
+// ─── Componente principale ───────────────────────────────────────────────────
+export default function ModuloImportRpn({ token, onImportDone }) {
+  const [elenco, setElenco] = useState([]);
+  const [loadingElenco, setLoadingElenco] = useState(false);
+  const [erroreElenco, setErroreElenco] = useState(null);
+  const [ricerca, setRicerca] = useState("");
+  const [anno, setAnno] = useState(String(new Date().getFullYear()));
+  const [selezionati, setSelezionati] = useState(new Set());
+  const [importando, setImportando] = useState(false);
+  const [log, setLog] = useState([]); // [{nome, tipo, stato: pending|ok|errore, dettaglio}]
+
+  const caricaElenco = useCallback(async () => {
+    setLoadingElenco(true); setErroreElenco(null); setElenco([]); setSelezionati(new Set());
+    try {
+      const lista = await fetchElencoCedole(token);
+      setElenco(lista);
+    } catch (e) {
+      setErroreElenco(e.message);
+    }
+    setLoadingElenco(false);
+  }, [token]);
+
+  const filtrati = elenco.filter(c => {
+    if (anno && !(c.nome.includes(anno) || (c.giroNome || "").includes(anno))) return false;
+    if (ricerca && !c.nome.toUpperCase().includes(ricerca.toUpperCase())) return false;
+    return true;
+  });
+
+  const toggle = (key) => {
+    setSelezionati(prev => {
+      const next = new Set(prev);
+      next.has(key) ? next.delete(key) : next.add(key);
+      return next;
+    });
+  };
+  const toggleTutti = () => {
+    const tuttiSelezionati = filtrati.length > 0 && filtrati.every(c => selezionati.has(c.key));
+    setSelezionati(tuttiSelezionati ? new Set() : new Set(filtrati.map(c => c.key)));
+  };
+
+  const handleImporta = async () => {
+    const daImportare = filtrati.filter(c => selezionati.has(c.key)); // ordine = ordine trovato su RPN
+    if (!daImportare.length) return;
+    setImportando(true);
+    setLog(daImportare.map(c => ({ nome: c.nome, tipo: c.tipo, stato: "pending" })));
+
+    let anagraficaMap = {};
+    try {
+      anagraficaMap = await fetchAnagraficaEditori(token);
+    } catch (e) {
+      alert("Impossibile caricare l'anagrafica editori: " + e.message);
+      setImportando(false);
+      return;
+    }
+
+    for (let i = 0; i < daImportare.length; i++) {
+      const item = daImportare[i];
+      try {
+        const r = await importCedola(token, item, anagraficaMap);
+        setLog(prev => prev.map((l, idx) => idx === i ? { ...l, stato: "ok", dettaglio: r } : l));
+      } catch (e) {
+        setLog(prev => prev.map((l, idx) => idx === i ? { ...l, stato: "errore", dettaglio: { errori: [e.message] } } : l));
+      }
+    }
+    setImportando(false);
+    onImportDone && onImportDone();
+  };
+
+  return (
+    <div>
+      {elenco.length === 0 && !loadingElenco && (
+        <div style={{ marginBottom: 16 }}>
+          <button style={css.btn("accent")} onClick={caricaElenco}>Carica elenco cedole/giri da RPN</button>
+          {erroreElenco && <div style={{ color: T.red, fontSize: "12px", marginTop: 8 }}>⚠ {erroreElenco}</div>}
+        </div>
+      )}
+
+      {loadingElenco && <div style={{ color: T.textMid, fontSize: "12px" }}>Caricamento elenco da RPN…</div>}
+
+      {elenco.length > 0 && (
+        <div>
+          <div style={{ display: "flex", gap: 8, marginBottom: 12, alignItems: "center" }}>
+            <input
+              placeholder="Cerca per nome cedola..."
+              value={ricerca}
+              onChange={e => setRicerca(e.target.value)}
+              style={{ background: T.surface, border: `1px solid ${T.border}`, borderRadius: 3, padding: "6px 10px", color: T.text, fontSize: "12px", flex: 1 }}
+            />
+            <input
+              placeholder="Anno"
+              value={anno}
+              onChange={e => setAnno(e.target.value)}
+              style={{ background: T.surface, border: `1px solid ${T.border}`, borderRadius: 3, padding: "6px 10px", color: T.text, fontSize: "12px", width: 80 }}
+            />
+            <button style={css.btn()} onClick={caricaElenco}>↻ Ricarica elenco</button>
+            <button style={css.btn("accent")} onClick={handleImporta} disabled={importando || selezionati.size === 0}>
+              {importando ? "Import in corso..." : `Importa ${selezionati.size} selezionate`}
+            </button>
+          </div>
+
+          <div style={{ color: T.textMid, fontSize: "11px", marginBottom: 8 }}>{filtrati.length} cedole/giri trovati (anno "{anno}") — {selezionati.size} selezionati</div>
+
+          <div style={{ overflowX: "auto", maxHeight: 420, overflowY: "auto", border: `1px solid ${T.border}` }}>
+            <table style={{ width: "100%", borderCollapse: "collapse" }}>
+              <thead>
+                <tr>
+                  <th style={css.th}><input type="checkbox" checked={filtrati.length > 0 && filtrati.every(c => selezionati.has(c.key))} onChange={toggleTutti} /></th>
+                  <th style={css.th}>Nome cedola</th>
+                  <th style={css.th}>Tipo</th>
+                  <th style={css.th}>Giro</th>
+                  <th style={css.th}>N. titoli</th>
+                </tr>
+              </thead>
+              <tbody>
+                {filtrati.map((c, i) => (
+                  <tr key={c.key} style={{ background: i % 2 === 0 ? "transparent" : T.surface + "66", cursor: "pointer" }} onClick={() => toggle(c.key)}>
+                    <td style={css.td}><input type="checkbox" checked={selezionati.has(c.key)} onChange={() => toggle(c.key)} onClick={e => e.stopPropagation()} /></td>
+                    <td style={{ ...css.td, fontWeight: "600" }}>{c.nome}</td>
+                    <td style={{ ...css.td, color: c.tipo === "giro" ? T.blue : T.accent }}>{c.tipo === "giro" ? "Giro" : "Cedola extra"}</td>
+                    <td style={{ ...css.td, color: T.textMid }}>{c.giroNome ?? "—"}</td>
+                    <td style={{ ...css.td, color: T.textMid, textAlign: "right" }}>{c.numeroTitoli}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
+
+      {log.length > 0 && (
+        <div style={{ marginTop: 20 }}>
+          <div style={{ color: T.text, fontWeight: "700", fontSize: "13px", marginBottom: 8 }}>Risultato import</div>
+          <table style={{ width: "100%", borderCollapse: "collapse" }}>
+            <thead>
+              <tr>{["Cedola", "Tipo", "Stato", "Dettaglio"].map(h => <th key={h} style={css.th}>{h}</th>)}</tr>
+            </thead>
+            <tbody>
+              {log.map((l, i) => (
+                <tr key={i}>
+                  <td style={{ ...css.td, fontWeight: "600" }}>{l.nome}</td>
+                  <td style={css.td}>{l.tipo === "giro" ? "Giro" : "Cedola extra"}</td>
+                  <td style={{ ...css.td, color: l.stato === "ok" ? T.green : l.stato === "errore" ? T.red : T.textMid, fontWeight: "700" }}>
+                    {l.stato === "pending" ? "…" : l.stato === "ok" ? "✓" : "✗"}
+                  </td>
+                  <td style={{ ...css.td, color: T.textMid, fontSize: "11px" }}>
+                    {l.dettaglio && (l.dettaglio.errori?.length
+                      ? l.dettaglio.errori.join("; ")
+                      : `${l.dettaglio.creati ?? 0} creati, ${l.dettaglio.aggiornati ?? 0} aggiornati${l.dettaglio.ignorati ? `, ${l.dettaglio.ignorati} ignorati` : ""}`)}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </div>
+  );
+}
