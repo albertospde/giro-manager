@@ -80,6 +80,21 @@ async function fetchElencoCedole(token) {
 }
 
 // ─── Import di UNA cedola/giro selezionato ──────────────────────────────────
+// Se il nome editore di RPN non matcha esattamente l'anagrafica, prova un fallback:
+// RPN a volte restituisce il nome "arricchito" (nome proprio, codice interno, parola
+// EDITORE aggiunta) — es. "SILVANA EDITORIALE 821" invece di "SILVANA EDITORIALE",
+// "SKIRA EDITORE" invece di "SKIRA", "ALLEMANDI UMBERTO" invece di "ALLEMANDI".
+// Cerca tra le chiavi anagrafica quelle di cui il nome RPN è un prefisso (a confine di
+// parola, per evitare match spuri tipo MONDADORI vs MONDADORI EDUCATION). Se ne trova
+// esattamente una la usa e lo segnala; se zero o più di una resta un errore normale.
+function risolviAnagrafica(nomeRpn, anagraficaMap) {
+  const diretto = anagraficaMap[nomeRpn];
+  if (diretto) return { match: diretto, viaFallback: false };
+  const candidati = Object.keys(anagraficaMap).filter(k => nomeRpn === k || nomeRpn.startsWith(k + " "));
+  if (candidati.length === 1) return { match: anagraficaMap[candidati[0]], viaFallback: true, nomeUsato: candidati[0] };
+  return { match: null, viaFallback: false, ambiguo: candidati.length > 1 ? candidati : null };
+}
+
 async function importCedola(token, item, anagraficaMap) {
   const { results } = await rpnSync(token, `titoli/${item.cedolaId}`);
   const grezzi = (results || []).map(normalizeTitolo).filter(r => r.ean && r.editore_nome);
@@ -96,7 +111,7 @@ async function importCedola(token, item, anagraficaMap) {
   // Risolvi anagrafica + n_cedola/giro per ogni titolo
   const giroCombos = new Set();
   const righe = grezzi.map((r, idx) => {
-    const anagrafica = anagraficaMap[r.editore_nome];
+    const { match: anagrafica, viaFallback, nomeUsato, ambiguo } = risolviAnagrafica(r.editore_nome, anagraficaMap);
     const out = {
       ...r,
       codice_editore: anagrafica?.codice_editore ?? null,
@@ -106,7 +121,12 @@ async function importCedola(token, item, anagraficaMap) {
       posizione: idx + 1,
       giro_id: null, giro_label: null, n_cedola: item.nome,
     };
-    if (!anagrafica) { errori.push(`${r.editore_nome}: non trovato in anagrafica (ean ${r.ean})`); return null; }
+    if (!anagrafica) {
+      if (ambiguo) errori.push(`${r.editore_nome}: nome ambiguo, corrisponde a più editori in anagrafica (${ambiguo.join(", ")}) — ean ${r.ean}`);
+      else errori.push(`${r.editore_nome}: non trovato in anagrafica (ean ${r.ean})`);
+      return null;
+    }
+    if (viaFallback) errori.push(`ℹ ${r.editore_nome} → abbinato ad anagrafica "${nomeUsato}" (corrispondenza automatica, verifica) — ean ${r.ean}`);
     if (item.tipo === "giro") {
       const categoria = anagrafica.cedola;
       if (!categoria) { errori.push(`${r.editore_nome}: senza categoria cedola in anagrafica`); return null; }
