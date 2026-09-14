@@ -48,7 +48,7 @@ export async function fetchAnagraficaEditori(token) {
   const data = await res.json();
   const map = {};
   data.forEach(({ editore_nome, codice_editore, ranking, account_editore, promozione, cedola }) => {
-    const nome = String(editore_nome ?? "").trim().toUpperCase();
+    const nome = String(editore_nome ?? "").replace(/\s+/g, " ").trim().toUpperCase();
     if (!nome) return;
     if (!(nome in map) || ranking < map[nome].ranking) {
       map[nome] = { codice_editore, ranking, account_editore, promozione, cedola: String(cedola ?? "").trim().toUpperCase() };
