@@ -40,11 +40,15 @@ async function rpnSync(token, path) {
   return data;
 }
 
+function normSpazi(s) {
+  return s.replace(/\s+/g, " ").trim(); // \s in JS copre anche nbsp e simili
+}
+
 function normalizeTitolo(t) {
   const ean = String(t.ean ?? t.Ean ?? "").trim();
-  const titolo = String(t.titolo ?? t.Titolo ?? "").trim().toUpperCase();
-  const autoreRaw = String(t.autore ?? t.Autore ?? "").trim().toUpperCase();
-  const editore_nome = String(t.editore ?? t.Editore ?? "").trim().toUpperCase();
+  const titolo = normSpazi(String(t.titolo ?? t.Titolo ?? "")).toUpperCase();
+  const autoreRaw = normSpazi(String(t.autore ?? t.Autore ?? "")).toUpperCase();
+  const editore_nome = normSpazi(String(t.editore ?? t.Editore ?? "")).toUpperCase();
   const prezzo = Number(t.prezzo ?? t.Prezzo ?? 0) || null;
   return { ean, titolo, autore: autoreRaw === "NESSUNO" || !autoreRaw ? null : autoreRaw, editore_nome, prezzo };
 }
