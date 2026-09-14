@@ -1,4 +1,5 @@
 import { useState, useCallback } from "react";
+import ModuloImportRpn from "./ModuloImportRpn.jsx";
 
 const SUPABASE_URL = "https://tdflwenlylhctxssatax.supabase.co";
 const SUPABASE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InRkZmx3ZW5seWxoY3R4c3NhdGF4Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzYzMzgyNzYsImV4cCI6MjA5MTkxNDI3Nn0.l35qEL7LOvyYuI1McQlVqj4vbyTqmlevcmqWbTGYi2Q";
@@ -37,7 +38,8 @@ const FORMATO_DEFAULT = "Cover";
 const GIRO_RE = /^(\d+)\s+(\d{4})$/;
 
 // ─── Fetch anagrafica editori (ranking, account, cedola/categoria) ──────────
-async function fetchAnagraficaEditori(token) {
+// Esportata: riusata anche da ModuloImportRpn per l'import cedole/giri da RPN.
+export async function fetchAnagraficaEditori(token) {
   const res = await fetch(
     `${SUPABASE_URL}/rest/v1/ranking_editori?select=editore_nome,codice_editore,ranking,account_editore,promozione,cedola`,
     { headers: { "apikey": SUPABASE_KEY, "Authorization": `Bearer ${token}` } }
@@ -57,7 +59,7 @@ async function fetchAnagraficaEditori(token) {
 
 // ─── Risolvi (o crea) il giro_id per ogni combinazione numero+anno+categoria presente ──
 // Usa il vincolo UNIQUE(numero, anno, sub_giro) della tabella giri per upsert idempotente.
-async function resolveGiri(token, combos) {
+export async function resolveGiri(token, combos) {
   // combos: Set di "numero|anno|categoria"
   const payload = [...combos].map(c => {
     const [numero, anno, categoria] = c.split("|");
@@ -93,6 +95,7 @@ export default function ModuloImport({ token, onImportDone }) {
   const [done, setDone] = useState(null);
   const [step, setStep] = useState("upload"); // upload | preview | result
   const [anagraficaMissing, setAnagraficaMissing] = useState([]); // editori non trovati in ranking_editori
+  const [sorgente, setSorgente] = useState("file"); // file | rpn
 
   const handleFile = useCallback(async (e) => {
     const f = e.target.files[0];
@@ -266,17 +269,30 @@ export default function ModuloImport({ token, onImportDone }) {
 
       {/* STEP 1: UPLOAD */}
       {step === "upload" && (
-        <div style={{ maxWidth: 500 }}>
-          <div style={{ border: `2px dashed ${T.borderHi}`, borderRadius: 6, padding: 40, textAlign: "center", marginBottom: 20 }}>
-            <div style={{ fontSize: "32px", marginBottom: 12 }}>📂</div>
-            <div style={{ color: T.text, marginBottom: 8 }}>{loadingFile ? "Elaborazione in corso..." : "Carica il template compilato"}</div>
-            <div style={{ color: T.textMid, fontSize: "11px", marginBottom: 20 }}>Solo file .xlsx — usa il template ufficiale</div>
-            <input type="file" accept=".xlsx" onChange={handleFile} style={{ display: "none" }} id="file-input" disabled={loadingFile} />
-            <label htmlFor="file-input" style={{ ...css.btn("accent"), cursor: loadingFile ? "default" : "pointer", padding: "8px 20px", opacity: loadingFile ? 0.6 : 1 }}>Scegli file .xlsx</label>
+        <div>
+          <div style={{ display: "flex", gap: 8, marginBottom: 20 }}>
+            <button style={css.btn(sorgente === "file" ? "accent" : "default")} onClick={() => setSorgente("file")}>📂 Carica file .xlsx</button>
+            <button style={css.btn(sorgente === "rpn" ? "accent" : "default")} onClick={() => setSorgente("rpn")}>🔄 Importa da RPN</button>
           </div>
-          <div style={{ color: T.textMid, fontSize: "11px" }}>
-            Non hai il template? <a href="https://albertospde.github.io/giro-manager/template_cedola.xlsx" download style={{ color: T.accent }}>Scaricalo qui</a>
-          </div>
+
+          {sorgente === "file" && (
+            <div style={{ maxWidth: 500 }}>
+              <div style={{ border: `2px dashed ${T.borderHi}`, borderRadius: 6, padding: 40, textAlign: "center", marginBottom: 20 }}>
+                <div style={{ fontSize: "32px", marginBottom: 12 }}>📂</div>
+                <div style={{ color: T.text, marginBottom: 8 }}>{loadingFile ? "Elaborazione in corso..." : "Carica il template compilato"}</div>
+                <div style={{ color: T.textMid, fontSize: "11px", marginBottom: 20 }}>Solo file .xlsx — usa il template ufficiale</div>
+                <input type="file" accept=".xlsx" onChange={handleFile} style={{ display: "none" }} id="file-input" disabled={loadingFile} />
+                <label htmlFor="file-input" style={{ ...css.btn("accent"), cursor: loadingFile ? "default" : "pointer", padding: "8px 20px", opacity: loadingFile ? 0.6 : 1 }}>Scegli file .xlsx</label>
+              </div>
+              <div style={{ color: T.textMid, fontSize: "11px" }}>
+                Non hai il template? <a href="https://albertospde.github.io/giro-manager/template_cedola.xlsx" download style={{ color: T.accent }}>Scaricalo qui</a>
+              </div>
+            </div>
+          )}
+
+          {sorgente === "rpn" && (
+            <ModuloImportRpn token={token} onImportDone={onImportDone} />
+          )}
         </div>
       )}
 
