@@ -3,6 +3,7 @@ import ModuloImport, { ImportSpalmatura } from "./ModuloImport.jsx";
 import ModuloCaricoSemplice from "./ModuloCaricoSemplice.jsx";
 import ModuloPrenotato from "./ModuloPrenotato.jsx";
 import ModuloAvanzamento from "./ModuloAvanzamento.jsx";
+import ModuloEditoriNewEntry from "./ModuloEditoriNewEntry.jsx";
 import { fetchPrenotatoRpn, fetchPrenotatoRpnCedola, parseEaggrega, importAggregato } from "./rpnPrenotatoSync.js";
 
 const SUPABASE_URL = "https://tdflwenlylhctxssatax.supabase.co";
@@ -4466,6 +4467,7 @@ const MODULES_IMPORT = [
   { id: "import", label: "Import Cedola", icon: "↑" },
   { id: "prenotato", label: "Import Prenotato", icon: "↳" },
   { id: "spalmatura", label: "Import Pesi Spalmatura", icon: "⚖" },
+  { id: "newentry", label: "Editori New Entry", icon: "🆕" },
 ];
 
 const style = document.createElement('style');
@@ -4604,6 +4606,7 @@ export default function App() {
           {activeModule === "anticipilancio" && <ModuloAnticipiLancio token={session.token} userEmail={session.user?.email} />}
           {activeModule === "import" && <ModuloImport giriList={giriDB} token={session.token} onImportDone={refreshDati} />}
           {activeModule === "spalmatura" && <ImportSpalmatura token={session.token} onImportDone={() => sbFetch("spalmatura_obiettivo?select=*", session.token).then(setSpalmatura)} />}
+          {activeModule === "newentry" && <ModuloEditoriNewEntry token={session.token} onDataChange={refreshDati} />}
         </div>
       </div>
     </div>
