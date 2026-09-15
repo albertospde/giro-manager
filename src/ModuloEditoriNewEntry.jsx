@@ -42,6 +42,8 @@ async function sbRest(path, token, opts = {}) {
   return r.json();
 }
 
+const normEditoreKey = n => (n || "").trim().toLowerCase();
+
 // Editori in ingresso nel perimetro PDE non ancora visibili su RPN, e gli
 // EAN inseriti manualmente per loro. Le tabelle (editori_new_entry,
 // titoli_manuali) sono le stesse lette da BookUp per raccogliere le
@@ -50,12 +52,15 @@ async function sbRest(path, token, opts = {}) {
 export default function ModuloEditoriNewEntry({ token, onDataChange }) {
   const [editori, setEditori] = useState([]);
   const [titoli, setTitoli] = useState([]);
+  const [rankings, setRankings] = useState([]); // da ranking_editori: stesso meccanismo (per editore_nome) già usato da tutto GiroManager
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
 
   const [edCodice, setEdCodice] = useState("");
   const [edNome, setEdNome] = useState("");
+  const [edRanking, setEdRanking] = useState("");
   const [savingEd, setSavingEd] = useState(false);
+  const [rankEdit, setRankEdit] = useState({}); // { codice_editore: valore in editing }
 
   const [tEan, setTEan] = useState("");
   const [tTitolo, setTTitolo] = useState("");
@@ -66,15 +71,26 @@ export default function ModuloEditoriNewEntry({ token, onDataChange }) {
   const [tCedolaNome, setTCedolaNome] = useState("");
   const [savingT, setSavingT] = useState(false);
 
+  const [bulkOpen, setBulkOpen] = useState(false);
+  const [bulkText, setBulkText] = useState("");
+  const [bulkFile, setBulkFile] = useState(null);
+  const [bulkNCedola, setBulkNCedola] = useState("");
+  const [bulkCedolaNome, setBulkCedolaNome] = useState("");
+  const [bulkRows, setBulkRows] = useState([]);
+  const [bulkParsing, setBulkParsing] = useState(false);
+  const [bulkSaving, setBulkSaving] = useState(false);
+
   const load = useCallback(async () => {
     setLoading(true); setError("");
     try {
-      const [ed, ti] = await Promise.all([
+      const [ed, ti, rk] = await Promise.all([
         sbRest("editori_new_entry?select=*&order=nome_editore.asc", token),
         sbRest("titoli_manuali?select=*&order=created_at.desc", token),
+        sbRest("ranking_editori?select=codice_editore,editore_nome,ranking", token),
       ]);
       setEditori(ed || []);
       setTitoli(ti || []);
+      setRankings(rk || []);
     } catch (e) {
       setError(e.message);
     } finally {
@@ -84,6 +100,21 @@ export default function ModuloEditoriNewEntry({ token, onDataChange }) {
 
   useEffect(() => { load(); }, [load]);
 
+  const rankingByNome = {};
+  rankings.forEach(r => { rankingByNome[normEditoreKey(r.editore_nome)] = r.ranking; });
+
+  const salvaRanking = async (codiceEditore, nomeEditore, valore) => {
+    if (valore === "" || valore == null) return;
+    try {
+      await sbRest("ranking_editori?on_conflict=codice_editore,editore_nome", token, {
+        method: "POST",
+        headers: { "Prefer": "resolution=merge-duplicates,return=representation" },
+        body: JSON.stringify({ codice_editore: codiceEditore, editore_nome: nomeEditore, ranking: Number(valore) }),
+      });
+      await load();
+    } catch (e) { setError(e.message); }
+  };
+
   const addEditore = async () => {
     if (!edCodice.trim() || !edNome.trim()) { setError("Codice e nome editore sono obbligatori."); return; }
     setSavingEd(true); setError("");
@@ -92,7 +123,8 @@ export default function ModuloEditoriNewEntry({ token, onDataChange }) {
         method: "POST",
         body: JSON.stringify({ codice_editore: edCodice.trim(), nome_editore: edNome.trim() }),
       });
-      setEdCodice(""); setEdNome("");
+      if (edRanking.trim()) await salvaRanking(edCodice.trim(), edNome.trim(), edRanking.trim());
+      setEdCodice(""); setEdNome(""); setEdRanking("");
       await load();
     } catch (e) {
       setError(e.message);
@@ -282,6 +314,98 @@ export default function ModuloEditoriNewEntry({ token, onDataChange }) {
     } catch (e) { setError(e.message); }
   };
 
+  // Analizza il testo incollato o il file caricato: riconosce le colonne
+  // EAN/Titolo/Autore/Editore/Prezzo (per intestazione, o in ordine fisso se
+  // manca), e associa la colonna Editore a un editore già creato (per nome,
+  // stesso confronto usato dal resto di GiroManager).
+  const analizzaBulk = async () => {
+    setError(""); setBulkParsing(true); setBulkRows([]);
+    try {
+      let matrix = [];
+      if (bulkFile) {
+        const buf = await bulkFile.arrayBuffer();
+        const wb = window.XLSX.read(buf, { type: "array" });
+        const ws = wb.Sheets[wb.SheetNames[0]];
+        matrix = window.XLSX.utils.sheet_to_json(ws, { header: 1, raw: false, defval: "" });
+      } else if (bulkText.trim()) {
+        const sep = bulkText.includes("\t") ? "\t" : ",";
+        matrix = bulkText.trim().split("\n").map(line => line.split(sep).map(c => c.trim()));
+      } else {
+        setError("Incolla del testo o scegli un file prima di analizzare.");
+        return;
+      }
+      matrix = matrix.filter(r => r.some(c => String(c).trim() !== ""));
+      if (!matrix.length) { setError("Nessuna riga trovata."); return; }
+
+      const headerNorm = matrix[0].map(c => String(c).trim().toLowerCase());
+      const known = ["ean", "titolo", "autore", "editore", "prezzo"];
+      const hasHeader = known.some(k => headerNorm.includes(k));
+      let idx = { ean: 0, titolo: 1, autore: 2, editore: 3, prezzo: 4 };
+      let dataRows = matrix;
+      if (hasHeader) {
+        known.forEach(k => { const i = headerNorm.indexOf(k); if (i !== -1) idx[k] = i; });
+        dataRows = matrix.slice(1);
+      }
+
+      const parsed = dataRows.map(r => {
+        const ean = String(r[idx.ean] ?? "").trim();
+        const editoreRaw = String(r[idx.editore] ?? "").trim();
+        const key = normEditoreKey(editoreRaw);
+        const ed = editori.find(e => normEditoreKey(e.nome_editore) === key || e.codice_editore.toLowerCase() === key);
+        return {
+          ean,
+          titolo: String(r[idx.titolo] ?? "").trim(),
+          autore: String(r[idx.autore] ?? "").trim(),
+          editoreRaw,
+          prezzo: String(r[idx.prezzo] ?? "").trim(),
+          matched: !!(ed && ean),
+          editoreCodice: ed ? ed.codice_editore : null,
+          editoreNome: ed ? ed.nome_editore : null,
+        };
+      }).filter(r => r.ean);
+
+      setBulkRows(parsed);
+      if (!parsed.length) setError("Nessuna riga con EAN valido trovata nel file/testo incollato.");
+    } catch (e) {
+      setError("Errore nell'analisi: " + e.message);
+    } finally {
+      setBulkParsing(false);
+    }
+  };
+
+  const confermaBulk = async () => {
+    const nCedola = bulkNCedola.trim();
+    if (!nCedola) { setError("Indica il N° cedola RPN per queste righe prima di confermare."); return; }
+    const cedolaNome = bulkCedolaNome.trim() || nCedola;
+    const daInserire = bulkRows.filter(r => r.matched);
+    if (!daInserire.length) { setError("Nessuna riga con editore riconosciuto da caricare."); return; }
+    setBulkSaving(true); setError("");
+    try {
+      await sbRest("titoli_manuali?on_conflict=ean,n_cedola", token, {
+        method: "POST",
+        headers: { "Prefer": "resolution=merge-duplicates,return=representation" },
+        body: JSON.stringify(daInserire.map(r => ({
+          ean: r.ean,
+          titolo: r.titolo || r.ean,
+          autore: r.autore || null,
+          editore_codice: r.editoreCodice,
+          editore_nome: r.editoreNome,
+          prezzo: r.prezzo ? Number(r.prezzo.replace(",", ".")) : null,
+          n_cedola: nCedola,
+          cedola_nome: cedolaNome,
+        }))),
+      });
+      alert(`✅ ${daInserire.length} titoli caricati sulla cedola "${nCedola}".`);
+      setBulkRows([]); setBulkText(""); setBulkFile(null);
+      await load();
+      if (onDataChange) onDataChange();
+    } catch (e) {
+      setError("Errore nel caricamento massivo: " + e.message);
+    } finally {
+      setBulkSaving(false);
+    }
+  };
+
   return (
     <div style={{ flex: 1, overflow: "auto", padding: 20 }}>
       <p style={{ color: T.textMid, fontSize: "12px", marginBottom: 4, maxWidth: 720 }}>
@@ -306,16 +430,35 @@ export default function ModuloEditoriNewEntry({ token, onDataChange }) {
                 <label style={css.label}>Nome editore</label>
                 <input style={{ ...css.input, width: "100%" }} value={edNome} onChange={e => setEdNome(e.target.value)} placeholder="Nome editore" />
               </div>
+              <div>
+                <label style={css.label}>Ranking</label>
+                <input type="number" style={{ ...css.input, width: 80 }} value={edRanking} onChange={e => setEdRanking(e.target.value)} placeholder="es. 12" title="Posizione dell'editore — stessa tabella ranking_editori usata da tutto GiroManager, puoi lasciarlo vuoto e sistemarlo dopo" />
+              </div>
               <button style={css.btn("accent")} disabled={savingEd} onClick={addEditore}>{savingEd ? "…" : "+ Aggiungi"}</button>
             </div>
             <table style={css.table}>
-              <thead><tr><th style={css.th}>Codice</th><th style={css.th}>Nome</th><th style={css.th}>Attivo</th><th style={css.th}></th></tr></thead>
+              <thead><tr><th style={css.th}>Codice</th><th style={css.th}>Nome</th><th style={css.th}>Ranking</th><th style={css.th}>Attivo</th><th style={css.th}></th></tr></thead>
               <tbody>
-                {editori.length === 0 && <tr><td style={css.td} colSpan={4}><span style={{ color: T.textDim }}>Nessun editore new entry ancora inserito.</span></td></tr>}
-                {editori.map(ed => (
+                {editori.length === 0 && <tr><td style={css.td} colSpan={5}><span style={{ color: T.textDim }}>Nessun editore new entry ancora inserito.</span></td></tr>}
+                {editori.map(ed => {
+                  const rankingAttuale = rankingByNome[normEditoreKey(ed.nome_editore)];
+                  const editing = rankEdit[ed.codice_editore];
+                  return (
                   <tr key={ed.codice_editore}>
                     <td style={css.td}>{ed.codice_editore}</td>
                     <td style={css.td}>{ed.nome_editore}</td>
+                    <td style={css.td}>
+                      <div style={{ display: "flex", gap: 4, alignItems: "center" }}>
+                        <input type="number" style={{ ...css.input, width: 60 }}
+                          value={editing !== undefined ? editing : (rankingAttuale ?? "")}
+                          placeholder="—"
+                          onChange={e => setRankEdit({ ...rankEdit, [ed.codice_editore]: e.target.value })} />
+                        {editing !== undefined && editing !== String(rankingAttuale ?? "") && (
+                          <button style={{ ...css.btn("accent"), fontSize: "10px", padding: "2px 6px" }}
+                            onClick={async () => { await salvaRanking(ed.codice_editore, ed.nome_editore, editing); setRankEdit({ ...rankEdit, [ed.codice_editore]: undefined }); }}>✓</button>
+                        )}
+                      </div>
+                    </td>
                     <td style={css.td}>{ed.attivo ? "✅" : "⛔"}</td>
                     <td style={css.td}>
                       <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
@@ -330,7 +473,8 @@ export default function ModuloEditoriNewEntry({ token, onDataChange }) {
                       </div>
                     </td>
                   </tr>
-                ))}
+                  );
+                })}
               </tbody>
             </table>
           </div>
@@ -356,6 +500,56 @@ export default function ModuloEditoriNewEntry({ token, onDataChange }) {
               <button style={css.btn("accent")} disabled={savingT} onClick={addTitolo}>{savingT ? "…" : "+ Aggiungi"}</button>
             </div>
             <p style={{ color: T.textDim, fontSize: "11px", marginBottom: 10 }}>N° e nome cedola devono combaciare ESATTAMENTE con quelli reali su RPN, altrimenti il titolo non comparirà mescolato nella cedola giusta in BookUp.</p>
+
+            <div style={{ border: `1px solid ${T.border}`, borderRadius: 4, padding: 12, marginBottom: 14 }}>
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: bulkOpen ? 10 : 0 }}>
+                <span style={{ fontSize: "12px", color: T.text, fontWeight: 600 }}>📋 Caricamento massivo (EAN, Titolo, Autore, Editore, Prezzo)</span>
+                <button style={{ ...css.btn(), fontSize: "11px", padding: "3px 8px" }} onClick={() => setBulkOpen(!bulkOpen)}>{bulkOpen ? "Chiudi" : "Apri"}</button>
+              </div>
+              {bulkOpen && (
+                <div>
+                  <p style={{ color: T.textDim, fontSize: "11px", marginBottom: 8 }}>
+                    Incolla da Excel (con intestazione EAN / Titolo / Autore / Editore / Prezzo, in qualsiasi ordine — oppure senza intestazione, in quest'ordine fisso) oppure carica un file .xlsx/.csv. La colonna Editore viene associata automaticamente all'editore già creato con lo stesso nome; i non riconosciuti restano fuori.
+                  </p>
+                  <div style={{ display: "flex", gap: 8, marginBottom: 8, flexWrap: "wrap", alignItems: "flex-end" }}>
+                    <div><label style={css.label}>N° cedola RPN (per tutte le righe)</label><input style={{ ...css.input, width: 160 }} value={bulkNCedola} onChange={e => setBulkNCedola(e.target.value)} placeholder="es. TEST 2026 A" /></div>
+                    <div><label style={css.label}>Nome cedola (se diverso)</label><input style={{ ...css.input, width: 160 }} value={bulkCedolaNome} onChange={e => setBulkCedolaNome(e.target.value)} /></div>
+                    <div>
+                      <label style={css.label}>File .xlsx / .csv</label>
+                      <input type="file" accept=".xlsx,.xls,.csv" style={{ fontSize: "11px", color: T.textMid }} onChange={e => setBulkFile(e.target.files?.[0] || null)} />
+                    </div>
+                  </div>
+                  <label style={css.label}>...oppure incolla qui</label>
+                  <textarea style={{ ...css.input, width: "100%", height: 90, fontFamily: "monospace", marginBottom: 8 }} value={bulkText} onChange={e => setBulkText(e.target.value)} placeholder={"EAN\tTitolo\tAutore\tEditore\tPrezzo\n9788800000001\tTitolo esempio\tAutore esempio\tNome Editore\t18.00"} />
+                  <div style={{ display: "flex", gap: 8, marginBottom: 10 }}>
+                    <button style={css.btn()} disabled={bulkParsing} onClick={analizzaBulk}>{bulkParsing ? "…" : "Analizza"}</button>
+                    {bulkRows.length > 0 && (
+                      <button style={css.btn("accent")} disabled={bulkSaving || !bulkRows.some(r => r.matched)} onClick={confermaBulk}>
+                        {bulkSaving ? "…" : `Conferma caricamento (${bulkRows.filter(r => r.matched).length} di ${bulkRows.length})`}
+                      </button>
+                    )}
+                  </div>
+                  {bulkRows.length > 0 && (
+                    <table style={css.table}>
+                      <thead><tr><th style={css.th}>EAN</th><th style={css.th}>Titolo</th><th style={css.th}>Autore</th><th style={css.th}>Editore (dal file)</th><th style={css.th}>Prezzo</th><th style={css.th}>Esito</th></tr></thead>
+                      <tbody>
+                        {bulkRows.map((r, i) => (
+                          <tr key={i}>
+                            <td style={css.td}>{r.ean}</td>
+                            <td style={css.td}>{r.titolo}</td>
+                            <td style={css.td}>{r.autore}</td>
+                            <td style={css.td}>{r.editoreRaw}</td>
+                            <td style={css.td}>{r.prezzo}</td>
+                            <td style={{ ...css.td, color: r.matched ? T.green : T.red, fontWeight: 600 }}>{r.matched ? "✓ " + r.editoreNome : "❌ non trovato"}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  )}
+                </div>
+              )}
+            </div>
+
             <table style={css.table}>
               <thead><tr><th style={css.th}>EAN</th><th style={css.th}>Titolo</th><th style={css.th}>Editore</th><th style={css.th}>Cedola</th><th style={css.th}></th></tr></thead>
               <tbody>
