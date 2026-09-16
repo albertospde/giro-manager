@@ -1091,6 +1091,11 @@ function ModuloCedola({ titoli, giriList, onUpdateTitolo, onDeleteTitolo, spalma
     return [...cods].sort((a, b) => a.localeCompare(b, "it", { sensitivity: "base" }));
   }, [titoli, filterAnnoExtraCedola]);
 
+  // Le cedole il cui nome contiene "campagna"/"campagne" vanno nella colonna CAMPAGNE a parte,
+  // separate dalle altre cedole extra (solo visualizzazione, nessuna modifica al dato).
+  const cedoleExtraPlain = useMemo(() => cedoleExtra.filter(c => !/campagn[ae]/i.test(c)), [cedoleExtra]);
+  const cedoleCampagne = useMemo(() => cedoleExtra.filter(c => /campagn[ae]/i.test(c)), [cedoleExtra]);
+
   const cedole = useMemo(() => { const t = giroLabelSel.length === 0 ? titoli.filter(t => filterAnnoCedola.length === 0 || filterAnnoCedola.includes(Number((t.giro_label||"").split(" ")[1]))) : titoli.filter(t => giroLabelSel.includes(t.giro_label)); return [...new Set(t.map(t => t.n_cedola).filter(Boolean))].sort(); }, [titoli, giroLabelSel, filterAnnoCedola]);
   const accounts = useMemo(() => { const t = giroSel.length === 0 ? (giroLabelSel.length === 0 ? titoli : titoli.filter(t => giroLabelSel.includes(t.giro_label))) : titoli.filter(t => giroSel.includes(t.n_cedola)); return [...new Set(t.map(t => t.account_editore).filter(Boolean))].sort(); }, [titoli, giroLabelSel, giroSel]);
   const editori = useMemo(() => { const t = giroSel.length === 0 ? (giroLabelSel.length === 0 ? titoli : titoli.filter(t => giroLabelSel.includes(t.giro_label))) : titoli.filter(t => giroSel.includes(t.n_cedola)); return [...new Set(t.map(t => t.editore_nome).filter(Boolean))].sort(); }, [titoli, giroLabelSel, giroSel]);
@@ -1218,9 +1223,21 @@ function ModuloCedola({ titoli, giriList, onUpdateTitolo, onDeleteTitolo, spalma
             <div style={{ color: T.text, fontSize: "12px", fontWeight: 700, letterSpacing: "0.5px", textTransform: "uppercase" }}>Extragiri</div>
             <SearchableMultiSelect values={filterAnnoExtraCedola.map(String)} onChange={v => setFilterAnnoExtraCedola(v.map(Number))} options={anniDispExtraCedola.map(String)} renderOption={v => v} placeholder="Anno" width={140} />
             <div style={{ display: "flex", flexDirection: "column", gap: 8, width: "100%" }}>
-              {cedoleExtra.length === 0 && <div style={{ color: T.textMid, fontSize: "12px", textAlign: "center", padding: "10px 0" }}>Nessuna cedola extra per l'anno selezionato</div>}
-              {cedoleExtra.map(c => (
+              {cedoleExtraPlain.length === 0 && <div style={{ color: T.textMid, fontSize: "12px", textAlign: "center", padding: "10px 0" }}>Nessuna cedola extra per l'anno selezionato</div>}
+              {cedoleExtraPlain.map(c => (
                 <button key={c} style={{ ...css.btn(), padding: "10px 16px", fontSize: "13px", borderColor: T.accent, color: T.accent, width: "100%" }} onClick={() => setExtraSel([c])}>{c}</button>
+              ))}
+            </div>
+          </div>
+
+          {/* Colonna CAMPAGNE */}
+          <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 14, width: 240 }}>
+            <div style={{ color: T.text, fontSize: "12px", fontWeight: 700, letterSpacing: "0.5px", textTransform: "uppercase" }}>Campagne</div>
+            <SearchableMultiSelect values={filterAnnoExtraCedola.map(String)} onChange={v => setFilterAnnoExtraCedola(v.map(Number))} options={anniDispExtraCedola.map(String)} renderOption={v => v} placeholder="Anno" width={140} />
+            <div style={{ display: "flex", flexDirection: "column", gap: 8, width: "100%" }}>
+              {cedoleCampagne.length === 0 && <div style={{ color: T.textMid, fontSize: "12px", textAlign: "center", padding: "10px 0" }}>Nessuna campagna per l'anno selezionato</div>}
+              {cedoleCampagne.map(c => (
+                <button key={c} style={{ ...css.btn(), padding: "10px 16px", fontSize: "13px", borderColor: T.purple, color: T.purple, width: "100%" }} onClick={() => setExtraSel([c])}>{c}</button>
               ))}
             </div>
           </div>
@@ -1503,6 +1520,11 @@ function ModuloFineGiro({ titoli, prenotato, canali, token, ruolo, spalmatura, u
     });
     return [...cods].sort((a, b) => a.localeCompare(b, "it", { sensitivity: "base" }));
   }, [titoli, filterAnnoExtraFineGiro]);
+
+  // Le cedole il cui nome contiene "campagna"/"campagne" vanno nella colonna CAMPAGNE a parte,
+  // separate dalle altre cedole extra (solo visualizzazione, nessuna modifica al dato).
+  const cedoleExtraPlain = useMemo(() => cedoleExtra.filter(c => !/campagn[ae]/i.test(c)), [cedoleExtra]);
+  const cedoleCampagne = useMemo(() => cedoleExtra.filter(c => /campagn[ae]/i.test(c)), [cedoleExtra]);
 
   const [giroLabelSel, setGiroLabelSel] = useState([]);
   const [extraSel, setExtraSel] = useState([]);
@@ -1860,9 +1882,21 @@ function ModuloFineGiro({ titoli, prenotato, canali, token, ruolo, spalmatura, u
             <div style={{ color: T.text, fontSize: "12px", fontWeight: 700, letterSpacing: "0.5px", textTransform: "uppercase" }}>Extragiri</div>
             <SearchableMultiSelect values={filterAnnoExtraFineGiro.map(String)} onChange={v => setFilterAnnoExtraFineGiro(v.map(Number))} options={anniDispExtraFineGiro.map(String)} renderOption={v => v} placeholder="Anno" width={140} />
             <div style={{ display: "flex", flexDirection: "column", gap: 8, width: "100%" }}>
-              {cedoleExtra.length === 0 && <div style={{ color: T.textMid, fontSize: "12px", textAlign: "center", padding: "10px 0" }}>Nessuna cedola extra per l'anno selezionato</div>}
-              {cedoleExtra.map(c => (
+              {cedoleExtraPlain.length === 0 && <div style={{ color: T.textMid, fontSize: "12px", textAlign: "center", padding: "10px 0" }}>Nessuna cedola extra per l'anno selezionato</div>}
+              {cedoleExtraPlain.map(c => (
                 <button key={c} style={{ ...css.btn(), padding: "10px 16px", fontSize: "13px", borderColor: T.accent, color: T.accent, width: "100%" }} onClick={() => setExtraSel([c])}>{c}</button>
+              ))}
+            </div>
+          </div>
+
+          {/* Colonna CAMPAGNE */}
+          <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 14, width: 240 }}>
+            <div style={{ color: T.text, fontSize: "12px", fontWeight: 700, letterSpacing: "0.5px", textTransform: "uppercase" }}>Campagne</div>
+            <SearchableMultiSelect values={filterAnnoExtraFineGiro.map(String)} onChange={v => setFilterAnnoExtraFineGiro(v.map(Number))} options={anniDispExtraFineGiro.map(String)} renderOption={v => v} placeholder="Anno" width={140} />
+            <div style={{ display: "flex", flexDirection: "column", gap: 8, width: "100%" }}>
+              {cedoleCampagne.length === 0 && <div style={{ color: T.textMid, fontSize: "12px", textAlign: "center", padding: "10px 0" }}>Nessuna campagna per l'anno selezionato</div>}
+              {cedoleCampagne.map(c => (
+                <button key={c} style={{ ...css.btn(), padding: "10px 16px", fontSize: "13px", borderColor: T.purple, color: T.purple, width: "100%" }} onClick={() => setExtraSel([c])}>{c}</button>
               ))}
             </div>
           </div>
