@@ -78,16 +78,21 @@ function risolviAnagrafica(nomeRpn, anagraficaMap) {
   const diretto = anagraficaMap[nomeRpn];
   if (diretto) return { match: diretto, viaFallback: false };
 
+  // 1) Match esatto ignorando l'articolo iniziale (RPN "SAGGIATORE" ↔ anagrafica "IL SAGGIATORE").
+  // Confronto stretto (===), non prefix-match, per non confondere editori affini come
+  // "IL SAGGIATORE" e "IL SAGGIATORE -TASCABILI" (che dopo lo strip diventano nomi diversi).
   const nomeRpnNorm = stripArticolo(nomeRpn);
+  const perArticolo = Object.keys(anagraficaMap).filter(k => stripArticolo(k) === nomeRpnNorm);
+  if (perArticolo.length === 1) return { match: anagraficaMap[perArticolo[0]], viaFallback: true, nomeUsato: perArticolo[0] };
+  if (perArticolo.length > 1) return { match: null, viaFallback: false, ambiguo: perArticolo };
 
-  const candidati = Object.keys(anagraficaMap).filter(k => {
-    if (nomeRpn === k || nomeRpn.startsWith(k + " ")) return true;
-    const kNorm = stripArticolo(k);
-    return nomeRpnNorm === kNorm || kNorm.startsWith(nomeRpnNorm + " ") || nomeRpnNorm.startsWith(kNorm + " ");
-  });
-  const unici = [...new Set(candidati)];
-  if (unici.length === 1) return { match: anagraficaMap[unici[0]], viaFallback: true, nomeUsato: unici[0] };
-  return { match: null, viaFallback: false, ambiguo: unici.length > 1 ? unici : null };
+  // 2) Fallback "nome arricchito": il nome RPN contiene il nome anagrafica come prefisso
+  // a confine di parola (es. "SILVANA EDITORIALE 821" → "SILVANA EDITORIALE").
+  const perPrefisso = Object.keys(anagraficaMap).filter(k => nomeRpn.startsWith(k + " "));
+  if (perPrefisso.length === 1) return { match: anagraficaMap[perPrefisso[0]], viaFallback: true, nomeUsato: perPrefisso[0] };
+  if (perPrefisso.length > 1) return { match: null, viaFallback: false, ambiguo: perPrefisso };
+
+  return { match: null, viaFallback: false };
 }
 
 // ─── Carica l'elenco cedole/giri da RPN (giro-cedola-list + cedola-extra-list) ──
