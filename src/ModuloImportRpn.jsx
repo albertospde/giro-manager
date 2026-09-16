@@ -53,6 +53,43 @@ function normalizeTitolo(t) {
   return { ean, titolo, autore: autoreRaw === "NESSUNO" || !autoreRaw ? null : autoreRaw, editore_nome, prezzo };
 }
 
+// Rimuove un articolo/preposizione iniziale ("IL SAGGIATORE" → "SAGGIATORE") così che
+// il matching RPN↔anagrafica funzioni anche quando una delle due fonti omette l'articolo
+// (es. RPN restituisce "SAGGIATORE" mentre in anagrafica è salvato "IL SAGGIATORE").
+const PREFISSI_EDITORE = ["IL ", "LO ", "LA ", "GLI ", "LE ", "I ", "L'"];
+function stripArticolo(nome) {
+  for (const p of PREFISSI_EDITORE) {
+    if (nome.startsWith(p)) return nome.slice(p.length);
+  }
+  return nome;
+}
+
+// ─── Import di UNA cedola/giro selezionato ──────────────────────────────────
+// Se il nome editore di RPN non matcha esattamente l'anagrafica, prova due fallback:
+// 1) RPN a volte restituisce il nome "arricchito" (nome proprio, codice interno, parola
+//    EDITORE aggiunta) — es. "SILVANA EDITORIALE 821" invece di "SILVANA EDITORIALE",
+//    "SKIRA EDITORE" invece di "SKIRA", "ALLEMANDI UMBERTO" invece di "ALLEMANDI".
+// 2) Una delle due fonti omette l'articolo iniziale — es. "SAGGIATORE" (RPN) vs
+//    "IL SAGGIATORE" (anagrafica). Si confrontano i nomi anche dopo aver tolto l'articolo.
+// Cerca tra le chiavi anagrafica quelle compatibili con il nome RPN secondo queste regole
+// (a confine di parola, per evitare match spuri tipo MONDADORI vs MONDADORI EDUCATION).
+// Se ne trova esattamente una la usa e lo segnala; se zero o più di una resta un errore.
+function risolviAnagrafica(nomeRpn, anagraficaMap) {
+  const diretto = anagraficaMap[nomeRpn];
+  if (diretto) return { match: diretto, viaFallback: false };
+
+  const nomeRpnNorm = stripArticolo(nomeRpn);
+
+  const candidati = Object.keys(anagraficaMap).filter(k => {
+    if (nomeRpn === k || nomeRpn.startsWith(k + " ")) return true;
+    const kNorm = stripArticolo(k);
+    return nomeRpnNorm === kNorm || kNorm.startsWith(nomeRpnNorm + " ") || nomeRpnNorm.startsWith(kNorm + " ");
+  });
+  const unici = [...new Set(candidati)];
+  if (unici.length === 1) return { match: anagraficaMap[unici[0]], viaFallback: true, nomeUsato: unici[0] };
+  return { match: null, viaFallback: false, ambiguo: unici.length > 1 ? unici : null };
+}
+
 // ─── Carica l'elenco cedole/giri da RPN (giro-cedola-list + cedola-extra-list) ──
 async function fetchElencoCedole(token) {
   const [giri, extra] = await Promise.all([
@@ -81,22 +118,6 @@ async function fetchElencoCedole(token) {
     });
   });
   return elenco;
-}
-
-// ─── Import di UNA cedola/giro selezionato ──────────────────────────────────
-// Se il nome editore di RPN non matcha esattamente l'anagrafica, prova un fallback:
-// RPN a volte restituisce il nome "arricchito" (nome proprio, codice interno, parola
-// EDITORE aggiunta) — es. "SILVANA EDITORIALE 821" invece di "SILVANA EDITORIALE",
-// "SKIRA EDITORE" invece di "SKIRA", "ALLEMANDI UMBERTO" invece di "ALLEMANDI".
-// Cerca tra le chiavi anagrafica quelle di cui il nome RPN è un prefisso (a confine di
-// parola, per evitare match spuri tipo MONDADORI vs MONDADORI EDUCATION). Se ne trova
-// esattamente una la usa e lo segnala; se zero o più di una resta un errore normale.
-function risolviAnagrafica(nomeRpn, anagraficaMap) {
-  const diretto = anagraficaMap[nomeRpn];
-  if (diretto) return { match: diretto, viaFallback: false };
-  const candidati = Object.keys(anagraficaMap).filter(k => nomeRpn === k || nomeRpn.startsWith(k + " "));
-  if (candidati.length === 1) return { match: anagraficaMap[candidati[0]], viaFallback: true, nomeUsato: candidati[0] };
-  return { match: null, viaFallback: false, ambiguo: candidati.length > 1 ? candidati : null };
 }
 
 async function importCedola(token, item, anagraficaMap) {
