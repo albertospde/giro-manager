@@ -22,26 +22,6 @@ export default function ModuloPrenotato({ token, titoli, onImportDone }) {
   const [importing, setImporting] = useState(false);
   const [done, setDone] = useState(null);
 
-  const applyParsed = useCallback((arrayBuffer) => {
-    try {
-      const r = parseEaggrega(arrayBuffer, titoli);
-      setRighe(r.righe);
-      setAggregato(r.aggregato);
-      setAggregatoClienti(r.aggregatoClienti);
-      setStep("preview");
-    } catch (err) {
-      alert("Errore lettura file: " + err.message);
-    }
-  }, [titoli]);
-
-  const handleFile = useCallback((e) => {
-    const f = e.target.files[0];
-    if (!f) return;
-    const reader = new FileReader();
-    reader.onload = (evt) => applyParsed(evt.target.result);
-    reader.readAsArrayBuffer(f);
-  }, [applyParsed]);
-
   // Giri disponibili (esclude EXTRA), più recente per primo.
   const giriDisponibili = useMemo(() => {
     const set = new Set(titoli.map(t => t.giro_label).filter(l => l && l !== "EXTRA" && !l.startsWith("EXTRA")));
@@ -52,9 +32,39 @@ export default function ModuloPrenotato({ token, titoli, onImportDone }) {
   }, [titoli]);
 
   const [giroLabelRpn, setGiroLabelRpn] = useState("");
+  const giroLabelSel = giroLabelRpn || giriDisponibili[0] || "";
+
+  // Bugfix: la ricerca EAN va ristretta ai soli titoli del Giro selezionato,
+  // non all'intero catalogo — vedi stesso fix in GiroManager.jsx/avviaSyncRpn.
+  // Un EAN condiviso con un giro più recente (ristampa/relancio) faceva
+  // atterrare silenziosamente la quantità sul titolo dell'altro giro.
+  const titoliTargetGiro = useMemo(
+    () => titoli.filter(t => t.giro_label === giroLabelSel),
+    [titoli, giroLabelSel]
+  );
+
+  const applyParsed = useCallback((arrayBuffer) => {
+    try {
+      const r = parseEaggrega(arrayBuffer, titoliTargetGiro);
+      setRighe(r.righe);
+      setAggregato(r.aggregato);
+      setAggregatoClienti(r.aggregatoClienti);
+      setStep("preview");
+    } catch (err) {
+      alert("Errore lettura file: " + err.message);
+    }
+  }, [titoliTargetGiro]);
+
+  const handleFile = useCallback((e) => {
+    const f = e.target.files[0];
+    if (!f) return;
+    const reader = new FileReader();
+    reader.onload = (evt) => applyParsed(evt.target.result);
+    reader.readAsArrayBuffer(f);
+  }, [applyParsed]);
+
   const [syncingRpn, setSyncingRpn] = useState(false);
   const [rpnError, setRpnError] = useState(null);
-  const giroLabelSel = giroLabelRpn || giriDisponibili[0] || "";
 
   const syncFromRpn = useCallback(async () => {
     if (!giroLabelSel) return;
