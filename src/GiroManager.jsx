@@ -1564,12 +1564,18 @@ function ModuloFineGiro({ titoli, prenotato, canali, token, ruolo, spalmatura, u
       const arrayBuffer = rpnGiroTarget
         ? await fetchPrenotatoRpn(token, rpnGiroTarget)
         : await fetchPrenotatoRpnCedola(token, rpnCedolaTarget);
-      const parsed = parseEaggrega(arrayBuffer, titoli);
+      // Bugfix: la ricerca EAN va ristretta ai soli titoli del Giro/Cedola di
+      // atterraggio selezionato (titoliTargetRpn), non all'intero catalogo.
+      // Con l'intero catalogo, un EAN condiviso con un giro/cedola più recente
+      // (ristampa/relancio) faceva atterrare silenziosamente la quantità sul
+      // titolo dell'altro giro invece che su quello selezionato qui, senza
+      // comparire come "non trovato" nell'anteprima.
+      const parsed = parseEaggrega(arrayBuffer, titoliTargetRpn);
       setRpnSync({ status: "preview", error: null, preview: parsed });
     } catch (err) {
       setRpnSync({ status: "idle", error: err.message, preview: null });
     }
-  }, [rpnGiroTarget, rpnCedolaTarget, token, titoli]);
+  }, [rpnGiroTarget, rpnCedolaTarget, token, titoliTargetRpn]);
 
   const confermaImportRpn = useCallback(async () => {
     if (!rpnSync.preview) return;
