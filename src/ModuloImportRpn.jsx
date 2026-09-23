@@ -95,33 +95,52 @@ function risolviAnagrafica(nomeRpn, anagraficaMap) {
   return { match: null, viaFallback: false };
 }
 
-// ─── Carica l'elenco cedole/giri da RPN (giro-cedola-list + cedola-extra-list) ──
+// ─── Carica l'elenco cedole/giri da RPN ──────────────────────────────────────
+// giro-cedola-list / cedola-extra-list: solo le cedole ATTUALMENTE aperte in RPN
+// (endpoint "titolo-tab", pensato per la presa titoli corrente).
+// giro-cedola-storico-agente / cedola-extra-storico: TUTTO lo storico delle
+// prenotazioni RPN (endpoint "le-mie-prenotazione"), quindi include anche le
+// cedole già chiuse — necessario per poterle importare/reimportare comunque.
+// Le due fonti si sovrappongono sulle cedole ancora aperte: dedup per id+tipo.
 async function fetchElencoCedole(token) {
-  const [giri, extra] = await Promise.all([
+  const [giri, extra, giriStorico, extraStorico] = await Promise.all([
     rpnSync(token, "giro-cedola-list"),
     rpnSync(token, "cedola-extra-list"),
+    rpnSync(token, "giro-cedola-storico-agente").catch(() => ({ giri: [] })),
+    rpnSync(token, "cedola-extra-storico").catch(() => ({ cedole: [] })),
   ]);
   const statoDi = (c) => {
     const v = c.stato ?? c.Stato ?? c.status ?? c.Status ?? c.statoDescrizione ?? null;
     return v === null || v === undefined || v === "" ? null : String(v).trim();
   };
   const elenco = [];
-  (Array.isArray(giri) ? giri : []).forEach(g => {
+  const visti = new Set();
+  const aggiungiGiro = (g) => {
     (g.cedolaSet || []).forEach(c => {
+      const key = `G-${c.id}`;
+      if (visti.has(key)) return;
+      visti.add(key);
       elenco.push({
-        key: `G-${c.id}`, cedolaId: c.id, nome: c.nome, tipo: "giro",
+        key, cedolaId: c.id, nome: c.nome, tipo: "giro",
         giroId: g.id, giroNome: g.nome, numeroTitoli: c.numeroTitoli ?? 0,
         stato: statoDi(c) ?? statoDi(g),
       });
     });
-  });
-  (Array.isArray(extra) ? extra : []).forEach(c => {
+  };
+  const aggiungiExtra = (c) => {
+    const key = `X-${c.id}`;
+    if (visti.has(key)) return;
+    visti.add(key);
     elenco.push({
-      key: `X-${c.id}`, cedolaId: c.id, nome: c.nome, tipo: "extra",
+      key, cedolaId: c.id, nome: c.nome, tipo: "extra",
       giroId: null, giroNome: null, numeroTitoli: c.numeroTitoli ?? 0,
       stato: statoDi(c),
     });
-  });
+  };
+  (Array.isArray(giri) ? giri : []).forEach(aggiungiGiro);
+  (Array.isArray(extra) ? extra : []).forEach(aggiungiExtra);
+  (giriStorico?.giri || []).forEach(aggiungiGiro);
+  (extraStorico?.cedole || []).forEach(aggiungiExtra);
   return elenco;
 }
 
