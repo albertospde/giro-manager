@@ -1740,6 +1740,16 @@ function ModuloFineGiro({ titoli, prenotato, canali, token, ruolo, spalmatura, u
       setRpnSync(s => ({ ...s, status: "preview", error: err.message }));
     }
   }, [rpnSync.preview, token, onPrenotatoUpdated]);
+
+  // Mentre lo scarico/import da RPN è in corso, avvisa il browser di mostrare il popup nativo
+  // "vuoi lasciare la pagina?" se l'utente prova a chiudere o cambiare pagina/tab.
+  useEffect(() => {
+    if (rpnSync.status !== "loading" && rpnSync.status !== "importing") return;
+    const handler = (e) => { e.preventDefault(); e.returnValue = ""; return ""; };
+    window.addEventListener("beforeunload", handler);
+    return () => window.removeEventListener("beforeunload", handler);
+  }, [rpnSync.status]);
+
   const [filterPromozione, setFilterPromozione] = useState([]);
   const [filterCanale, setFilterCanale] = useState([]);
   const [search, setSearch] = useState("");
@@ -2084,6 +2094,20 @@ function ModuloFineGiro({ titoli, prenotato, canali, token, ruolo, spalmatura, u
 
   return (
     <div style={{ display: "flex", flexDirection: "column", height: "100%", overflow: "hidden" }}>
+      {/* Overlay bloccante durante lo scarico/import da RPN: impedisce di perdere di vista
+          l'operazione in corso e ricorda di non chiudere/cambiare pagina. */}
+      {(rpnSync.status === "loading" || rpnSync.status === "importing") && (
+        <div style={{ position: "fixed", inset: 0, background: "#0a0d1acc", backdropFilter: "blur(2px)", zIndex: 999, display: "flex", alignItems: "center", justifyContent: "center" }}>
+          <div style={{ background: T.surface, border: `1px solid ${T.borderHi}`, borderRadius: 8, padding: "32px 40px", display: "flex", flexDirection: "column", alignItems: "center", gap: 14, maxWidth: 380, textAlign: "center", boxShadow: "0 8px 40px #000a" }}>
+            <div style={{ width: 34, height: 34, border: `3px solid ${T.border}`, borderTopColor: T.accent, borderRadius: "50%", animation: "gm-spin 0.8s linear infinite" }} />
+            <div style={{ color: T.text, fontWeight: "700", fontSize: "14px" }}>Attendi</div>
+            <div style={{ color: T.textMid, fontSize: "12px", lineHeight: 1.5 }}>
+              {rpnSync.status === "loading" ? "Scarico i dati da RPN" : "Importo i dati in corso"} — non chiudere né cambiare pagina.
+              <br />Se il browser mostra un popup per lasciare la pagina, scegli di restare / annulla.
+            </div>
+          </div>
+        </div>
+      )}
       {/* Toolbar filtri */}
       <div style={{ padding: "12px 20px", borderBottom: `1px solid ${T.border}`, display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap" }}>
         <SearchableMultiSelect values={filterAnnoFineGiro.map(String)} onChange={v => { setFilterAnnoFineGiro(v.map(Number)); setGiroLabelSel([]); setExtraSel([]); setCedolaSel([]); setFilterEditori([]); setFilterAccount([]); setFilterPromozione([]); setFilterCanale([]); setSearch(""); setClienteSel(null); setSoloPrenotati(false); }} options={anniDispFineGiro.map(String)} renderOption={v => v} placeholder="Anno" width={110} />
@@ -4681,7 +4705,7 @@ const MODULES_IMPORT = [
 ];
 
 const style = document.createElement('style');
-style.textContent = `button:hover { filter: brightness(1.3); }`;
+style.textContent = `button:hover { filter: brightness(1.3); } @keyframes gm-spin { to { transform: rotate(360deg); } }`;
 document.head.appendChild(style);
 
 export default function App() {
