@@ -40,6 +40,22 @@ async function rpnSync(token, path) {
   return data;
 }
 
+// Cedole chiuse su RPN non compaiono più in "titolo-tab" (usato da rpnSync
+// per l'elenco titoli): questa funzione dedicata legge invece lo storico
+// prenotazioni aggregato per cedola, così i titoli restano recuperabili
+// anche dopo la chiusura.
+async function rpnTitoliStorico(token, cedolaId) {
+  const res = await fetch(`${SUPABASE_URL}/functions/v1/rpn-titoli-storico/${cedolaId}`, {
+    headers: { Authorization: `Bearer ${token}`, apikey: SUPABASE_KEY },
+  });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) {
+    if (data.error === "RPN_NOT_CONNECTED") throw new Error("Account RPN non collegato: ricollegalo in Prenota.");
+    throw new Error(data.message || data.error || `Errore ${res.status} su storico titoli cedola ${cedolaId}`);
+  }
+  return data;
+}
+
 function normSpazi(s) {
   return s.replace(/\s+/g, " ").trim(); // \s in JS copre anche nbsp e simili
 }
@@ -145,7 +161,17 @@ async function fetchElencoCedole(token) {
 }
 
 async function importCedola(token, item, anagraficaMap) {
-  const { results } = await rpnSync(token, `titoli/${item.cedolaId}`);
+  let { results } = await rpnSync(token, `titoli/${item.cedolaId}`);
+  if (!results || !results.length) {
+    // Cedola non fra quelle attive in RPN (es. chiusa): ripiega sullo storico
+    // prenotazioni per recuperare comunque i titoli da poter importare.
+    try {
+      const storico = await rpnTitoliStorico(token, item.cedolaId);
+      results = storico.results || [];
+    } catch (_e) {
+      // nessuno storico disponibile per questa cedola: prosegue con lista vuota
+    }
+  }
   const grezzi = (results || []).map(normalizeTitolo).filter(r => r.ean && r.editore_nome);
   if (!grezzi.length) return { creati: 0, aggiornati: 0, ignorati: (results || []).length, errori: [] };
 
