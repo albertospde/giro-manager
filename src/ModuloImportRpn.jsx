@@ -254,7 +254,10 @@ export default function ModuloImportRpn({ token, onImportDone }) {
   const [loadingElenco, setLoadingElenco] = useState(false);
   const [erroreElenco, setErroreElenco] = useState(null);
   const [ricerca, setRicerca] = useState("");
-  const [anno, setAnno] = useState(String(new Date().getFullYear()));
+  // Nessun filtro anno di default: molte cedole extra/campagne RPN non hanno l'anno nel nome
+  // (es. "CORTINA DIONIGI", "FANDANGO I SWEAR") o hanno un anno diverso da quello corrente
+  // (es. "CALENDARIO NERI POZZA 2027") — filtrare per anno corrente le nascondeva silenziosamente.
+  const [anno, setAnno] = useState("");
   const [statoFiltro, setStatoFiltro] = useState("");
   const [selezionati, setSelezionati] = useState(new Set());
   const [importando, setImportando] = useState(false);
