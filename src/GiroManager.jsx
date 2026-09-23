@@ -170,6 +170,23 @@ const sbDeleteTitolo = async (id, token) => {
   return r.ok;
 };
 
+// Stato apertura/chiusura di Giri Vendita ed Extragiri/Campagne (tabella giro_cedola_stato:
+// tipo "giro" con chiave = giro_label es. "5 2026", tipo "extra" con chiave = n_cedola).
+// Usato per ingrigire nelle tendine i giri/cedole chiusi, senza toccare i titoli sottostanti.
+const sbSetStatoChiusura = async (tipo, chiave, chiuso, token) => {
+  const r = await fetch(`${SUPABASE_URL}/rest/v1/giro_cedola_stato`, {
+    method: "POST",
+    headers: {
+      "apikey": SUPABASE_KEY,
+      "Authorization": `Bearer ${token}`,
+      "Content-Type": "application/json",
+      "Prefer": "resolution=merge-duplicates,return=minimal",
+    },
+    body: JSON.stringify([{ tipo, chiave, chiuso, updated_at: new Date().toISOString() }]),
+  });
+  return r.ok;
+};
+
 const T = {
   bg: "#1a2140", surface: "#212d54", border: "#2e3d6b", borderHi: "#3d4f82",
   text: "#f0f2f8", textMid: "#8b9cc8", textDim: "#4a5a8a",
@@ -890,7 +907,80 @@ function SearchableMultiSelect({ values, onChange, options, placeholder = "Tutti
   );
 }
 
-function ModuloCedola({ titoli, giriList, onUpdateTitolo, onDeleteTitolo, spalmatura, prenotato, ruolo, token, onTitoliChange, userAccount }) {
+// Tendina ricercabile per Giri Vendita / Extragiri / Campagne nella schermata principale di
+// Giri e Cedole e Fine Giro: appena aperta mostra già tutti i giri/cedole presenti (niente
+// da digitare per vederli), permette di cercare per nome o per EAN (mostra solo i giri/cedole
+// in cui compare quell'EAN), e affianca a ciascuna voce un tastino per ingrigire (chiudere) o
+// riaprire la riga senza toccare i titoli. Aperti in ordine alfabetico, poi i chiusi sotto.
+function TendinaGiroCedola({ items, eanIndex, statoMap, onToggleChiuso, selected, onSelect, placeholder, accentColor = T.accent, ruolo, width = 260 }) {
+  const [open, setOpen] = useState(false);
+  const [search, setSearch] = useState("");
+  const [eanSearch, setEanSearch] = useState("");
+
+  const filtratiPerEan = useMemo(() => {
+    const q = eanSearch.trim();
+    if (!q) return items;
+    return items.filter(it => (eanIndex[it] || []).some(ean => ean.includes(q)));
+  }, [items, eanSearch, eanIndex]);
+
+  const ordinati = useMemo(() => {
+    const aperti = filtratiPerEan.filter(it => !statoMap[it]).sort((a, b) => a.localeCompare(b, "it", { sensitivity: "base" }));
+    const chiusi = filtratiPerEan.filter(it => statoMap[it]).sort((a, b) => a.localeCompare(b, "it", { sensitivity: "base" }));
+    return [...aperti, ...chiusi];
+  }, [filtratiPerEan, statoMap]);
+
+  const visibili = useMemo(() => ordinati.filter(it => it.toLowerCase().includes(search.toLowerCase())), [ordinati, search]);
+
+  const chiudiTendina = () => { setOpen(false); setSearch(""); setEanSearch(""); };
+
+  return (
+    <div style={{ position: "relative", width }}>
+      <button
+        style={{ ...css.btn(selected ? "accent" : "default"), width: "100%", display: "flex", justifyContent: "space-between", alignItems: "center", gap: 8, borderColor: selected ? accentColor : T.border, color: selected ? accentColor : T.text }}
+        onClick={() => setOpen(o => !o)}
+      >
+        <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{selected || placeholder}</span>
+        <span>▾</span>
+      </button>
+      {open && (
+        <div style={{ position: "absolute", top: "100%", left: 0, zIndex: 60, background: T.surface, border: `1px solid ${T.borderHi}`, borderRadius: 4, width: Math.max(width, 280), maxHeight: 380, display: "flex", flexDirection: "column", marginTop: 4, boxShadow: "0 4px 20px #0008" }}>
+          <div style={{ padding: "8px 10px", borderBottom: `1px solid ${T.border}`, flexShrink: 0, display: "flex", flexDirection: "column", gap: 6 }}>
+            <input autoFocus placeholder="Cerca nome..." value={search} onChange={e => setSearch(e.target.value)} style={{ ...css.input, width: "100%", boxSizing: "border-box" }} />
+            <input placeholder="Cerca per EAN..." value={eanSearch} onChange={e => setEanSearch(e.target.value)} style={{ ...css.input, width: "100%", boxSizing: "border-box" }} />
+          </div>
+          <div style={{ overflowY: "auto", flex: 1 }}>
+            {visibili.length === 0 && <div style={{ padding: "12px", fontSize: "11px", color: T.textMid, textAlign: "center" }}>Nessun risultato</div>}
+            {visibili.map(it => {
+              const chiusoFlag = !!statoMap[it];
+              const isSel = selected === it;
+              return (
+                <div key={it} style={{ display: "flex", alignItems: "center", gap: 6, padding: "6px 8px 6px 12px", borderBottom: `1px solid ${T.border}22`, background: isSel ? accentColor + "18" : "transparent", opacity: chiusoFlag ? 0.55 : 1 }}>
+                  <div
+                    style={{ flex: 1, cursor: "pointer", fontSize: "12px", color: chiusoFlag ? T.textMid : (isSel ? accentColor : T.text), textDecoration: chiusoFlag ? "line-through" : "none" }}
+                    onClick={() => { onSelect(it); chiudiTendina(); }}
+                  >
+                    {it}
+                  </div>
+                  {ruolo !== "agente" && (
+                    <button
+                      title={chiusoFlag ? "Riapri" : "Segna come chiuso"}
+                      onClick={() => onToggleChiuso(it)}
+                      style={{ ...css.btn(), padding: "2px 7px", fontSize: "10px", flexShrink: 0 }}
+                    >
+                      {chiusoFlag ? "↺ Riapri" : "⏹ Chiudi"}
+                    </button>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function ModuloCedola({ titoli, giriList, onUpdateTitolo, onDeleteTitolo, spalmatura, prenotato, ruolo, token, onTitoliChange, userAccount, statoChiusure, onToggleChiusura }) {
   const [giroLabelSel, setGiroLabelSel] = useState([]);
   const [extraSel, setExtraSel] = useState([]);
   const [giroSel, setGiroSel] = useState([]);
@@ -1096,6 +1186,28 @@ function ModuloCedola({ titoli, giriList, onUpdateTitolo, onDeleteTitolo, spalma
   const cedoleExtraPlain = useMemo(() => cedoleExtra.filter(c => !/campagn[ae]/i.test(c)), [cedoleExtra]);
   const cedoleCampagne = useMemo(() => cedoleExtra.filter(c => /campagn[ae]/i.test(c)), [cedoleExtra]);
 
+  // Indici EAN → giro/cedola per la ricerca "in quali giri/cedole compare questo EAN" nelle tendine.
+  const eanIndexGiri = useMemo(() => {
+    const idx = {};
+    titoli.forEach(t => {
+      if (!t.giro_label || t.giro_label === "EXTRA" || !t.ean) return;
+      if (!idx[t.giro_label]) idx[t.giro_label] = [];
+      idx[t.giro_label].push(t.ean);
+    });
+    return idx;
+  }, [titoli]);
+  const eanIndexExtra = useMemo(() => {
+    const idx = {};
+    titoli.forEach(t => {
+      if (t.giro_label !== "EXTRA" || !t.n_cedola || !t.ean) return;
+      if (!idx[t.n_cedola]) idx[t.n_cedola] = [];
+      idx[t.n_cedola].push(t.ean);
+    });
+    return idx;
+  }, [titoli]);
+  const statoGiro = statoChiusure?.giro || {};
+  const statoExtra = statoChiusure?.extra || {};
+
   const cedole = useMemo(() => { const t = giroLabelSel.length === 0 ? titoli.filter(t => filterAnnoCedola.length === 0 || filterAnnoCedola.includes(Number((t.giro_label||"").split(" ")[1]))) : titoli.filter(t => giroLabelSel.includes(t.giro_label)); return [...new Set(t.map(t => t.n_cedola).filter(Boolean))].sort(); }, [titoli, giroLabelSel, filterAnnoCedola]);
   const accounts = useMemo(() => { const t = giroSel.length === 0 ? (giroLabelSel.length === 0 ? titoli : titoli.filter(t => giroLabelSel.includes(t.giro_label))) : titoli.filter(t => giroSel.includes(t.n_cedola)); return [...new Set(t.map(t => t.account_editore).filter(Boolean))].sort(); }, [titoli, giroLabelSel, giroSel]);
   const editori = useMemo(() => { const t = giroSel.length === 0 ? (giroLabelSel.length === 0 ? titoli : titoli.filter(t => giroLabelSel.includes(t.giro_label))) : titoli.filter(t => giroSel.includes(t.n_cedola)); return [...new Set(t.map(t => t.editore_nome).filter(Boolean))].sort(); }, [titoli, giroLabelSel, giroSel]);
@@ -1207,39 +1319,57 @@ function ModuloCedola({ titoli, giriList, onUpdateTitolo, onDeleteTitolo, spalma
         <div style={{ display: "flex", gap: 48, alignItems: "flex-start", justifyContent: "center", flexWrap: "wrap" }}>
 
           {/* Colonna GIRI VENDITA */}
-          <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 14, width: 240 }}>
+          <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 14, width: 260 }}>
             <div style={{ color: T.text, fontSize: "12px", fontWeight: 700, letterSpacing: "0.5px", textTransform: "uppercase" }}>Giri Vendita</div>
             <SearchableMultiSelect values={filterAnnoCedola.map(String)} onChange={v => setFilterAnnoCedola(v.map(Number))} options={anniDispCedola.map(String)} renderOption={v => v} placeholder="Anno" width={140} />
-            <div style={{ display: "flex", flexDirection: "column", gap: 8, width: "100%" }}>
-              {giriLabel.length === 0 && <div style={{ color: T.textMid, fontSize: "12px", textAlign: "center", padding: "10px 0" }}>Nessun giro per l'anno selezionato</div>}
-              {giriLabel.map(g => (
-                <button key={g} style={{ ...css.btn("accent"), padding: "10px 16px", fontSize: "13px", width: "100%" }} onClick={() => setGiroLabelSel([g])}>Giro {g}</button>
-              ))}
-            </div>
+            <TendinaGiroCedola
+              items={giriLabel}
+              eanIndex={eanIndexGiri}
+              statoMap={statoGiro}
+              onToggleChiuso={chiave => onToggleChiusura && onToggleChiusura("giro", chiave)}
+              selected={null}
+              onSelect={g => setGiroLabelSel([g])}
+              placeholder="Seleziona un giro..."
+              accentColor={T.accent}
+              ruolo={ruolo}
+              width={260}
+            />
           </div>
 
           {/* Colonna EXTRAGIRI */}
-          <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 14, width: 240 }}>
+          <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 14, width: 260 }}>
             <div style={{ color: T.text, fontSize: "12px", fontWeight: 700, letterSpacing: "0.5px", textTransform: "uppercase" }}>Extragiri</div>
             <SearchableMultiSelect values={filterAnnoExtraCedola.map(String)} onChange={v => setFilterAnnoExtraCedola(v.map(Number))} options={anniDispExtraCedola.map(String)} renderOption={v => v} placeholder="Anno" width={140} />
-            <div style={{ display: "flex", flexDirection: "column", gap: 8, width: "100%" }}>
-              {cedoleExtraPlain.length === 0 && <div style={{ color: T.textMid, fontSize: "12px", textAlign: "center", padding: "10px 0" }}>Nessuna cedola extra per l'anno selezionato</div>}
-              {cedoleExtraPlain.map(c => (
-                <button key={c} style={{ ...css.btn(), padding: "10px 16px", fontSize: "13px", borderColor: T.accent, color: T.accent, width: "100%" }} onClick={() => setExtraSel([c])}>{c}</button>
-              ))}
-            </div>
+            <TendinaGiroCedola
+              items={cedoleExtraPlain}
+              eanIndex={eanIndexExtra}
+              statoMap={statoExtra}
+              onToggleChiuso={chiave => onToggleChiusura && onToggleChiusura("extra", chiave)}
+              selected={null}
+              onSelect={c => setExtraSel([c])}
+              placeholder="Seleziona una cedola extra..."
+              accentColor={T.accent}
+              ruolo={ruolo}
+              width={260}
+            />
           </div>
 
           {/* Colonna CAMPAGNE */}
-          <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 14, width: 240 }}>
+          <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 14, width: 260 }}>
             <div style={{ color: T.text, fontSize: "12px", fontWeight: 700, letterSpacing: "0.5px", textTransform: "uppercase" }}>Campagne</div>
             <SearchableMultiSelect values={filterAnnoExtraCedola.map(String)} onChange={v => setFilterAnnoExtraCedola(v.map(Number))} options={anniDispExtraCedola.map(String)} renderOption={v => v} placeholder="Anno" width={140} />
-            <div style={{ display: "flex", flexDirection: "column", gap: 8, width: "100%" }}>
-              {cedoleCampagne.length === 0 && <div style={{ color: T.textMid, fontSize: "12px", textAlign: "center", padding: "10px 0" }}>Nessuna campagna per l'anno selezionato</div>}
-              {cedoleCampagne.map(c => (
-                <button key={c} style={{ ...css.btn(), padding: "10px 16px", fontSize: "13px", borderColor: T.purple, color: T.purple, width: "100%" }} onClick={() => setExtraSel([c])}>{c}</button>
-              ))}
-            </div>
+            <TendinaGiroCedola
+              items={cedoleCampagne}
+              eanIndex={eanIndexExtra}
+              statoMap={statoExtra}
+              onToggleChiuso={chiave => onToggleChiusura && onToggleChiusura("extra", chiave)}
+              selected={null}
+              onSelect={c => setExtraSel([c])}
+              placeholder="Seleziona una campagna..."
+              accentColor={T.purple}
+              ruolo={ruolo}
+              width={260}
+            />
           </div>
 
         </div>
@@ -1484,7 +1614,7 @@ function ModuloCedola({ titoli, giriList, onUpdateTitolo, onDeleteTitolo, spalma
   );
 }
 
-function ModuloFineGiro({ titoli, prenotato, canali, token, ruolo, spalmatura, userAccount, onPrenotatoUpdated }) {
+function ModuloFineGiro({ titoli, prenotato, canali, token, ruolo, spalmatura, userAccount, onPrenotatoUpdated, statoChiusure, onToggleChiusura }) {
   const anniDispFineGiro = useMemo(() => {
     const s = new Set();
     titoli.forEach(t => { if (t.giro_label && t.giro_label !== "EXTRA") { const yr = Number(t.giro_label.split(" ")[1]); if (yr >= 2020) s.add(yr); } });
@@ -1525,6 +1655,28 @@ function ModuloFineGiro({ titoli, prenotato, canali, token, ruolo, spalmatura, u
   // separate dalle altre cedole extra (solo visualizzazione, nessuna modifica al dato).
   const cedoleExtraPlain = useMemo(() => cedoleExtra.filter(c => !/campagn[ae]/i.test(c)), [cedoleExtra]);
   const cedoleCampagne = useMemo(() => cedoleExtra.filter(c => /campagn[ae]/i.test(c)), [cedoleExtra]);
+
+  // Indici EAN → giro/cedola per la ricerca "in quali giri/cedole compare questo EAN" nelle tendine.
+  const eanIndexGiri = useMemo(() => {
+    const idx = {};
+    titoli.forEach(t => {
+      if (!t.giro_label || t.giro_label === "EXTRA" || !t.ean) return;
+      if (!idx[t.giro_label]) idx[t.giro_label] = [];
+      idx[t.giro_label].push(t.ean);
+    });
+    return idx;
+  }, [titoli]);
+  const eanIndexExtra = useMemo(() => {
+    const idx = {};
+    titoli.forEach(t => {
+      if (t.giro_label !== "EXTRA" || !t.n_cedola || !t.ean) return;
+      if (!idx[t.n_cedola]) idx[t.n_cedola] = [];
+      idx[t.n_cedola].push(t.ean);
+    });
+    return idx;
+  }, [titoli]);
+  const statoGiro = statoChiusure?.giro || {};
+  const statoExtra = statoChiusure?.extra || {};
 
   const [giroLabelSel, setGiroLabelSel] = useState([]);
   const [extraSel, setExtraSel] = useState([]);
@@ -1872,39 +2024,57 @@ function ModuloFineGiro({ titoli, prenotato, canali, token, ruolo, spalmatura, u
         <div style={{ display: "flex", gap: 48, alignItems: "flex-start", justifyContent: "center", flexWrap: "wrap" }}>
 
           {/* Colonna GIRI VENDITA */}
-          <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 14, width: 240 }}>
+          <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 14, width: 260 }}>
             <div style={{ color: T.text, fontSize: "12px", fontWeight: 700, letterSpacing: "0.5px", textTransform: "uppercase" }}>Giri Vendita</div>
             <SearchableMultiSelect values={filterAnnoFineGiro.map(String)} onChange={v => setFilterAnnoFineGiro(v.map(Number))} options={anniDispFineGiro.map(String)} renderOption={v => v} placeholder="Anno" width={140} />
-            <div style={{ display: "flex", flexDirection: "column", gap: 8, width: "100%" }}>
-              {giriLabel.length === 0 && <div style={{ color: T.textMid, fontSize: "12px", textAlign: "center", padding: "10px 0" }}>Nessun giro per l'anno selezionato</div>}
-              {giriLabel.map(g => (
-                <button key={g} style={{ ...css.btn("accent"), padding: "10px 16px", fontSize: "13px", width: "100%" }} onClick={() => setGiroLabelSel([g])}>Giro {g}</button>
-              ))}
-            </div>
+            <TendinaGiroCedola
+              items={giriLabel}
+              eanIndex={eanIndexGiri}
+              statoMap={statoGiro}
+              onToggleChiuso={chiave => onToggleChiusura && onToggleChiusura("giro", chiave)}
+              selected={null}
+              onSelect={g => setGiroLabelSel([g])}
+              placeholder="Seleziona un giro..."
+              accentColor={T.accent}
+              ruolo={ruolo}
+              width={260}
+            />
           </div>
 
           {/* Colonna EXTRAGIRI */}
-          <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 14, width: 240 }}>
+          <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 14, width: 260 }}>
             <div style={{ color: T.text, fontSize: "12px", fontWeight: 700, letterSpacing: "0.5px", textTransform: "uppercase" }}>Extragiri</div>
             <SearchableMultiSelect values={filterAnnoExtraFineGiro.map(String)} onChange={v => setFilterAnnoExtraFineGiro(v.map(Number))} options={anniDispExtraFineGiro.map(String)} renderOption={v => v} placeholder="Anno" width={140} />
-            <div style={{ display: "flex", flexDirection: "column", gap: 8, width: "100%" }}>
-              {cedoleExtraPlain.length === 0 && <div style={{ color: T.textMid, fontSize: "12px", textAlign: "center", padding: "10px 0" }}>Nessuna cedola extra per l'anno selezionato</div>}
-              {cedoleExtraPlain.map(c => (
-                <button key={c} style={{ ...css.btn(), padding: "10px 16px", fontSize: "13px", borderColor: T.accent, color: T.accent, width: "100%" }} onClick={() => setExtraSel([c])}>{c}</button>
-              ))}
-            </div>
+            <TendinaGiroCedola
+              items={cedoleExtraPlain}
+              eanIndex={eanIndexExtra}
+              statoMap={statoExtra}
+              onToggleChiuso={chiave => onToggleChiusura && onToggleChiusura("extra", chiave)}
+              selected={null}
+              onSelect={c => setExtraSel([c])}
+              placeholder="Seleziona una cedola extra..."
+              accentColor={T.accent}
+              ruolo={ruolo}
+              width={260}
+            />
           </div>
 
           {/* Colonna CAMPAGNE */}
-          <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 14, width: 240 }}>
+          <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 14, width: 260 }}>
             <div style={{ color: T.text, fontSize: "12px", fontWeight: 700, letterSpacing: "0.5px", textTransform: "uppercase" }}>Campagne</div>
             <SearchableMultiSelect values={filterAnnoExtraFineGiro.map(String)} onChange={v => setFilterAnnoExtraFineGiro(v.map(Number))} options={anniDispExtraFineGiro.map(String)} renderOption={v => v} placeholder="Anno" width={140} />
-            <div style={{ display: "flex", flexDirection: "column", gap: 8, width: "100%" }}>
-              {cedoleCampagne.length === 0 && <div style={{ color: T.textMid, fontSize: "12px", textAlign: "center", padding: "10px 0" }}>Nessuna campagna per l'anno selezionato</div>}
-              {cedoleCampagne.map(c => (
-                <button key={c} style={{ ...css.btn(), padding: "10px 16px", fontSize: "13px", borderColor: T.purple, color: T.purple, width: "100%" }} onClick={() => setExtraSel([c])}>{c}</button>
-              ))}
-            </div>
+            <TendinaGiroCedola
+              items={cedoleCampagne}
+              eanIndex={eanIndexExtra}
+              statoMap={statoExtra}
+              onToggleChiuso={chiave => onToggleChiusura && onToggleChiusura("extra", chiave)}
+              selected={null}
+              onSelect={c => setExtraSel([c])}
+              placeholder="Seleziona una campagna..."
+              accentColor={T.purple}
+              ruolo={ruolo}
+              width={260}
+            />
           </div>
 
         </div>
@@ -4525,6 +4695,8 @@ export default function App() {
   const [giriDB, setGiriDB] = useState([]);
   const [ruolo, setRuolo] = useState("admin");
   const [userAccount, setUserAccount] = useState(null);
+  // Stato chiusura Giri Vendita / Extragiri / Campagne: { giro: { [giro_label]: bool }, extra: { [n_cedola]: bool } }
+  const [statoChiusure, setStatoChiusure] = useState({ giro: {}, extra: {} });
 
   // Applica alle righe titoli il ranking_editore AGGIORNATO (da ranking_editori), invece del
   // valore congelato al momento dell'import. Evita il disallineamento che causa titoli di
@@ -4533,6 +4705,15 @@ export default function App() {
     const rLive = rankingMap[normEditoreKey(t.editore_nome)];
     return { ...t, account_editore: ACCOUNT_BY_COD[t.codice_editore] || t.account_editore || null, ranking_editore: rLive != null ? rLive : t.ranking_editore };
   }), []);
+
+  const fetchStatoChiusure = useCallback((token) => {
+    sbFetch("giro_cedola_stato?select=tipo,chiave,chiuso", token).then(data => {
+      if (!Array.isArray(data)) return;
+      const map = { giro: {}, extra: {} };
+      data.forEach(r => { if (map[r.tipo]) map[r.tipo][r.chiave] = !!r.chiuso; });
+      setStatoChiusure(map);
+    });
+  }, []);
 
   useEffect(() => {
     if (!session) return;
@@ -4546,7 +4727,8 @@ export default function App() {
     sbFetch("spalmatura_obiettivo?select=*", session.token).then(setSpalmatura);
     sbFetch("canali?select=*&order=nome.asc", session.token).then(setCanali);
     sbFetch(`user_profiles?id=eq.${session.user.id}&select=ruolo,account_editore`, session.token).then(data => { if (Array.isArray(data) && data[0]) { setRuolo(data[0].ruolo); if (data[0].account_editore) setUserAccount(data[0].account_editore); } });
-  }, [session]);
+    fetchStatoChiusure(session.token);
+  }, [session, fetchStatoChiusure]);
 
   useEffect(() => {
     const token = localStorage.getItem("giro_token");
@@ -4572,7 +4754,20 @@ export default function App() {
       if (Array.isArray(reData)) reData.forEach(r => { rankingMap[normEditoreKey(r.editore_nome)] = Math.round(Number(r.ranking)); });
       sbFetch("titoli?select=*&order=ranking_editore.asc,ranking_titolo.asc", session.token).then(data => { if (Array.isArray(data)) setTitoli(applyRankingLive(data, rankingMap)); });
     });
-  }, [session, applyRankingLive]);
+    fetchStatoChiusure(session.token);
+  }, [session, applyRankingLive, fetchStatoChiusure]);
+
+  // Ingrigisce/riapre un giro (chiave = giro_label, es. "5 2026") o una cedola extra/campagna
+  // (chiave = n_cedola) dalle tendine di Giri e Cedole / Fine Giro. Aggiornamento ottimistico
+  // con rollback se la scrittura su Supabase fallisce.
+  const toggleChiusura = useCallback(async (tipo, chiave) => {
+    if (!session) return;
+    const chiusoAttuale = !!statoChiusure[tipo]?.[chiave];
+    const nuovo = !chiusoAttuale;
+    setStatoChiusure(prev => ({ ...prev, [tipo]: { ...prev[tipo], [chiave]: nuovo } }));
+    const ok = await sbSetStatoChiusura(tipo, chiave, nuovo, session.token);
+    if (!ok) setStatoChiusure(prev => ({ ...prev, [tipo]: { ...prev[tipo], [chiave]: chiusoAttuale } }));
+  }, [session, statoChiusure]);
 
   if (checkingAuth) return <div style={{ ...css.app, display: "flex", alignItems: "center", justifyContent: "center", height: "100vh", color: T.textMid }}>Caricamento...</div>;
   if (!session) return <LoginScreen onLogin={handleLogin} />;
@@ -4636,10 +4831,10 @@ export default function App() {
           {activeModule === "dashboard" && <ModuloDashboard titoli={titoli} prenotato={prenotato} canali={canali} spalmatura={spalmatura} ruolo={ruolo} />}
           {activeModule === "calendariogiri" && <Modulocalendariogiri token={session.token} ruolo={ruolo} />}
           {/* FIX 5: Passato token a ModuloCedola */}
-          {activeModule === "cedola" && <ModuloCedola titoli={titoli} giriList={giriDB} onUpdateTitolo={t => { updateTitolo(t); setTitoli(prev => prev.some(x => x.id === t.id) ? prev.map(x => x.id === t.id ? t : x) : [...prev, t]); }} onDeleteTitolo={deleteTitolo} spalmatura={spalmatura} prenotato={prenotato} ruolo={ruolo} token={session.token} onTitoliChange={refreshDati} userAccount={userAccount} />}
+          {activeModule === "cedola" && <ModuloCedola titoli={titoli} giriList={giriDB} onUpdateTitolo={t => { updateTitolo(t); setTitoli(prev => prev.some(x => x.id === t.id) ? prev.map(x => x.id === t.id ? t : x) : [...prev, t]); }} onDeleteTitolo={deleteTitolo} spalmatura={spalmatura} prenotato={prenotato} ruolo={ruolo} token={session.token} onTitoliChange={refreshDati} userAccount={userAccount} statoChiusure={statoChiusure} onToggleChiusura={toggleChiusura} />}
           {activeModule === "prenotato" && <ModuloPrenotato token={session.token} titoli={titoli} onImportDone={() => sbFetch("prenotato?select=*&limit=100000", session.token).then(setPrenotato)} />}
           {/* MOD 4: Passato spalmatura a ModuloFineGiro */}
-          {activeModule === "finegiro" && <ModuloFineGiro titoli={titoli} prenotato={prenotato} canali={canali} token={session.token} ruolo={ruolo} spalmatura={spalmatura} userAccount={userAccount} onPrenotatoUpdated={refreshDati} />}
+          {activeModule === "finegiro" && <ModuloFineGiro titoli={titoli} prenotato={prenotato} canali={canali} token={session.token} ruolo={ruolo} spalmatura={spalmatura} userAccount={userAccount} onPrenotatoUpdated={refreshDati} statoChiusure={statoChiusure} onToggleChiusura={toggleChiusura} />}
           {activeModule === "avanzamento" && <ModuloAvanzamento token={session.token} titoli={titoli} prenotato={prenotato} ruolo={ruolo} userAccount={userAccount} />}
           {activeModule === "lanci" && <ModuloLanciSettimanali token={session.token} titoli={titoli} prenotato={prenotato} canali={canali} ruolo={ruolo} userAccount={userAccount} onNavigateAnticipi={() => setActiveModule("anticipilancio")} />}
           {activeModule === "verificalanci" && <ModuloVerificaLanciAmazon token={session.token} titoli={titoli} prenotato={prenotato} canali={canali} />}
