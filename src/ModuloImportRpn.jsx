@@ -179,7 +179,24 @@ async function fetchElencoCedole(token) {
 }
 
 async function importCedola(token, item, anagraficaMap) {
-  let { results } = await rpnSync(token, `titoli/${item.cedolaId}`);
+  // rpn-titoli-cedola: elenco completo (paginazione robusta oltre i 200 titoli + EAN presenti
+  // solo nello storico prenotazioni). Fallback su rpn-sync se la funzione non risponde.
+  let results, infoFonte = null;
+  try {
+    const res = await fetch(`${SUPABASE_URL}/functions/v1/rpn-titoli-cedola/${item.cedolaId}`, {
+      headers: { Authorization: `Bearer ${token}`, apikey: SUPABASE_KEY },
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) {
+      if (data.error === "RPN_NOT_CONNECTED") throw new Error("Account RPN non collegato: ricollegalo in Prenota.");
+      throw new Error(data.error || `Errore ${res.status}`);
+    }
+    results = data.results;
+    infoFonte = data;
+  } catch (e) {
+    if (String(e.message).includes("RPN non collegato")) throw e;
+    ({ results } = await rpnSync(token, `titoli/${item.cedolaId}`));
+  }
   if (!results || !results.length) {
     // Cedola non fra quelle attive in RPN (es. chiusa): ripiega sullo storico
     // prenotazioni per recuperare comunque i titoli da poter importare.
@@ -194,6 +211,7 @@ async function importCedola(token, item, anagraficaMap) {
   if (!grezzi.length) return { creati: 0, aggiornati: 0, ignorati: (results || []).length, errori: [] };
 
   const errori = [];
+  if (infoFonte?.da_storico) errori.push(`ℹ ${infoFonte.da_elenco} titoli dall'elenco cedola RPN + ${infoFonte.da_storico} presenti solo nelle prenotazioni`);
   let giroNumero = null, giroAnno = null;
   if (item.tipo === "giro") {
     const m = item.giroNome.trim().match(GIRO_RPN_RE);
