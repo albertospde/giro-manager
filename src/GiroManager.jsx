@@ -2194,7 +2194,8 @@ function ModuloFineGiro({ titoli, prenotato, canali, token, ruolo, spalmatura, u
               ["Righe lette", rpnSync.preview.righe.length.toLocaleString("it"), T.text],
               ["Totale copie", rpnSync.preview.totaleAggregato.toLocaleString("it"), T.accent],
               ["Trovati in cedola", rpnSync.preview.totaleFound.toLocaleString("it"), T.green],
-              ["Non trovati", rpnSync.preview.aggregato.filter(r => !r.found).length, T.red],
+              ["Copie non trovate", (rpnSync.preview.totaleAggregato - rpnSync.preview.totaleFound).toLocaleString("it"), T.red],
+              ["EAN non trovati", new Set(rpnSync.preview.aggregato.filter(r => !r.found).map(r => r.ean)).size, T.red],
             ].map(([label, val, color]) => (
               <div key={label} style={{ background: T.bg, border: `1px solid ${T.border}`, borderRadius: 4, padding: "8px 14px" }}>
                 <div style={{ color: T.textMid, fontSize: "10px", textTransform: "uppercase", marginBottom: 2 }}>{label}</div>
@@ -2202,6 +2203,32 @@ function ModuloFineGiro({ titoli, prenotato, canali, token, ruolo, spalmatura, u
               </div>
             ))}
           </div>
+          {/* Elenco EAN presenti nel prenotato RPN ma assenti dal Giro/Cedola selezionato
+              (sommati su tutti i canali): serve a capire cosa manca prima di confermare. */}
+          {(() => {
+            const nf = {};
+            rpnSync.preview.aggregato.filter(r => !r.found).forEach(r => { nf[r.ean] = (nf[r.ean] || 0) + r.qta; });
+            const righeNf = Object.entries(nf).sort((a, b) => b[1] - a[1]);
+            if (!righeNf.length) return null;
+            return (
+              <details style={{ marginBottom: 12, fontSize: "12px" }}>
+                <summary style={{ cursor: "pointer", color: T.red }}>Mostra EAN non trovati ({righeNf.length})</summary>
+                <div style={{ maxHeight: 220, overflowY: "auto", marginTop: 6, border: `1px solid ${T.border}`, borderRadius: 4 }}>
+                  <table style={{ width: "100%", borderCollapse: "collapse" }}>
+                    <tbody>
+                      {righeNf.map(([ean, qta]) => (
+                        <tr key={ean}><td style={css.td}>{ean}</td><td style={{ ...css.td, textAlign: "right" }}>{qta.toLocaleString("it")}</td></tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+                <button style={{ ...css.btn(), fontSize: "11px", padding: "3px 10px", marginTop: 6 }}
+                  onClick={() => navigator.clipboard?.writeText(righeNf.map(([e, q]) => `${e}\t${q}`).join("\n"))}>
+                  Copia elenco
+                </button>
+              </details>
+            );
+          })()}
           <div style={{ display: "flex", gap: 8 }}>
             <button style={css.btn()} onClick={() => setRpnSync({ status: "idle", error: null, preview: null })} disabled={rpnSync.status === "importing"}>Annulla</button>
             <button style={css.btn("accent")} onClick={confermaImportRpn} disabled={rpnSync.status === "importing"}>
