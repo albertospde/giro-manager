@@ -80,6 +80,12 @@ function stripArticolo(nome) {
   return nome;
 }
 
+// Parole che in anagrafica possono seguire il nome editore senza cambiarne l'identità.
+const SUFFISSI_GENERICI = new Set([
+  "EDITORE", "EDITORI", "EDITRICE", "EDIZIONI", "EDITORIALE", "LIBRI",
+  "SRL", "SPA", "SAS", "SNC", "SRLS", "AD",
+]);
+
 // ─── Import di UNA cedola/giro selezionato ──────────────────────────────────
 // Se il nome editore di RPN non matcha esattamente l'anagrafica, prova due fallback:
 // 1) RPN a volte restituisce il nome "arricchito" (nome proprio, codice interno, parola
@@ -107,6 +113,18 @@ function risolviAnagrafica(nomeRpn, anagraficaMap) {
   const perPrefisso = Object.keys(anagraficaMap).filter(k => nomeRpn.startsWith(k + " "));
   if (perPrefisso.length === 1) return { match: anagraficaMap[perPrefisso[0]], viaFallback: true, nomeUsato: perPrefisso[0] };
   if (perPrefisso.length > 1) return { match: null, viaFallback: false, ambiguo: perPrefisso };
+
+  // 3) Fallback "nome ridotto": è RPN ad accorciare il nome, l'anagrafica ha in più solo
+  // parole generiche (ragione sociale/suffissi) — es. RPN "GALLUCCI" → "GALLUCCI EDITORE SRL",
+  // RPN "GALLUCCI CENTAURIA" → "GALLUCCI CENTAURIA AD". Non si accettano marchi diversi
+  // (GALLUCCI BROS, GALLUCCI SPIGA... restano esclusi perché BROS/SPIGA non sono generici).
+  const perRiduzione = Object.keys(anagraficaMap).filter(k => {
+    if (!k.startsWith(nomeRpn + " ")) return false;
+    const resto = k.slice(nomeRpn.length + 1).split(" ").filter(Boolean);
+    return resto.length > 0 && resto.every(w => SUFFISSI_GENERICI.has(w.replace(/\./g, "")));
+  });
+  if (perRiduzione.length === 1) return { match: anagraficaMap[perRiduzione[0]], viaFallback: true, nomeUsato: perRiduzione[0] };
+  if (perRiduzione.length > 1) return { match: null, viaFallback: false, ambiguo: perRiduzione };
 
   return { match: null, viaFallback: false };
 }
