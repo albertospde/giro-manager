@@ -219,6 +219,9 @@ async function importCedola(token, item, anagraficaMap) {
       else errori.push(`${r.editore_nome}: non trovato in anagrafica (ean ${r.ean})`);
       return null;
     }
+    // Salva sempre il nome come in anagrafica (es. "GALLUCCI" → "GALLUCCI EDITORE SRL"):
+    // ranking live e raggruppamenti per editore lavorano su editore_nome.
+    if (viaFallback && nomeUsato) out.editore_nome = nomeUsato;
     if (viaFallback) errori.push(`ℹ ${r.editore_nome} → abbinato ad anagrafica "${nomeUsato}" (corrispondenza automatica, verifica) — ean ${r.ean}`);
     if (item.tipo === "giro") {
       const categoria = anagrafica.cedola;
