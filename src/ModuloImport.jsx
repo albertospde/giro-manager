@@ -1,5 +1,6 @@
 import { useState, useCallback } from "react";
 import ModuloImportRpn from "./ModuloImportRpn.jsx";
+import ModuloImportEditore from "./ModuloImportEditore.jsx";
 
 const SUPABASE_URL = "https://tdflwenlylhctxssatax.supabase.co";
 const SUPABASE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InRkZmx3ZW5seWxoY3R4c3NhdGF4Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzYzMzgyNzYsImV4cCI6MjA5MTkxNDI3Nn0.l35qEL7LOvyYuI1McQlVqj4vbyTqmlevcmqWbTGYi2Q";
@@ -272,6 +273,7 @@ export default function ModuloImport({ token, onImportDone }) {
         <div>
           <div style={{ display: "flex", gap: 8, marginBottom: 20 }}>
             <button style={css.btn(sorgente === "file" ? "accent" : "default")} onClick={() => setSorgente("file")}>📂 Carica file .xlsx</button>
+            <button style={css.btn(sorgente === "editore" ? "accent" : "default")} onClick={() => setSorgente("editore")}>📑 File editore</button>
             <button style={css.btn(sorgente === "rpn" ? "accent" : "default")} onClick={() => setSorgente("rpn")}>🔄 Importa da RPN</button>
           </div>
 
@@ -288,6 +290,10 @@ export default function ModuloImport({ token, onImportDone }) {
                 Non hai il template? <a href="https://albertospde.github.io/giro-manager/template_cedola.xlsx" download style={{ color: T.accent }}>Scaricalo qui</a>
               </div>
             </div>
+          )}
+
+          {sorgente === "editore" && (
+            <ModuloImportEditore token={token} onImportDone={onImportDone} />
           )}
 
           {sorgente === "rpn" && (
