@@ -6,6 +6,7 @@ import ModuloAvanzamento from "./ModuloAvanzamento.jsx";
 import ModuloEditoriNewEntry from "./ModuloEditoriNewEntry.jsx";
 import ModuloTerne from "./ModuloTerne.jsx";
 import ModuloPubblicaRpn from "./ModuloPubblicaRpn.jsx";
+import ModuloRankingEditori from "./ModuloRankingEditori.jsx";
 import { fetchPrenotatoRpn, fetchPrenotatoRpnCedola, parseEaggrega, importAggregato } from "./rpnPrenotatoSync.js";
 
 const SUPABASE_URL = "https://tdflwenlylhctxssatax.supabase.co";
@@ -4731,6 +4732,7 @@ const MODULES_IMPORT = [
   { id: "pubblicarpn", label: "Pubblica su RPN", icon: "⇪" },
   { id: "prenotato", label: "Import Prenotato", icon: "↳" },
   { id: "spalmatura", label: "Import Pesi Spalmatura", icon: "⚖" },
+  { id: "rankingeditori", label: "Ranking Editori", icon: "🏷" },
   { id: "newentry", label: "Editori New Entry", icon: "🆕" },
   { id: "terne", label: "Aggiorna Terne", icon: "👥" },
 ];
@@ -4899,6 +4901,7 @@ export default function App() {
           {activeModule === "newentry" && <ModuloEditoriNewEntry token={session.token} onDataChange={refreshDati} />}
           {activeModule === "terne" && <ModuloTerne token={session.token} />}
           {activeModule === "pubblicarpn" && <ModuloPubblicaRpn token={session.token} titoli={titoli} />}
+          {activeModule === "rankingeditori" && <ModuloRankingEditori token={session.token} titoli={titoli} onDataChange={refreshDati} />}
         </div>
       </div>
     </div>
