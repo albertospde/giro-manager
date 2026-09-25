@@ -485,7 +485,7 @@ export default function ModuloImportEditore({ token, onImportDone }) {
     setLoading(true);
     try {
       const [anag, al, pref] = await Promise.all([
-        fetchJson(`${SUPABASE_URL}/rest/v1/ranking_editori?select=editore_nome,codice_editore,ranking,account_editore,promozione,cedola`, token),
+        fetchJson(`${SUPABASE_URL}/rest/v1/ranking_editori?select=editore_nome,codice_editore,ranking,account_editore,promozione,cedola,attivo&attivo=is.true`, token),
         fetchJson(`${SUPABASE_URL}/rest/v1/alias_editori?select=alias,editore_nome`, token).catch(() => []),
         fetchJson(`${SUPABASE_URL}/rest/v1/rpc/prefissi_ean_editori`, token, { method: "POST", headers: { "Content-Type": "application/json" }, body: "{}" }).catch(() => []),
       ]);
