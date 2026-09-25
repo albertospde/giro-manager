@@ -34,13 +34,15 @@ const css = {
 const norm = (s) => String(s ?? "").replace(/\s+/g, " ").trim().toUpperCase();
 const r2 = (n) => Math.round(n * 100) / 100;
 const fmtRk = (n) => (n == null || n === "" ? "—" : Number.isInteger(Number(n)) ? String(Number(n)) : String(Number(n)));
-const CAMPI = ["ranking", "codice_editore", "cedola", "account_editore", "promozione", "stato_rpn", "data_ingresso_rpn", "note"];
+const CAMPI = ["ranking", "codice_editore", "cedola", "account_editore", "promozione", "stato_rpn", "data_ingresso_rpn", "note", "attivo", "data_uscita"];
+const oggi = () => new Date().toISOString().slice(0, 10);
 
 const ordina = (righe) => [...righe].sort((a, b) => (Number(a.ranking) - Number(b.ranking)) || a.editore_nome.localeCompare(b.editore_nome));
 
 export default function ModuloRankingEditori({ token, titoli, onDataChange }) {
   const [orig, setOrig] = useState([]);        // righe come da DB
-  const [righe, setRighe] = useState([]);      // righe in modifica
+  const [righe, setRighe] = useState([]);      // editori attivi (la sequenza)
+  const [usciti, setUsciti] = useState([]);    // editori usciti: fuori sequenza, storico intatto
   const [eliminati, setEliminati] = useState([]);
   const [loading, setLoading] = useState(true);
   const [errore, setErrore] = useState("");
@@ -62,7 +64,8 @@ export default function ModuloRankingEditori({ token, titoli, onDataChange }) {
       const r = await fetch(`${SUPABASE_URL}/rest/v1/ranking_editori?select=*`, { headers: { apikey: SUPABASE_KEY, Authorization: `Bearer ${token}` } });
       if (!r.ok) throw new Error(`Errore caricamento (${r.status})`);
       const data = (await r.json()).map(x => ({ ...x, _key: `id${x.id}`, ranking: Number(x.ranking), editore_nome: norm(x.editore_nome), cedola: x.cedola ? norm(x.cedola) : "" }));
-      setOrig(data); setRighe(ordina(data)); setEliminati([]);
+      data.forEach(x => { x.attivo = x.attivo !== false; });
+      setOrig(data); setRighe(ordina(data.filter(x => x.attivo))); setUsciti(ordina(data.filter(x => !x.attivo))); setEliminati([]);
     } catch (e) { setErrore(e.message); }
     setLoading(false);
   }, [token]);
@@ -145,14 +148,25 @@ export default function ModuloRankingEditori({ token, titoli, onDataChange }) {
   const elimina = (r) => {
     if (r.id) setEliminati(e => [...e, r.id]);
     setRighe(rs => rs.filter(x => x._key !== r._key));
+    setUsciti(us => us.filter(x => x._key !== r._key));
+  };
+  // Uscita: l'editore esce dalla sequenza ma resta in anagrafica (titoli, prenotato e Fine Giro storici intatti)
+  const esci = (r) => {
+    setRighe(rs => rs.filter(x => x._key !== r._key));
+    setUsciti(us => ordina([...us, { ...r, attivo: false, data_uscita: oggi() }]));
+  };
+  const riattiva = (r) => {
+    setUsciti(us => us.filter(x => x._key !== r._key));
+    setRighe(rs => ordina([...rs, { ...r, attivo: true, data_uscita: "" }]));
   };
 
   // ─── Differenze da salvare ─────────────────────────────────────────────────
   const diff = useMemo(() => {
-    const nuovi = righe.filter(r => !r.id);
-    const modificati = righe.filter(r => r.id && CAMPI.some(c => String(r[c] ?? "") !== String(origById[r.id]?.[c] ?? "")));
+    const tutte = [...righe, ...usciti];
+    const nuovi = tutte.filter(r => !r.id);
+    const modificati = tutte.filter(r => r.id && CAMPI.some(c => String(r[c] ?? "") !== String(origById[r.id]?.[c] ?? "")));
     return { nuovi, modificati, eliminati: eliminati.map(id => origById[id]).filter(Boolean) };
-  }, [righe, origById, eliminati]);
+  }, [righe, usciti, origById, eliminati]);
   const nModifiche = diff.nuovi.length + diff.modificati.length + diff.eliminati.length;
 
   const salva = async () => {
@@ -190,7 +204,7 @@ export default function ModuloRankingEditori({ token, titoli, onDataChange }) {
   const esporta = () => {
     const XLSX = window.XLSX;
     if (!XLSX) return;
-    const rows = righe.map(r => ({ Ranking: r.ranking, Editore: r.editore_nome, Codice: r.codice_editore ?? "", Cedola: r.cedola, Account: r.account_editore ?? "", Promozione: r.promozione ?? "", "Stato RPN": r.stato_rpn === "in_arrivo" ? "In arrivo" : "Attivo", "Ingresso RPN": r.data_ingresso_rpn ?? "", "Titoli GM": titoliPerEditore[r.editore_nome] || 0, Note: r.note ?? "" }));
+    const rows = [...righe, ...usciti].map(r => ({ Stato: r.attivo === false ? `Uscito${r.data_uscita ? " " + r.data_uscita : ""}` : "Attivo", Ranking: r.ranking, Editore: r.editore_nome, Codice: r.codice_editore ?? "", Cedola: r.cedola, Account: r.account_editore ?? "", Promozione: r.promozione ?? "", "Stato RPN": r.stato_rpn === "in_arrivo" ? "In arrivo" : "Attivo", "Ingresso RPN": r.data_ingresso_rpn ?? "", "Titoli GM": titoliPerEditore[r.editore_nome] || 0, Note: r.note ?? "" }));
     const wb = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(rows), "Ranking editori");
     XLSX.writeFile(wb, `ranking_editori_${new Date().toISOString().slice(0, 10)}.xlsx`);
@@ -222,7 +236,7 @@ export default function ModuloRankingEditori({ token, titoli, onDataChange }) {
             <div style={{ color: T.textMid, fontSize: "11px", lineHeight: 1.6 }}>
               La sequenza decide l'ordine degli editori nelle cedole (poi, dentro ogni editore, conta la posizione del titolo).
               Trascina una riga o usa ↑↓ per spostare un editore: cambia solo il suo numero. <b style={{ color: T.text }}>=</b> lo mette a pari merito con quello sopra.
-              "Rinumera 1…N" ricompatta la sequenza in numeri interi. Nulla viene salvato finché non premi <b style={{ color: T.text }}>Salva</b>.
+              "Rinumera 1…N" ricompatta la sequenza in numeri interi. Se un editore esce, usa <b style={{ color: T.text }}>esce</b>: lascia la sequenza ma lo storico resta. Nulla viene salvato finché non premi <b style={{ color: T.text }}>Salva</b>.
             </div>
           </div>
           <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
@@ -250,7 +264,7 @@ export default function ModuloRankingEditori({ token, titoli, onDataChange }) {
         <button style={css.btn()} onClick={esporta}>Esporta Excel</button>
       </div>
 
-      {showNuovo && <NuovoEditore righe={righe} account={account} onAnnulla={() => setShowNuovo(false)} onAggiungi={(r) => {
+      {showNuovo && <NuovoEditore righe={righe} usciti={usciti} account={account} onAnnulla={() => setShowNuovo(false)} onAggiungi={(r) => {
         tmpId.current += 1;
         setRighe(rs => ordina([...rs, { ...r, id: null, _key: `new${tmpId.current}` }]));
         setShowNuovo(false);
@@ -269,14 +283,16 @@ export default function ModuloRankingEditori({ token, titoli, onDataChange }) {
             <input type="checkbox" checked={aggTitoli} onChange={e => setAggTitoli(e.target.checked)} /> aggiorna anche i titoli in GiroManager
           </label>
           <div style={{ flex: 1 }} />
-          <button style={css.btn()} onClick={() => { setRighe(ordina(orig)); setEliminati([]); }}>Annulla</button>
+          <button style={css.btn()} onClick={() => { setRighe(ordina(orig.filter(x => x.attivo))); setUsciti(ordina(orig.filter(x => !x.attivo))); setEliminati([]); }}>Annulla</button>
           <button style={css.btn("accent", saving)} disabled={saving} onClick={salva}>{saving ? "Salvataggio…" : "Salva"}</button>
           {showDiff && (
             <div style={{ width: "100%", fontSize: "11px", color: T.textMid, maxHeight: 180, overflow: "auto" }}>
               {diff.nuovi.map(r => <div key={r._key} style={{ color: T.green }}>+ {r.editore_nome} (rk {fmtRk(r.ranking)}, {r.cedola}{r.stato_rpn === "in_arrivo" ? ", in arrivo" : ""})</div>)}
               {diff.modificati.map(r => {
                 const o = origById[r.id];
-                return <div key={r._key}>✎ {r.editore_nome}: {CAMPI.filter(c => String(r[c] ?? "") !== String(o[c] ?? "")).map(c => `${c.replace("_editore", "")} ${o[c] ?? "—"} → ${r[c] || "—"}`).join(" · ")}</div>;
+                const cambi = CAMPI.filter(c => String(r[c] ?? "") !== String(o[c] ?? ""));
+                if (cambi.includes("attivo")) return <div key={r._key} style={{ color: r.attivo ? T.green : T.amber }}>{r.attivo ? "↺ RIATTIVATO" : "⏏ USCITO"} {r.editore_nome}{!r.attivo && r.data_uscita ? ` (dal ${r.data_uscita})` : ""}</div>;
+                return <div key={r._key}>✎ {r.editore_nome}: {cambi.map(c => `${c.replace("_editore", "")} ${o[c] ?? "—"} → ${r[c] || "—"}`).join(" · ")}</div>;
               })}
               {diff.eliminati.map(r => <div key={r.id} style={{ color: T.red }}>− {r.editore_nome}</div>)}
             </div>
@@ -356,6 +372,7 @@ export default function ModuloRankingEditori({ token, titoli, onDataChange }) {
                   </td>
                   <td style={{ ...css.td, color: nTit ? T.textMid : T.textDim }}>{nTit || "—"}</td>
                   <td style={css.td}>
+                    <button style={{ ...css.mini, color: T.amber }} title="Editore uscito: esce dalla sequenza, lo storico resta" onClick={() => esci(r)}>esce</button>{" "}
                     {nTit === 0 && <button style={{ ...css.mini, color: T.red }} title="Elimina (solo editori senza titoli)" onClick={() => elimina(r)}>✕</button>}
                   </td>
                 </tr>,
@@ -364,17 +381,47 @@ export default function ModuloRankingEditori({ token, titoli, onDataChange }) {
           </tbody>
         </table>
       </div>
+
+      {usciti.length > 0 && (
+        <div style={{ ...css.card, marginTop: 14, opacity: 0.85 }}>
+          <div style={{ color: T.textMid, fontWeight: 700, fontSize: "11px", letterSpacing: "0.1em", marginBottom: 8 }}>EDITORI USCITI ({usciti.length}) — fuori dalla sequenza, esclusi dagli abbinamenti automatici dell'import; titoli, prenotato e Fine Giro storici restano intatti</div>
+          <table style={{ width: "100%", borderCollapse: "collapse" }}>
+            <thead><tr>{["Ultimo rk", "Editore", "Codice", "Cedola", "Account", "Uscito il", "Titoli GM", ""].map(h => <th key={h} style={{ ...css.th, position: "static" }}>{h}</th>)}</tr></thead>
+            <tbody>
+              {usciti.map(r => {
+                const nTit = titoliPerEditore[r.editore_nome] || 0;
+                return (
+                  <tr key={r._key} style={{ color: T.textMid }}>
+                    <td style={{ ...css.td, color: T.textDim }}>{fmtRk(r.ranking)}</td>
+                    <td style={{ ...css.td, color: T.textMid, textDecoration: "line-through" }}>{r.editore_nome}</td>
+                    <td style={{ ...css.td, color: T.textDim }}>{r.codice_editore || "—"}</td>
+                    <td style={{ ...css.td, color: T.textDim }}>{r.cedola || "—"}</td>
+                    <td style={{ ...css.td, color: T.textDim }}>{r.account_editore || "—"}</td>
+                    <td style={css.td}><input type="date" style={css.input} value={r.data_uscita ?? ""} onChange={e => setUsciti(us => us.map(x => x._key === r._key ? { ...x, data_uscita: e.target.value } : x))} /></td>
+                    <td style={{ ...css.td, color: T.textDim }}>{nTit || "—"}</td>
+                    <td style={css.td}>
+                      <button style={{ ...css.mini, color: T.green }} title="Rientra nella sequenza con il suo ultimo ranking" onClick={() => riattiva(r)}>riattiva</button>{" "}
+                      {nTit === 0 && <button style={{ ...css.mini, color: T.red }} title="Elimina (solo editori senza titoli)" onClick={() => elimina(r)}>✕</button>}
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+      )}
     </div>
   );
 }
 
 // ─── Form nuovo editore ──────────────────────────────────────────────────────
-function NuovoEditore({ righe, account, onAggiungi, onAnnulla }) {
+function NuovoEditore({ righe, usciti = [], account, onAggiungi, onAnnulla }) {
   const [f, setF] = useState({ editore_nome: "", codice_editore: "", cedola: "C", account_editore: "", promozione: "PDE Promozione", stato_rpn: "in_arrivo", data_ingresso_rpn: `${new Date().getFullYear() + 1}-01-01`, note: "", dopo: "__fine_cat__", _newEntry: true });
   const set = (k, v) => setF(x => ({ ...x, [k]: v }));
   const nome = norm(f.editore_nome);
   const simili = nome.length >= 3 ? righe.filter(r => r.editore_nome.includes(nome) || nome.includes(r.editore_nome)).slice(0, 4) : [];
   const esatto = righe.some(r => r.editore_nome === nome);
+  const esattoUscito = usciti.some(r => r.editore_nome === nome);
 
   // ranking proposto: in fondo alla categoria scelta, oppure subito dopo l'editore indicato
   const rankingProposto = () => {
@@ -396,7 +443,7 @@ function NuovoEditore({ righe, account, onAggiungi, onAnnulla }) {
     return r2((p + n) / 2);
   };
 
-  const ok = nome && !esatto && f.cedola;
+  const ok = nome && !esatto && !esattoUscito && f.cedola;
   return (
     <div style={{ ...css.card, borderColor: T.green }}>
       <div style={{ color: T.green, fontWeight: 700, fontSize: "12px", marginBottom: 10 }}>+ Nuovo editore</div>
@@ -445,6 +492,7 @@ function NuovoEditore({ righe, account, onAggiungi, onAnnulla }) {
         </label>
       )}
       {esatto && <div style={{ color: T.red, fontSize: "11px", marginTop: 8 }}>Esiste già un editore con questo nome.</div>}
+      {esattoUscito && <div style={{ color: T.amber, fontSize: "11px", marginTop: 8 }}>Questo editore è tra gli usciti: usa "riattiva" in fondo alla pagina invece di crearne uno nuovo.</div>}
       {!esatto && simili.length > 0 && <div style={{ color: T.amber, fontSize: "11px", marginTop: 8 }}>Attenzione, nomi simili già presenti: {simili.map(s => s.editore_nome).join(", ")}</div>}
       <div style={{ display: "flex", gap: 8, marginTop: 12, alignItems: "center" }}>
         <button style={css.btn("green", !ok)} disabled={!ok} onClick={() => onAggiungi({
