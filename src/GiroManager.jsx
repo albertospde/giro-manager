@@ -5,6 +5,7 @@ import ModuloPrenotato from "./ModuloPrenotato.jsx";
 import ModuloAvanzamento from "./ModuloAvanzamento.jsx";
 import ModuloEditoriNewEntry from "./ModuloEditoriNewEntry.jsx";
 import ModuloTerne from "./ModuloTerne.jsx";
+import ModuloPubblicaRpn from "./ModuloPubblicaRpn.jsx";
 import { fetchPrenotatoRpn, fetchPrenotatoRpnCedola, parseEaggrega, importAggregato } from "./rpnPrenotatoSync.js";
 
 const SUPABASE_URL = "https://tdflwenlylhctxssatax.supabase.co";
@@ -4727,6 +4728,7 @@ const MODULES = [
 
 const MODULES_IMPORT = [
   { id: "import", label: "Import Cedola", icon: "↑" },
+  { id: "pubblicarpn", label: "Pubblica su RPN", icon: "⇪" },
   { id: "prenotato", label: "Import Prenotato", icon: "↳" },
   { id: "spalmatura", label: "Import Pesi Spalmatura", icon: "⚖" },
   { id: "newentry", label: "Editori New Entry", icon: "🆕" },
@@ -4896,6 +4898,7 @@ export default function App() {
           {activeModule === "spalmatura" && <ImportSpalmatura token={session.token} onImportDone={() => sbFetch("spalmatura_obiettivo?select=*", session.token).then(setSpalmatura)} />}
           {activeModule === "newentry" && <ModuloEditoriNewEntry token={session.token} onDataChange={refreshDati} />}
           {activeModule === "terne" && <ModuloTerne token={session.token} />}
+          {activeModule === "pubblicarpn" && <ModuloPubblicaRpn token={session.token} titoli={titoli} />}
         </div>
       </div>
     </div>
