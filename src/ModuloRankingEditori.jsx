@@ -184,7 +184,7 @@ export default function ModuloRankingEditori({ token, titoli, onDataChange }) {
       });
       const j = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(j.message || j.hint || `Errore ${res.status}`);
-      // editori nuovi "in arrivo" con codice: li registro anche in Editori New Entry (prenotazioni BookUp)
+      // editori nuovi "in arrivo" con codice: li registro anche in Nuovi editori (prenotazioni BookUp)
       const perNewEntry = diff.nuovi.filter(r => r._newEntry && r.codice_editore);
       for (const r of perNewEntry) {
         await fetch(`${SUPABASE_URL}/rest/v1/editori_new_entry?on_conflict=codice_editore`, {
@@ -193,7 +193,7 @@ export default function ModuloRankingEditori({ token, titoli, onDataChange }) {
           body: JSON.stringify({ codice_editore: r.codice_editore, nome_editore: r.editore_nome, attivo: true, data_ingresso_rpn: r.data_ingresso_rpn || null }),
         }).catch(() => {});
       }
-      setMsg(`Salvato: ${j.inseriti} nuovi · ${j.aggiornati} modificati · ${j.eliminati} eliminati${aggTitoli ? ` · ranking aggiornato su ${j.titoli_aggiornati} titoli` : ""}. Per le cedole già su RPN usa "Pubblica su RPN → Aggiorna" per riordinarle.`);
+      setMsg(`Salvato: ${j.inseriti} nuovi · ${j.aggiornati} modificati · ${j.eliminati} eliminati${aggTitoli ? ` · ranking aggiornato su ${j.titoli_aggiornati} titoli` : ""}. Per le cedole già su RPN usa "Crea cedola su RPN → Aggiorna" per riordinarle.`);
       setShowDiff(false);
       await carica();
       onDataChange && onDataChange();
@@ -488,7 +488,7 @@ function NuovoEditore({ righe, usciti = [], account, onAggiungi, onAnnulla }) {
       {f.stato_rpn === "in_arrivo" && (
         <label style={{ color: T.textMid, fontSize: "11px", display: "flex", gap: 6, alignItems: "center", marginTop: 10 }}>
           <input type="checkbox" checked={f._newEntry} onChange={e => set("_newEntry", e.target.checked)} disabled={!f.codice_editore.trim()} />
-          aggiungilo anche a "Editori New Entry" (raccolta prenotazioni in BookUp){!f.codice_editore.trim() && " — serve il codice editore"}
+          aggiungilo anche a "Nuovi editori" (raccolta prenotazioni in BookUp){!f.codice_editore.trim() && " — serve il codice editore"}
         </label>
       )}
       {esatto && <div style={{ color: T.red, fontSize: "11px", marginTop: 8 }}>Esiste già un editore con questo nome.</div>}
