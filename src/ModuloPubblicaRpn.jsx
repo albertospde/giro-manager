@@ -171,7 +171,7 @@ export default function ModuloPubblicaRpn({ token, titoli }) {
   return (
     <div style={{ flex: 1, overflowY: "auto", padding: 24 }}>
       <div style={css.card}>
-        <div style={css.h}>⇪ Pubblica cedole su RPN</div>
+        <div style={css.h}>⇪ Crea cedola su RPN</div>
         <div style={css.sub}>
           Crea su RPN giro e cedola se mancano, aggancia i titoli nell'ordine di "Giri e Cedole" e toglie quelli non più presenti in GiroManager.
           I titoli che RPN non ha ancora in anagrafica vengono ritentati in automatico ogni notte. L'attivazione per gli agenti è un passaggio separato.
