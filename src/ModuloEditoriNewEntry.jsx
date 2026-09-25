@@ -439,7 +439,7 @@ export default function ModuloEditoriNewEntry({ token, onDataChange }) {
             <table style={css.table}>
               <thead><tr><th style={css.th}>Codice</th><th style={css.th}>Nome</th><th style={css.th}>Ranking</th><th style={css.th}>Attivo</th><th style={css.th}></th></tr></thead>
               <tbody>
-                {editori.length === 0 && <tr><td style={css.td} colSpan={5}><span style={{ color: T.textDim }}>Nessun editore new entry ancora inserito.</span></td></tr>}
+                {editori.length === 0 && <tr><td style={css.td} colSpan={5}><span style={{ color: T.textDim }}>Nessun nuovo editore ancora inserito.</span></td></tr>}
                 {editori.map(ed => {
                   const rankingAttuale = rankingByNome[normEditoreKey(ed.nome_editore)];
                   const editing = rankEdit[ed.codice_editore];
