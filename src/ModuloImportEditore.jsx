@@ -507,6 +507,17 @@ async function fetchTitoliNoti(token, eans) {
   }
   return out;
 }
+async function fetchEsistentiExtra(token, nCedola, eans) {
+  const out = {};
+  const list = [...new Set(eans)];
+  const nome = encodeURIComponent(nCedola);
+  for (let i = 0; i < list.length; i += 150) {
+    const chunk = list.slice(i, i + 150);
+    const rows = await fetchJson(`${SUPABASE_URL}/rest/v1/titoli?select=*&giro_label=eq.EXTRA&n_cedola=eq.${nome}&ean=in.(${chunk.join(",")})&order=id.asc`, token);
+    rows.forEach(r => { if (!out[r.ean]) out[r.ean] = r; });
+  }
+  return out;
+}
 async function fetchEsistenti(token, giroIds, eans) {
   const out = {};
   const list = [...new Set(eans)];
@@ -538,6 +549,22 @@ export default function ModuloImportEditore({ token, onImportDone }) {
   const [editoreDefault, setEditoreDefault] = useState("");
   const [giroNum, setGiroNum] = useState("");
   const [giroAnno, setGiroAnno] = useState(String(new Date().getFullYear()));
+  // destinazione: giro numerato (GIRO N AAAA A/B/C…) oppure cedola extra (giro_label "EXTRA", nome libero)
+  const [modo, setModo] = useState("giro"); // giro | extra
+  const [nomeExtra, setNomeExtra] = useState("");
+  const [extraEsistenti, setExtraEsistenti] = useState([]);
+  useEffect(() => {
+    if (modo !== "extra" || extraEsistenti.length) return;
+    fetchJson(`${SUPABASE_URL}/rest/v1/titoli?giro_label=eq.EXTRA&select=n_cedola&order=updated_at.desc&limit=20000`, token)
+      .then(r => setExtraEsistenti([...new Set((r || []).map(x => x.n_cedola).filter(Boolean))]))
+      .catch(() => {});
+  }, [modo, token, extraEsistenti.length]);
+  // nome definitivo della cedola extra: maiuscolo, anno aggiunto se manca (come nel Carico Semplice)
+  const nCedolaExtra = useMemo(() => {
+    const n = String(nomeExtra || "").replace(/\s+/g, " ").trim().toUpperCase();
+    if (!n) return "";
+    return /\b20\d{2}\b/.test(n) || !/^\d{4}$/.test(giroAnno) ? n : `${n} ${giroAnno}`;
+  }, [nomeExtra, giroAnno]);
   const [showMapping, setShowMapping] = useState(false);
   const [dragOver, setDragOver] = useState(false);
   // un file lasciato fuori dal riquadro non deve far aprire il file nel browser
@@ -617,7 +644,8 @@ export default function ModuloImportEditore({ token, onImportDone }) {
   const finali = useMemo(() => {
     const cont = {};
     const visti = new Set();
-    const giroOk = /^\d+$/.test(giroNum) && /^\d{4}$/.test(giroAnno);
+    const extra = modo === "extra";
+    const giroOk = extra ? !!nCedolaExtra : /^\d+$/.test(giroNum) && /^\d{4}$/.test(giroAnno);
     const out = [];
     gruppi.forEach(gr => gr.righe.forEach(r => {
       let ed = scelte[gr.key] ?? gr.auto ?? null;
@@ -625,18 +653,19 @@ export default function ModuloImportEditore({ token, onImportDone }) {
       const a = ed ? anagByNome[ed] : null;
       const errs = [];
       if (!a) errs.push("editore da abbinare");
-      else if (!a.cedola) errs.push("editore senza categoria cedola");
+      else if (!a.cedola && !extra) errs.push("editore senza categoria cedola");
       if (!r.titolo) errs.push("titolo mancante");
-      if (!giroOk) errs.push("giro non impostato");
-      const dupKey = `${a?.cedola}|${r.ean}`;
+      if (!giroOk) errs.push(extra ? "nome cedola extra mancante" : "giro non impostato");
+      const dupKey = extra ? r.ean : `${a?.cedola}|${r.ean}`;
       const dup = visti.has(dupKey); visti.add(dupKey);
-      out.push({ ...r, editore_nome: ed, anag: a, errs, dup, n_cedola: a?.cedola && giroOk ? `GIRO ${giroNum} ${giroAnno} ${a.cedola}` : null });
+      const n_cedola = !giroOk ? null : extra ? nCedolaExtra : a?.cedola ? `GIRO ${giroNum} ${giroAnno} ${a.cedola}` : null;
+      out.push({ ...r, editore_nome: ed, anag: a, errs, dup, n_cedola });
     }));
     // ordine esatto del file; posizione progressiva per giro+editore
     out.sort((x, y) => x._riga - y._riga);
-    out.forEach(r => { if (r.dup) return; const k = `${giroNum} ${giroAnno}|${r.editore_nome}`; cont[k] = (cont[k] || 0) + 1; r.posizione = cont[k]; });
+    out.forEach(r => { if (r.dup) return; const k = `${r.n_cedola}|${r.editore_nome}`; cont[k] = (cont[k] || 0) + 1; r.posizione = cont[k]; });
     return out;
-  }, [gruppi, scelte, editoreDefault, giroNum, giroAnno, anagByNome, storicoEan, prefixIdx]);
+  }, [gruppi, scelte, editoreDefault, giroNum, giroAnno, modo, nCedolaExtra, anagByNome, storicoEan, prefixIdx]);
 
   const importabili = finali.filter(r => !r.errs.length && !r.dup);
   const conErrori = finali.filter(r => r.errs.length);
@@ -678,6 +707,11 @@ export default function ModuloImportEditore({ token, onImportDone }) {
       // giro e editore di default suggeriti dal nome file (es. "Giro 5 2026 - Neri Pozza.xlsx")
       const gm = f.name.match(/giro[\s_-]*(\d{1,2})(?:[\s_-]+(\d{4}))?/i);
       if (gm) { setGiroNum(gm[1]); if (gm[2]) setGiroAnno(gm[2]); }
+      // file di campagna/cedola extra (senza "giro N" nel nome): propone la modalità extra col nome file
+      else if (/extra|campagna|promo/i.test(f.name)) {
+        setModo("extra");
+        setNomeExtra(f.name.replace(/\.[^.]+$/, "").replace(/[_]+/g, " ").replace(/\s+/g, " ").trim().toUpperCase());
+      }
       const base = f.name.replace(/\.[^.]+$/, "").replace(/giro[\s_-]*\d+([\s_-]+\d{4})?/i, "");
       const guess = anag.map(a => ({ n: String(a.editore_nome).trim().toUpperCase(), s: Math.max(...base.split(/[_\-–.]+/).map(p => scoreEditore(p, a.editore_nome))) })).sort((x, y) => y.s - x.s)[0];
       setEditoreDefault(guess && guess.s >= 0.9 ? guess.n : "");
@@ -711,20 +745,28 @@ export default function ModuloImportEditore({ token, onImportDone }) {
   const handleImport = async () => {
     setImporting(true);
     try {
-      const combos = new Set(importabili.map(r => `${giroNum}|${giroAnno}|${r.anag.cedola}`));
-      const giriMap = await resolveGiri(token, combos);
-      const esistenti = await fetchEsistenti(token, Object.values(giriMap), importabili.map(r => r.ean));
+      const extra = modo === "extra";
+      let giriMap = {}, esistenti = {};
+      if (extra) {
+        // cedola extra: giro_id NULL, i titoli già presenti si riconoscono per nome cedola + EAN
+        esistenti = await fetchEsistentiExtra(token, nCedolaExtra, importabili.map(r => r.ean));
+      } else {
+        const combos = new Set(importabili.map(r => `${giroNum}|${giroAnno}|${r.anag.cedola}`));
+        giriMap = await resolveGiri(token, combos);
+        esistenti = await fetchEsistenti(token, Object.values(giriMap), importabili.map(r => r.ean));
+      }
       let aggiornati = 0;
       const payload = importabili.map(r => {
-        const giro_id = giriMap[`${giroNum}|${giroAnno}|${r.anag.cedola}`];
-        const ex = esistenti[`${giro_id}|${r.ean}`] || {};
+        const giro_id = extra ? null : giriMap[`${giroNum}|${giroAnno}|${r.anag.cedola}`];
+        const ex = (extra ? esistenti[r.ean] : esistenti[`${giro_id}|${r.ean}`]) || {};
         if (ex.id) aggiornati++;
         const g = r.gemelli;
         const haGemelli = g.length > 0;
         const noteTir = r.tiratura && r.obiettivoFonte !== "T" ? `TIRATURA ${r.tiratura}` : null;
         const note = [r.note, noteTir].filter(Boolean).join(" · ") || null;
         return {
-          giro_id, giro_label: `${giroNum} ${giroAnno}`, n_cedola: r.n_cedola,
+          _id: ex.id ?? null,
+          giro_id, giro_label: extra ? "EXTRA" : `${giroNum} ${giroAnno}`, n_cedola: r.n_cedola,
           ean: r.ean, titolo: r.titolo, autore: r.autore ?? ex.autore ?? null,
           editore_nome: r.editore_nome, codice_editore: r.anag.codice_editore ?? null,
           ranking_editore: r.anag.ranking ?? null, account_editore: r.anag.account_editore ?? null,
@@ -744,7 +786,19 @@ export default function ModuloImportEditore({ token, onImportDone }) {
           titolo_gemello_3: haGemelli ? g[2]?.titolo ?? null : ex.titolo_gemello_3 ?? null,
         };
       });
-      await fetchJson(`${SUPABASE_URL}/rest/v1/rpc/upsert_titoli`, token, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ payload }) });
+      if (!extra) {
+        await fetchJson(`${SUPABASE_URL}/rest/v1/rpc/upsert_titoli`, token, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ payload: payload.map(({ _id, ...p }) => p) }) });
+      } else {
+        // UNIQUE(ean, giro_id) non scatta con giro_id NULL: upsert duplicherebbe le righe a ogni reimport.
+        // Quindi: aggiornamento per id dei titoli già nella cedola, inserimento dei nuovi.
+        const upd = payload.filter(p => p._id), ins = payload.filter(p => !p._id).map(({ _id, ...p }) => p);
+        for (let i = 0; i < upd.length; i += 10) {
+          await Promise.all(upd.slice(i, i + 10).map(({ _id, ...p }) => fetchJson(`${SUPABASE_URL}/rest/v1/titoli?id=eq.${_id}`, token, { method: "PATCH", headers: { "Content-Type": "application/json", Prefer: "return=minimal" }, body: JSON.stringify(p) })));
+        }
+        for (let i = 0; i < ins.length; i += 200) {
+          await fetchJson(`${SUPABASE_URL}/rest/v1/titoli`, token, { method: "POST", headers: { "Content-Type": "application/json", Prefer: "return=minimal" }, body: JSON.stringify(ins.slice(i, i + 200)) });
+        }
+      }
 
       // memorizza gli abbinamenti nome-file → anagrafica per i prossimi import
       const nuoviAlias = gruppi
@@ -826,10 +880,22 @@ export default function ModuloImportEditore({ token, onImportDone }) {
 
       {/* Giro + foglio */}
       <div style={{ ...css.panel, display: "flex", gap: 20, alignItems: "center", flexWrap: "wrap" }}>
-        <label style={{ color: T.textMid, fontSize: "12px" }}>Giro&nbsp;
-          <input style={{ ...css.input, width: 50 }} value={giroNum} onChange={e => setGiroNum(e.target.value.replace(/\D/g, ""))} placeholder="N" />
-        </label>
-        <label style={{ color: T.textMid, fontSize: "12px" }}>Anno&nbsp;
+        <div style={{ display: "flex", border: `1px solid ${T.borderHi}`, borderRadius: 3, overflow: "hidden" }}>
+          {[["giro", "Giro numerato"], ["extra", "Cedola extra"]].map(([k, l]) => (
+            <button key={k} onClick={() => setModo(k)} style={{ ...css.btn(modo === k ? "accent" : "default"), border: "none", borderRadius: 0 }}>{l}</button>
+          ))}
+        </div>
+        {modo === "giro" ? (
+          <label style={{ color: T.textMid, fontSize: "12px" }}>Giro&nbsp;
+            <input style={{ ...css.input, width: 50 }} value={giroNum} onChange={e => setGiroNum(e.target.value.replace(/\D/g, ""))} placeholder="N" />
+          </label>
+        ) : (
+          <label style={{ color: T.textMid, fontSize: "12px" }} title="Scrivi un nome nuovo per creare la cedola, oppure scegline una esistente per aggiungere/aggiornare titoli">Nome cedola&nbsp;
+            <input style={{ ...css.input, width: 280, borderColor: nCedolaExtra ? T.borderHi : T.orange }} value={nomeExtra} onChange={e => setNomeExtra(e.target.value)} placeholder="es. CAMPAGNA NATALE GALLUCCI" list="extra-esistenti" />
+            <datalist id="extra-esistenti">{extraEsistenti.map(n => <option key={n} value={n} />)}</datalist>
+          </label>
+        )}
+        <label style={{ color: T.textMid, fontSize: "12px" }} title={modo === "extra" ? "Aggiunto al nome della cedola se non c'è già un anno" : ""}>Anno&nbsp;
           <input style={{ ...css.input, width: 64 }} value={giroAnno} onChange={e => setGiroAnno(e.target.value.replace(/\D/g, "").slice(0, 4))} />
         </label>
         {wb && wb.SheetNames.length > 1 && (
@@ -841,7 +907,9 @@ export default function ModuloImportEditore({ token, onImportDone }) {
           <input style={{ ...css.input, width: 50 }} type="number" min="1" value={headerRow + 1} onChange={e => cambiaHeaderRow(e.target.value)} />
         </label>
         <button style={css.btn()} onClick={() => setShowMapping(s => !s)}>{showMapping ? "▾" : "▸"} Colonne riconosciute</button>
-        <span style={{ color: T.textMid, fontSize: "11px" }}>La cedola (A/B/C/KIDS/SERVICE) è presa dall'anagrafica di ciascun editore</span>
+        <span style={{ color: T.textMid, fontSize: "11px" }}>{modo === "extra"
+          ? (nCedolaExtra ? <>Tutti i titoli vanno nella cedola extra <b style={{ color: T.accent }}>{nCedolaExtra}</b>{extraEsistenti.includes(nCedolaExtra) ? " (esistente: titoli aggiunti/aggiornati)" : " (nuova)"}</> : "Scrivi il nome della cedola extra")
+          : "La cedola (A/B/C/KIDS/SERVICE) è presa dall'anagrafica di ciascun editore"}</span>
       </div>
 
       {showMapping && (
