@@ -1,5 +1,9 @@
 import { useState, useMemo, useCallback, useEffect } from "react";
 import { resolveGiri } from "./ModuloImport.jsx";
+import { attivaDragDropGlobale } from "./dragDropGlobale.js";
+
+// trascinamento file su tutti i caricamenti di GiroManager (si attiva una volta sola all'avvio)
+attivaDragDropGlobale();
 
 // ═══════════════════════════════════════════════════════════════════════════
 // IMPORT CEDOLA DA FILE EDITORE
