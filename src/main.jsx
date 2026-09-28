@@ -1,6 +1,9 @@
 import { StrictMode } from 'react'
 import { createRoot } from 'react-dom/client'
 import App from './GiroManager.jsx'
+import { attivaDragDropGlobale } from './dragDropGlobale.js'
+
+attivaDragDropGlobale()
 
 createRoot(document.getElementById('root')).render(
   <StrictMode>
