@@ -146,7 +146,7 @@ export default function ModuloPrenotato({ token, titoli, onImportDone }) {
             <div style={{ fontSize: "32px", marginBottom: 12 }}>📂</div>
             <div style={{ color: T.text, marginBottom: 8 }}>Carica il file "Pianifica Visite"</div>
             <div style={{ color: T.textMid, fontSize: "11px", marginBottom: 20 }}>File .xlsx esportato dal sistema Messaggerie</div>
-            <input type="file" accept=".xlsx" onChange={handleFile} style={{ display: "none" }} id="pv-file-input" />
+            <input type="file" accept=".xlsx,.xls" onChange={handleFile} style={{ display: "none" }} id="pv-file-input" />
             <label htmlFor="pv-file-input" style={{ ...css.btn("accent"), cursor: "pointer", padding: "8px 20px" }}>Scegli file .xlsx</label>
           </div>
         </div>

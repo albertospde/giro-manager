@@ -283,7 +283,7 @@ export default function ModuloImport({ token, onImportDone }) {
                 <div style={{ fontSize: "32px", marginBottom: 12 }}>📂</div>
                 <div style={{ color: T.text, marginBottom: 8 }}>{loadingFile ? "Elaborazione in corso..." : "Carica il template compilato"}</div>
                 <div style={{ color: T.textMid, fontSize: "11px", marginBottom: 20 }}>Solo file .xlsx — usa il template ufficiale</div>
-                <input type="file" accept=".xlsx" onChange={handleFile} style={{ display: "none" }} id="file-input" disabled={loadingFile} />
+                <input type="file" accept=".xlsx,.xls" onChange={handleFile} style={{ display: "none" }} id="file-input" disabled={loadingFile} />
                 <label htmlFor="file-input" style={{ ...css.btn("accent"), cursor: loadingFile ? "default" : "pointer", padding: "8px 20px", opacity: loadingFile ? 0.6 : 1 }}>Scegli file .xlsx</label>
               </div>
               <div style={{ color: T.textMid, fontSize: "11px" }}>
@@ -528,7 +528,7 @@ export function ImportSpalmatura({ token, onImportDone }) {
             <div style={{ fontSize: "32px", marginBottom: 12 }}>⚖️</div>
             <div style={{ color: T.text, marginBottom: 8 }}>{loadingFile ? "Elaborazione in corso..." : "Carica il template pesi spalmatura compilato"}</div>
             <div style={{ color: T.textMid, fontSize: "11px", marginBottom: 20 }}>Solo file .xlsx — foglio "SPALMATURA"</div>
-            <input type="file" accept=".xlsx" onChange={handleFile} style={{ display: "none" }} id="file-input-spalmatura" disabled={loadingFile} />
+            <input type="file" accept=".xlsx,.xls" onChange={handleFile} style={{ display: "none" }} id="file-input-spalmatura" disabled={loadingFile} />
             <label htmlFor="file-input-spalmatura" style={{ ...css.btn("accent"), cursor: loadingFile ? "default" : "pointer", padding: "8px 20px", opacity: loadingFile ? 0.6 : 1 }}>Scegli file .xlsx</label>
           </div>
           <div style={{ color: T.textMid, fontSize: "11px" }}>

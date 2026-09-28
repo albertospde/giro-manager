@@ -157,11 +157,18 @@ export default function ModuloTerne({ token }) {
     e.target.value = "";
     setFile(null); setAnalisi(null); setErroreFile(null); setConferma(false); setEsito(null);
     if (!f) return;
-    if (!/\.xlsx$/i.test(f.name)) { setErroreFile("Il file deve essere in formato .xlsx"); return; }
+    if (!/\.xlsx?$/i.test(f.name)) { setErroreFile("Il file deve essere in formato .xlsx o .xls"); return; }
     try {
-      const a = leggiTerne(await f.arrayBuffer());
+      const buf = await f.arrayBuffer();
+      const a = leggiTerne(buf);
       if (!a.righe.length) throw new Error("Il file non contiene terne");
-      setFile(f); setAnalisi(a);
+      // RPN accetta solo .xlsx: un .xls viene convertito prima del caricamento
+      let daCaricare = f;
+      if (/\.xls$/i.test(f.name)) {
+        const X = window.XLSX; const out = X.write(X.read(buf, { type: "array" }), { bookType: "xlsx", type: "array" });
+        daCaricare = new File([out], f.name.replace(/\.xls$/i, ".xlsx"), { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" });
+      }
+      setFile(daCaricare); setAnalisi(a);
     } catch (err) { setErroreFile(err.message); }
   };
 
@@ -231,7 +238,7 @@ export default function ModuloTerne({ token }) {
           File .xlsx con tre colonne, in quest'ordine: <b>Codice agente · Codice editore · Codice libreria</b> (stesso formato dell'export RPN).
           <br /><span style={{ color: T.amber }}>⚠ Il caricamento SOSTITUISCE tutte le terne presenti su RPN: il file deve contenere l'elenco completo, non solo le modifiche.</span>
         </div>
-        <input type="file" accept=".xlsx" id="terne-file" style={{ display: "none" }} onChange={scegliFile} disabled={busy} />
+        <input type="file" accept=".xlsx,.xls" id="terne-file" style={{ display: "none" }} onChange={scegliFile} disabled={busy} />
         <label htmlFor="terne-file" style={{ ...css.btn("default", busy), display: "inline-block" }}>Scegli file .xlsx</label>
         {erroreFile && <div style={{ color: T.red, fontSize: 12, marginTop: 10 }}>⚠ {erroreFile}</div>}
 

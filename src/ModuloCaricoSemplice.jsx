@@ -295,7 +295,7 @@ export default function ModuloCaricoSemplice({ giriList, titoliEsistenti, token,
               <div style={{ fontSize: "32px", marginBottom: 12 }}>📂</div>
               <div style={{ color: T.text, marginBottom: 8 }}>Carica il template compilato</div>
               <div style={{ color: T.textMid, fontSize: "11px", marginBottom: 20 }}>Solo file .xlsx — template "Carico Semplice"</div>
-              <input type="file" accept=".xlsx" onChange={handleFile} style={{ display: "none" }} id="file-input-carico" />
+              <input type="file" accept=".xlsx,.xls" onChange={handleFile} style={{ display: "none" }} id="file-input-carico" />
               <label htmlFor="file-input-carico" style={{ ...css.btn("accent"), cursor: "pointer", padding: "8px 20px" }}>Scegli file .xlsx</label>
             </div>
             <div style={{ color: T.textMid, fontSize: "11px" }}>
