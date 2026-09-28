@@ -1,4 +1,4 @@
-import { useState, useMemo, useCallback } from "react";
+import { useState, useMemo, useCallback, useEffect } from "react";
 import { resolveGiri } from "./ModuloImport.jsx";
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -50,7 +50,7 @@ const CAMPI = [
 
 // Riconoscimento intestazioni (su testo normalizzato minuscolo senza accenti)
 const RX = {
-  gemello: /(gemell|twin|abbinat|collegat|correlat)/,
+  gemello: /(gemell|twin|abbinat|collegat|correlat|comparab|affin|titol[oi] (simil|di riferimento)|(ean|isbn) (simil|di riferimento))/,
   ean: /\b(ean|isbn|ean ?13|isbn ?13|barcode|codice a barre)\b/,
   titolo: /^(titolo|title|titoli)\b|titolo (opera|libro|volume)/,
   autore: /(autor|author|a cura)/,
@@ -130,20 +130,32 @@ function parseUscita(v) {
   if (m) { const n = parseInt(m[1]); if (n >= 1 && n <= 12) return MESI[n - 1]; }
   return s || null;
 }
-// "9788845912345 Titolo A; 9788845900000 Titolo B" → [{ean, titolo}]
-function parseGemelliTesto(v) {
-  if (!v) return [];
-  const out = [];
-  String(v).split(/[;\n|]+/).forEach(seg => {
-    const m = seg.match(/97[89][\d\s-]{10,16}/);
-    if (!m) return;
-    const ean = parseEan(m[0]);
-    if (!ean) return;
-    const tit = seg.replace(m[0], "").replace(/^[\s\-–:,.()]+|[\s\-–:,.()]+$/g, "");
-    out.push({ ean, titolo: cleanText(tit) });
-  });
-  return out;
+// Cella gemelli in qualsiasi forma → [{ean, titolo}]
+// "9788845912345" · "9788845912345 - Titolo A" · "Titolo A (978-88-459-1234-5)"
+// "978... Titolo A / 978... Titolo B" · con a capo, ; | / , come separatori
+// Il testo tra due EAN viene attribuito all'EAN "più vicino": prima quello che segue
+// l'EAN (formato EAN + titolo), altrimenti quello che lo precede (formato titolo + EAN).
+const RX_EAN_IN_TESTO = /97[89](?:[\s-]?\d){10}/g;
+const pulisciTitoloGemello = (s) => cleanText(String(s ?? "").replace(/^[\s\-–—:;,.()/|\[\]]+|[\s\-–—:;,.()/|\[\]]+$/g, "").replace(/\b(ean|isbn)\b\s*:?/gi, " "));
+function estraiGemelliCella(v) {
+  if (v === null || v === undefined || v === "") return [];
+  if (typeof v === "number") { const e = parseEan(v); return e ? [{ ean: e, titolo: null }] : []; }
+  const s = String(v);
+  const hits = [...s.matchAll(RX_EAN_IN_TESTO)];
+  if (!hits.length) return [];
+  const out = hits.map(h => ({ ean: parseEan(h[0]), start: h.index, end: h.index + h[0].length, titolo: null })).filter(x => x.ean);
+  if (!out.length) return [];
+  const segDopo = out.map((x, i) => pulisciTitoloGemello(s.slice(x.end, out[i + 1]?.start ?? s.length)));
+  const segPrima = pulisciTitoloGemello(s.slice(0, out[0].start));
+  if (!segPrima) out.forEach((x, i) => { x.titolo = segDopo[i]; });          // EAN Titolo, EAN Titolo
+  else out.forEach((x, i) => { x.titolo = i === 0 ? segPrima : segDopo[i - 1]; }); // Titolo EAN, Titolo EAN
+  return out.map(({ ean, titolo }) => ({ ean, titolo: titolo || null }));
 }
+// Colonna "titolo gemello" che per errore contiene anche l'EAN: tiene solo il testo
+const soloTitolo = (v) => {
+  if (v === null || v === undefined || v === "" || typeof v === "number") return null;
+  return pulisciTitoloGemello(String(v).replace(RX_EAN_IN_TESTO, " ")) || null;
+};
 
 // ─── Matching editori ────────────────────────────────────────────────────────
 const GENERICHE = new Set(["EDIZIONI", "EDIZIONE", "EDITORE", "EDITORI", "EDITRICE", "EDITORIALE", "CASA", "SRL", "SRLS", "SPA", "SAS", "SNC", "AD", "ED", "EDIT", "GRUPPO", "LIBRI", "PUBLISHING", "BOOKS", "ITALIA", "ITALY", "ITALIANA", "IL", "LO", "LA", "GLI", "LE", "I", "L", "DI", "DEL", "DELLA", "DEI", "DEGLI", "D", "E", "AND", "THE"]);
@@ -254,18 +266,36 @@ function rilevaMapping(aoa, headerRow) {
   // gemelli
   let ne = 0, nt = 0;
   const dati = aoa.slice(headerRow + 1, headerRow + 200);
-  const colonnaMista = (i) => {
-    const v = dati.map(r => String(r?.[i] ?? "").trim()).filter(Boolean);
-    return v.some(x => /97[89]\d{10}/.test(x.replace(/[\s-]/g, ""))) && v.some(x => !parseEan(x));
+  const conEan = (i) => dati.filter(r => estraiGemelliCella(r?.[i]).length).length;
+  const testuale = (i) => {
+    const v = dati.map(r => r?.[i]).filter(x => typeof x === "string" && x.trim());
+    return v.length > 0 && v.filter(x => !estraiGemelliCella(x).length && !parseEan(x)).length >= v.length * 0.6;
   };
-  if (gemCols.length === 1 && colonnaMista(gemCols[0].i)) {
+  if (gemCols.length === 1) {
+    // colonna unica: EAN, titolo o entrambi nella stessa cella → parser misto
     map.gemelli_testo = gemCols[0].i;
   } else {
     gemCols.forEach(g => {
-      if (g.isEan && ne < 3) map[`gem_ean_${++ne}`] = g.i;
-      else if (!g.isEan && nt < 3) map[`gem_tit_${++nt}`] = g.i;
+      // il tipo lo decide il contenuto, non solo l'intestazione ("Gemello 1" può contenere EAN)
+      const isEan = conEan(g.i) > 0 && (g.isEan || !testuale(g.i));
+      if (isEan && ne < 3) map[`gem_ean_${++ne}`] = g.i;
+      else if (!isEan && nt < 3) map[`gem_tit_${++nt}`] = g.i;
     });
   }
+  // EAN gemello senza colonna titolo: prova la colonna accanto (destra, poi sinistra),
+  // es. "EAN GEMELLO | TITOLO" dove la seconda intestazione non dice "gemello"
+  const giaMappate = () => new Set(Object.values(map).filter(i => i >= 0));
+  const unica = map.gemelli_testo >= 0 && ne === 0 ? [["gemelli_testo", "gem_tit_1"]] : [];
+  [...[1, 2, 3].map(k => [`gem_ean_${k}`, `gem_tit_${k}`]), ...unica].forEach(([ke, kt]) => {
+    const ie = map[ke];
+    if (!(ie >= 0) || map[kt] >= 0) return;
+    // se le celle hanno già EAN + titolo insieme non serve cercare altrove
+    const celle = dati.map(r => estraiGemelliCella(r?.[ie])).filter(x => x.length);
+    if (!celle.length || celle.filter(x => x.every(g => !g.titolo)).length < celle.length * 0.6) return;
+    const occ = giaMappate();
+    const adj = [ie + 1, ie - 1].find(i => i >= 0 && i < ncol && !occ.has(i) && !used.has(i) && testuale(i));
+    if (adj !== undefined) { map[kt] = adj; used.add(adj); }
+  });
   // fallback EAN da contenuto
   if (map.ean < 0) {
     let bestI = -1, bestN = 0;
@@ -306,11 +336,25 @@ function estraiRighe(aoa, headerRow, map) {
     }
     const gemelli = [];
     for (let g = 1; g <= 3; g++) {
-      const ge = parseEan(get(row, `gem_ean_${g}`));
-      const gt = cleanText(get(row, `gem_tit_${g}`));
-      if (ge || gt) gemelli.push({ ean: ge, titolo: gt });
+      if (g === 1 && map.gem_ean_1 < 0 && map.gemelli_testo >= 0) continue; // titolo accanto alla colonna unica: gestito sotto
+      const vE = get(row, `gem_ean_${g}`), vT = get(row, `gem_tit_${g}`);
+      // la cella EAN può contenere anche il titolo (o più gemelli); la colonna titolo può contenere anche l'EAN
+      const daE = estraiGemelliCella(vE);
+      const daT = daE.length ? [] : estraiGemelliCella(vT);
+      const items = daE.length ? daE : daT;
+      const tit = soloTitolo(vT);
+      if (!items.length) { if (tit) gemelli.push({ ean: null, titolo: tit }); continue; }
+      items.forEach((x, j) => gemelli.push({ ean: x.ean, titolo: (j === 0 && tit) || x.titolo || null }));
     }
-    parseGemelliTesto(get(row, "gemelli_testo")).forEach(x => gemelli.push(x));
+    const vTxt = get(row, "gemelli_testo");
+    const daTxt = estraiGemelliCella(vTxt);
+    if (daTxt.length) {
+      // titolo da colonna accanto (se rilevata) solo per il primo gemello senza titolo
+      const titAdj = map.gem_ean_1 >= 0 ? null : soloTitolo(get(row, "gem_tit_1"));
+      daTxt.forEach((x, j) => gemelli.push({ ean: x.ean, titolo: x.titolo || (j === 0 ? titAdj : null) }));
+    } else if (map.gem_ean_1 < 0 && map.gem_tit_1 < 0 && cleanText(vTxt)) {
+      gemelli.push({ ean: null, titolo: cleanText(vTxt) });
+    }
     const obiettivo = parseIntero(get(row, "obiettivo"));
     const tiratura = parseIntero(get(row, "tiratura"));
     righe.push({
@@ -361,6 +405,22 @@ async function fetchStoricoEan(token, eans) {
   }
   return out;
 }
+// Titoli già noti in Supabase per gli EAN gemelli arrivati senza titolo nel file
+async function fetchTitoliNoti(token, eans) {
+  const out = {};
+  const list = [...new Set(eans)].filter(Boolean);
+  for (let i = 0; i < list.length; i += 150) {
+    const chunk = list.slice(i, i + 150).join(",");
+    const q = [
+      `titoli?select=ean,titolo&ean=in.(${chunk})&titolo=not.is.null`,
+      `titoli_novita?select=ean,titolo&ean=in.(${chunk})&titolo=not.is.null`,
+      ...[1, 2, 3].map(k => `titoli?select=ean:ean_gemello_${k},titolo:titolo_gemello_${k}&ean_gemello_${k}=in.(${chunk})&titolo_gemello_${k}=not.is.null`),
+    ];
+    const res = await Promise.all(q.map(u => fetchJson(`${SUPABASE_URL}/rest/v1/${u}`, token).catch(() => [])));
+    res.flat().forEach(r => { if (r?.ean && r.titolo && !out[r.ean]) out[r.ean] = String(r.titolo).replace(/\s+/g, " ").trim().toUpperCase(); });
+  }
+  return out;
+}
 async function fetchEsistenti(token, giroIds, eans) {
   const out = {};
   const list = [...new Set(eans)];
@@ -393,6 +453,14 @@ export default function ModuloImportEditore({ token, onImportDone }) {
   const [giroNum, setGiroNum] = useState("");
   const [giroAnno, setGiroAnno] = useState(String(new Date().getFullYear()));
   const [showMapping, setShowMapping] = useState(false);
+  const [dragOver, setDragOver] = useState(false);
+  // un file lasciato fuori dal riquadro non deve far aprire il file nel browser
+  useEffect(() => {
+    const blocca = (e) => { if (e.dataTransfer?.types?.includes("Files")) e.preventDefault(); };
+    window.addEventListener("dragover", blocca);
+    window.addEventListener("drop", blocca);
+    return () => { window.removeEventListener("dragover", blocca); window.removeEventListener("drop", blocca); };
+  }, []);
   const [importing, setImporting] = useState(false);
   const [done, setDone] = useState(null);
 
@@ -403,7 +471,25 @@ export default function ModuloImportEditore({ token, onImportDone }) {
   }, [anagrafica]);
   const nomiAnagrafica = useMemo(() => Object.values(anagByNome).sort((a, b) => (a.ranking ?? 999) - (b.ranking ?? 999)), [anagByNome]);
 
-  const { righe, scartate } = useMemo(() => (aoa.length ? estraiRighe(aoa, headerRow, map) : { righe: [], scartate: [] }), [aoa, headerRow, map]);
+  const { righe: righeFile, scartate } = useMemo(() => (aoa.length ? estraiRighe(aoa, headerRow, map) : { righe: [], scartate: [] }), [aoa, headerRow, map]);
+
+  // Gemelli senza titolo nel file → titolo recuperato da Supabase (titoli / titoli_novita / gemelli già salvati)
+  const [titoliNoti, setTitoliNoti] = useState({});
+  const eanGemelliSenzaTitolo = useMemo(() => [...new Set(righeFile.flatMap(r => r.gemelli.filter(g => g.ean && !g.titolo).map(g => g.ean)))].sort().join(","), [righeFile]);
+  useEffect(() => {
+    if (!eanGemelliSenzaTitolo) { setTitoliNoti({}); return; }
+    let vivo = true;
+    fetchTitoliNoti(token, eanGemelliSenzaTitolo.split(",")).then(m => { if (vivo) setTitoliNoti(m); }).catch(() => {});
+    return () => { vivo = false; };
+  }, [eanGemelliSenzaTitolo, token]);
+  const righe = useMemo(() => righeFile.map(r => ({
+    ...r,
+    gemelli: r.gemelli.map(g => (g.ean && !g.titolo && titoliNoti[g.ean] ? { ...g, titolo: titoliNoti[g.ean], titoloDaDb: true } : g)),
+  })), [righeFile, titoliNoti]);
+  const gemStat = useMemo(() => {
+    const all = righe.flatMap(r => r.gemelli.filter(g => g.ean));
+    return { tot: all.length, daDb: all.filter(g => g.titoloDaDb).length, senza: all.filter(g => !g.titolo).length };
+  }, [righe]);
 
   // Gruppi editore: per nome nel file (colonna o riga di sezione), altrimenti "senza nome"
   const gruppi = useMemo(() => {
@@ -478,10 +564,12 @@ export default function ModuloImportEditore({ token, onImportDone }) {
     return { data, hr, m };
   };
 
+  // accetta sia l'evento dell'input file sia un File trascinato
   const handleFile = useCallback(async (e) => {
-    const f = e.target.files[0];
+    const f = e instanceof File ? e : e?.target?.files?.[0];
     if (!f) return;
-    e.target.value = "";
+    if (!(e instanceof File)) e.target.value = "";
+    if (!/\.(xlsx|xls|xlsm|csv)$/i.test(f.name)) { alert("Formato non supportato: usa .xlsx, .xls, .xlsm o .csv"); return; }
     setLoading(true);
     try {
       const [anag, al, pref] = await Promise.all([
@@ -593,9 +681,13 @@ export default function ModuloImportEditore({ token, onImportDone }) {
   // ─── UI ───────────────────────────────────────────────────────────────────
   if (step === "upload") return (
     <div style={{ maxWidth: 560 }}>
-      <div style={{ border: `2px dashed ${T.borderHi}`, borderRadius: 6, padding: 40, textAlign: "center", marginBottom: 16 }}>
+      <div
+        onDragOver={e => { e.preventDefault(); e.dataTransfer.dropEffect = "copy"; if (!dragOver) setDragOver(true); }}
+        onDragLeave={e => { if (!e.currentTarget.contains(e.relatedTarget)) setDragOver(false); }}
+        onDrop={e => { e.preventDefault(); setDragOver(false); if (!loading && e.dataTransfer.files?.[0]) handleFile(e.dataTransfer.files[0]); }}
+        style={{ border: `2px dashed ${dragOver ? T.accent : T.borderHi}`, background: dragOver ? T.accent + "14" : "transparent", borderRadius: 6, padding: 40, textAlign: "center", marginBottom: 16, transition: "all .15s" }}>
         <div style={{ fontSize: "32px", marginBottom: 12 }}>📑</div>
-        <div style={{ color: T.text, marginBottom: 8 }}>{loading ? "Lettura e analisi in corso..." : "Carica il file ricevuto dall'editore"}</div>
+        <div style={{ color: T.text, marginBottom: 8 }}>{loading ? "Lettura e analisi in corso..." : dragOver ? "Rilascia qui il file" : "Trascina qui il file ricevuto dall'editore, oppure"}</div>
         <div style={{ color: T.textMid, fontSize: "11px", marginBottom: 20 }}>.xlsx, .xls o .csv, qualsiasi layout: colonne ed editori vengono riconosciuti in automatico</div>
         <input type="file" accept=".xlsx,.xls,.xlsm,.csv" onChange={handleFile} style={{ display: "none" }} id="file-editore" disabled={loading} />
         <label htmlFor="file-editore" style={{ ...css.btn("accent"), cursor: loading ? "default" : "pointer", padding: "8px 20px", opacity: loading ? 0.6 : 1 }}>Scegli file</label>
@@ -630,6 +722,13 @@ export default function ModuloImportEditore({ token, onImportDone }) {
         <div style={css.box()}><span style={{ color: T.textMid, fontSize: "11px" }}>File: </span><span style={{ color: T.text, fontWeight: 700 }}>{fileName}</span></div>
         <div style={css.box()}><span style={{ color: T.textMid, fontSize: "11px" }}>Titoli letti: </span><span style={{ fontWeight: 700 }}>{finali.length}</span></div>
         <div style={css.box(daVerificare.length ? T.orange : T.green)}><span style={{ color: T.textMid, fontSize: "11px" }}>Editori da verificare: </span><span style={{ fontWeight: 700, color: daVerificare.length ? T.orange : T.green }}>{daVerificare.length}</span></div>
+        {gemStat.tot > 0 && (
+          <div style={css.box(gemStat.senza ? T.orange : T.green)} title={gemStat.daDb ? `${gemStat.daDb} titoli gemelli non presenti nel file, recuperati da Supabase` : ""}>
+            <span style={{ color: T.textMid, fontSize: "11px" }}>Gemelli: </span><span style={{ fontWeight: 700 }}>{gemStat.tot}</span>
+            {gemStat.daDb > 0 && <span style={{ color: T.blue, fontSize: "11px" }}> · {gemStat.daDb} titoli da Supabase</span>}
+            {gemStat.senza > 0 && <span style={{ color: T.orange, fontSize: "11px", fontWeight: 700 }}> · {gemStat.senza} senza titolo</span>}
+          </div>
+        )}
         <div style={css.box(conErrori.length ? T.red : T.green)}><span style={{ color: T.textMid, fontSize: "11px" }}>Righe con errori: </span><span style={{ fontWeight: 700, color: conErrori.length ? T.red : T.green }}>{conErrori.length}</span></div>
         <div style={{ marginLeft: "auto", display: "flex", gap: 8 }}>
           <button style={css.btn()} onClick={reset}>← Ricarica</button>
@@ -739,7 +838,7 @@ export default function ModuloImportEditore({ token, onImportDone }) {
                 <td style={{ ...css.td, color: T.accent }}>{r.top_100 ? "★" : ""}</td>
                 <td style={css.td} title={r.obiettivoFonte === "T" ? "Da tiratura" : ""}>{r.obiettivo ?? r.tiratura ?? ""}{r.obiettivoFonte === "T" && <span style={{ color: T.blue, fontSize: "10px" }}> T</span>}</td>
                 <td style={{ ...css.td, color: T.textMid, fontSize: "11px", maxWidth: 180, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }} title={r.note ?? ""}>{r.note}</td>
-                <td style={{ ...css.td, fontSize: "11px", color: T.textMid, whiteSpace: "nowrap" }} title={r.gemelli.map(g => `${g.ean ?? ""} ${g.titolo ?? ""}`).join("\n")}>{r.gemelli.length ? `${r.gemelli.length} ⇄` : ""}</td>
+                <td style={{ ...css.td, fontSize: "11px", color: r.gemelli.some(g => !g.titolo) ? T.orange : T.textMid, whiteSpace: "nowrap" }} title={r.gemelli.map(g => `${g.ean ?? ""} ${g.titolo ?? "(titolo mancante)"}${g.titoloDaDb ? " [da Supabase]" : ""}`).join("\n")}>{r.gemelli.length ? `${r.gemelli.length} ⇄${r.gemelli.some(g => !g.titolo) ? " ⚠" : ""}` : ""}</td>
                 <td style={{ ...css.td, color: T.red, fontSize: "11px", whiteSpace: "nowrap" }}>{r.dup ? <span style={{ color: T.textMid }}>EAN duplicato, ignorato</span> : r.errs.join(", ")}</td>
               </tr>
             ))}
