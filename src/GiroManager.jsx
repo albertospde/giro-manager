@@ -4527,21 +4527,22 @@ function ModuloAnticipiLancio({ token, userEmail }) {
     // (HTML + testo separato da tabulazioni) e si incolla nella mail con Ctrl+V.
     const colonne = [
       ["Cliente", r => r.codice_cliente],
-      ["EAN", r => r.ean],
+      ["Ean", r => r.ean],
       ["Titolo", r => r.titolo],
       ["Autore", r => r.autore],
       ["Editore", r => r.editore],
-      ["Prezzo", r => r.prezzo != null ? `€ ${Number(r.prezzo).toFixed(2).replace(".", ",")}` : ""],
-      ["Qtà", r => r.quantita],
+      ["Prezzo", r => r.prezzo != null ? `${Number(r.prezzo).toFixed(2).replace(".", ",")} €` : ""],
+      ["Quantità", r => r.quantita],
       ["N° ordine", r => r.numero_ordine],
-      ["Consegna desiderata", r => r.data_consegna_desiderata ? fmtDataIt(r.data_consegna_desiderata) : ""],
+      ["Consegna Desiderata", r => r.data_consegna_desiderata ? fmtDataIt(r.data_consegna_desiderata) : ""],
     ];
+    const aDestra = new Set(["Prezzo", "Quantità", "Consegna Desiderata"]);
     const esc = (v) => String(v ?? "").replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
-    const cella = "border:1px solid #808080;padding:4px 8px;font-family:Calibri,Arial,sans-serif;font-size:11pt;";
+    const cella = "border:1px solid #000;padding:4px 8px;font-family:Calibri,Arial,sans-serif;font-size:11pt;";
     const tabellaHtml =
-      `<table style="border-collapse:collapse;border:1px solid #808080;">` +
-      `<tr>${colonne.map(([h]) => `<th style="${cella}background:#d9e1f2;text-align:left;">${esc(h)}</th>`).join("")}</tr>` +
-      righeSel.map(r => `<tr>${colonne.map(([h, f]) => `<td style="${cella}${h === "Qtà" || h === "Prezzo" ? "text-align:right;" : ""}">${esc(f(r))}</td>`).join("")}</tr>`).join("") +
+      `<table style="border-collapse:collapse;border:1px solid #000;">` +
+      `<tr>${colonne.map(([h]) => `<td style="${cella}">${esc(h)}</td>`).join("")}</tr>` +
+      righeSel.map(r => `<tr>${colonne.map(([h, f]) => `<td style="${cella}${aDestra.has(h) ? "text-align:right;" : ""}">${esc(f(r))}</td>`).join("")}</tr>`).join("") +
       `</table>`;
     const p = (t) => `<p style="font-family:Calibri,Arial,sans-serif;font-size:11pt;margin:0 0 12px 0;">${t}</p>`;
     const corpoHtml = `<div>${p("Buongiorno,")}${p("di seguito vi segnalo uno o più ordini da gestire con anticipo lancio:")}${tabellaHtml}<br>${p("Grazie di una conferma di presa in carico.")}${p(esc(firma || "[Firma]").replace(/\n/g, "<br>"))}</div>`;
