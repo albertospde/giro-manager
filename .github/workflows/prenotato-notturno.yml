@@ -22,7 +22,7 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
-          node-version: 20
+          node-version: 22
       - name: Installa lettore Excel
         run: npm install --no-save --no-package-lock xlsx@0.18.5
       - name: Aggiorna prenotato da RPN
