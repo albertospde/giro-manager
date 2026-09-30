@@ -75,9 +75,11 @@ async function aggiorna(target, canaleId) {
     return true;
   } catch (e) {
     const msg = e instanceof Error ? e.message : String(e);
-    await job("log", { id: logId, stato: "errore", finito_at: new Date().toISOString(), durata_ms: Date.now() - t0, messaggio: msg.slice(0, 2000) }).catch(() => {});
-    console.log(`ERR  ${tipo} ${chiave}: ${msg.slice(0, 300)}`);
-    return false;
+    // Giro/cedola non ancora creato su RPN (es. giro dell'anno prossimo): non è un errore
+    const saltato = msg.includes("non trovat") && msg.includes("su RPN");
+    await job("log", { id: logId, stato: saltato ? "saltato" : "errore", finito_at: new Date().toISOString(), durata_ms: Date.now() - t0, messaggio: msg.slice(0, 2000) }).catch(() => {});
+    console.log(saltato ? `SALTATO ${tipo} ${chiave}: non ancora presente su RPN` : `ERR  ${tipo} ${chiave}: ${msg.slice(0, 300)}`);
+    return saltato;
   }
 }
 
