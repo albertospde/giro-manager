@@ -1,5 +1,6 @@
 import { useState, useEffect, useMemo, useCallback, useRef } from "react";
-import ModuloImport, { ImportSpalmatura } from "./ModuloImport.jsx";
+import ModuloImport from "./ModuloImport.jsx";
+import ModuloSpalmatura from "./ModuloSpalmatura.jsx";
 import ModuloCaricoSemplice from "./ModuloCaricoSemplice.jsx";
 import ModuloPrenotato from "./ModuloPrenotato.jsx";
 import ModuloAvanzamento from "./ModuloAvanzamento.jsx";
@@ -487,7 +488,7 @@ function ModuloDashboard({ titoli, prenotato, canali, spalmatura, ruolo }) {
       let assegnato = 0;
       titoliGiro.forEach(t => {
         const spRow = spalmatura.find(s => s.editore_nome === t.editore_nome && s.formato === (t.formato || 'Cover') && s.canale_codice === c.codice);
-        if (spRow && t.obiettivo_assegnato) assegnato += Math.round(t.obiettivo_assegnato * spRow.percentuale);
+        if (spRow && t.obiettivo_assegnato) assegnato += Math.round(t.obiettivo_assegnato * spRow.percentuale / 100);
       });
       map[c.codice] = { assegnato };
     });
@@ -1232,7 +1233,7 @@ function ModuloCedola({ titoli, giriList, onUpdateTitolo, onDeleteTitolo, spalma
   const getObjCanale = (titolo, canale_codice) => {
     const spRow = spalmatura.find(s => s.editore_nome === titolo.editore_nome && s.formato === (titolo.formato || 'Cover') && s.canale_codice === canale_codice);
     if (!spRow || !titolo.obiettivo_assegnato) return 0;
-    return Math.round(titolo.obiettivo_assegnato * spRow.percentuale);
+    return Math.round(titolo.obiettivo_assegnato * spRow.percentuale / 100);
   };
 
   // Costruisce un foglio nello stesso formato del template ufficiale di import:
@@ -1874,7 +1875,7 @@ function ModuloFineGiro({ titoli, prenotato, canali, token, ruolo, spalmatura, u
   const getObjCanalePerTitolo = useCallback((t, canale_codice) => {
     const spRow = spalmatura.find(s => s.editore_nome === t.editore_nome && s.formato === (t.formato || 'Cover') && s.canale_codice === canale_codice);
     if (!spRow || !t.obiettivo_assegnato) return 0;
-    return Math.round(t.obiettivo_assegnato * spRow.percentuale);
+    return Math.round(t.obiettivo_assegnato * spRow.percentuale / 100);
   }, [spalmatura]);
 
   const righe = useMemo(() => titoliSel.map(t => {
@@ -1947,7 +1948,7 @@ function ModuloFineGiro({ titoli, prenotato, canali, token, ruolo, spalmatura, u
       righeFiltrate.forEach(({ titolo: t }) => {
         const spRow = spalmatura.find(s => s.editore_nome === t.editore_nome && s.formato === (t.formato || 'Cover') && s.canale_codice === c.codice);
         if (spRow && t.obiettivo_assegnato) {
-          assegnato += Math.round(t.obiettivo_assegnato * spRow.percentuale);
+          assegnato += Math.round(t.obiettivo_assegnato * spRow.percentuale / 100);
         }
       });
       const raggiunto = prenotatoPerCanale[c.codice] || 0;
@@ -4731,7 +4732,7 @@ const MODULES_IMPORT = [
   { id: "import", label: "Creazione cedola GiroManager", icon: "↑" },
   { id: "pubblicarpn", label: "Crea cedola su RPN", icon: "⇪" },
   { id: "prenotato", label: "Import Prenotato", icon: "↳" },
-  { id: "spalmatura", label: "Import Pesi Spalmatura", icon: "⚖" },
+  { id: "spalmatura", label: "Pesi Spalmatura", icon: "⚖" },
   { id: "rankingeditori", label: "Ranking Editori", icon: "🏷" },
   { id: "newentry", label: "Nuovi editori", icon: "🆕" },
   { id: "terne", label: "Aggiorna Terne", icon: "👥" },
@@ -4897,7 +4898,7 @@ export default function App() {
           {activeModule === "verificalanci" && <ModuloVerificaLanciAmazon token={session.token} titoli={titoli} prenotato={prenotato} canali={canali} />}
           {activeModule === "anticipilancio" && <ModuloAnticipiLancio token={session.token} userEmail={session.user?.email} />}
           {activeModule === "import" && <ModuloImport giriList={giriDB} token={session.token} onImportDone={refreshDati} />}
-          {activeModule === "spalmatura" && <ImportSpalmatura token={session.token} onImportDone={() => sbFetch("spalmatura_obiettivo?select=*", session.token).then(setSpalmatura)} />}
+          {activeModule === "spalmatura" && <ModuloSpalmatura token={session.token} onDataChange={() => sbFetch("spalmatura_obiettivo?select=*", session.token).then(setSpalmatura)} />}
           {activeModule === "newentry" && <ModuloEditoriNewEntry token={session.token} onDataChange={refreshDati} />}
           {activeModule === "terne" && <ModuloTerne token={session.token} />}
           {activeModule === "pubblicarpn" && <ModuloPubblicaRpn token={session.token} titoli={titoli} />}
