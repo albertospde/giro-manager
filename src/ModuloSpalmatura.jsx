@@ -33,11 +33,21 @@ const CANALI_BASE = [
   "FELTRINELLI", "GIUNTI", "MONDADORI", "UBIK", "LIBRACCIO",
   "INDIPENDENTI_ALTRE_CATENE", "LIB_COOP", "LIB_RELIGIOSE",
   "AMAZON", "IBS", "ALTRI_ONLINE",
-  "FASTBOOK", "CENTROLIBRI", "GROSSISTI", "GDO",
+  "FASTBOOK", "CENTROLIBRI", "GROSSISTI",
 ];
 const FORMATI = ["Cover", "Tascabile"];
+// Formati come arrivano nei file obiettivi (es. "Tipo Edizione": Cover / Economici)
+const FORMATO_DA_FILE = { COVER: "Cover", TASCABILE: "Tascabile", TASCABILI: "Tascabile", ECONOMICI: "Tascabile", ECONOMICO: "Tascabile" };
+// Colonne di totale da ignorare (intestazioni normalizzate con "_")
+const COLONNE_TOTALE = new Set(["SOMMA_%", "SOMMA", "TOTALE", "TOTALE_%", "TOTALE_COMPLESSIVO"]);
 
 const norm = (s) => String(s ?? "").replace(/\s+/g, " ").trim().toUpperCase();
+const deaccent = (s) => String(s ?? "").normalize("NFD").replace(/[̀-ͯ]/g, "");
+// Stessa normalizzazione delle chiavi di alias_editori usata in ModuloImportEditore (normEd)
+const normEd = (s) => deaccent(s).toUpperCase().replace(/[^A-Z0-9]+/g, " ").replace(/\bS R L S?\b|\bS P A\b|\bS A S\b|\bS N C\b/g, " ").replace(/\s+/g, " ").trim();
+const PAROLE_GENERICHE = new Set(["EDITORE", "EDITORI", "EDIZIONI", "EDITRICE", "ED", "ITALIA", "SRL", "SRLS", "SPA", "SAS", "SNC"]);
+// Nome ridotto per l'abbinamento: senza parole generiche né forma societaria (normEd non toglie "S.R.L." in fondo al nome)
+const coreEd = (s) => normEd(s).replace(/ (S R L( S)?|S P A|S A S|S N C)$/, "").split(" ").filter(t => t && !PAROLE_GENERICHE.has(t)).join(" ");
 const r2 = (n) => Math.round(n * 100) / 100;
 const chiave = (editore, formato) => `${editore}|${formato}`;
 const somma = (pesi) => r2(Object.values(pesi).reduce((s, v) => s + (Number(v) || 0), 0));
@@ -79,17 +89,24 @@ export default function ModuloSpalmatura({ token, onDataChange }) {
   const [showCopia, setShowCopia] = useState(null);   // null | { da, a } per il pannello "Copia pesi"
   const [nuoviEntranti, setNuoviEntranti] = useState([]);
   const [showSenzaPesi, setShowSenzaPesi] = useState(false);
+  const [aliasMap, setAliasMap] = useState({});  // alias normalizzato → editore del Ranking
+  const [linee, setLinee] = useState([]);        // [{ linea, madre }] linee figlie → casa madre
+  const [abbina, setAbbina] = useState(null);    // import in attesa: editori del file da abbinare a mano
   const fileRef = useRef(null);
 
   const carica = useCallback(async () => {
     setLoading(true); setErrore("");
     try {
-      const [sp, can, rk, ne] = await Promise.all([
+      const [sp, can, rk, ne, al, li] = await Promise.all([
         fetchTutto("spalmatura_obiettivo?select=editore_nome,formato,canale_codice,percentuale&order=id", token),
         fetchTutto("canali?select=codice,nome,gruppo", token),
         fetchTutto("ranking_editori?select=editore_nome,ranking,cedola,attivo", token),
         fetchTutto("editori_new_entry?select=nome_editore&attivo=eq.true", token).catch(() => []),
+        fetchTutto("alias_editori?select=alias,editore_nome", token).catch(() => []),
+        fetchTutto("spalmatura_linee?select=linea,madre", token).catch(() => []),
       ]);
+      setAliasMap(Object.fromEntries(al.map(a => [normEd(a.alias), a.editore_nome])));
+      setLinee(li.map(l => ({ linea: norm(l.linea), madre: norm(l.madre) })));
       setNuoviEntranti([...new Set(ne.map(x => norm(x.nome_editore)).filter(Boolean))]);
       const o = {};
       sp.forEach(x => {
@@ -237,67 +254,159 @@ export default function ModuloSpalmatura({ token, onDataChange }) {
     XLSX.writeFile(wb, `pesi_spalmatura_${new Date().toISOString().slice(0, 10)}.xlsx`);
   };
 
+  // Legge il file e restituisce le righe come array di celle. Supporta xlsx/xls, CSV UTF-8 o
+  // Windows-1252 con ; o , e i CSV UTF-16 separati da TAB (export dal gestionale obiettivi).
+  const leggiRighe = (buf, nomeFile) => {
+    const XLSX = window.XLSX;
+    const b = new Uint8Array(buf);
+    const utf16 = (b[0] === 0xff && b[1] === 0xfe) ? "utf-16le" : (b[0] === 0xfe && b[1] === 0xff) ? "utf-16be" : null;
+    let wb;
+    if (utf16 || /\.(csv|txt)$/i.test(nomeFile)) {
+      let testo = new TextDecoder(utf16 || "utf-8").decode(b);
+      if (!utf16 && testo.includes("�")) testo = new TextDecoder("windows-1252").decode(b);
+      testo = testo.replace(/^﻿/, "");
+      const inizio = testo.slice(0, 4000);
+      const conta = (s) => inizio.split(s).length - 1;
+      const sep = ["\t", ";", ","].sort((x, y) => conta(y) - conta(x))[0];
+      wb = XLSX.read(testo, { type: "string", FS: sep, raw: true });
+    } else {
+      wb = XLSX.read(buf, { type: "array" });
+    }
+    // Foglio "SPALMATURA" (template); se manca ma il file ha un solo foglio (es. CSV), si usa quello.
+    const ws = wb.Sheets["SPALMATURA"] || (wb.SheetNames.length === 1 ? wb.Sheets[wb.SheetNames[0]] : null);
+    if (!ws) throw new Error(`Foglio 'SPALMATURA' non trovato nel file (fogli presenti: ${wb.SheetNames.join(", ")}).`);
+    return XLSX.utils.sheet_to_json(ws, { header: 1, defval: "", raw: false });
+  };
+
+  // Dal nome editore del file all'editore del Ranking: nome uguale → alias salvato → nome ridotto
+  // (senza EDITORE/EDIZIONI/SRL…) se c'è un solo candidato.
+  const risolviEditore = (nomeFile) => {
+    const n = normEd(nomeFile);
+    // prima il nome identico: normEd rende uguali ad es. "LA NAVE DI TESEO" e "LA NAVE DI TESEO +"
+    const perNorm = ranking.find(r => r.editore_nome === norm(nomeFile)) || ranking.find(r => normEd(r.editore_nome) === n);
+    if (perNorm) return { rk: perNorm, via: "uguale" };
+    const alias = aliasMap[n];
+    const perAlias = alias && ranking.find(r => r.editore_nome === norm(alias));
+    if (perAlias) return { rk: perAlias, via: "alias" };
+    const c = coreEd(nomeFile);
+    const cand = c ? ranking.filter(r => coreEd(r.editore_nome) === c) : [];
+    if (cand.length === 1) return { rk: cand[0], via: "ridotto" };
+    return { rk: null, via: null };
+  };
+
   const importa = (e) => {
     const f = e.target.files[0];
     e.target.value = "";
     if (!f) return;
-    setErrore(""); setMsg("");
-    const isCsv = /\.csv$/i.test(f.name) || f.type === "text/csv";
+    setErrore(""); setMsg(""); setAbbina(null);
     const reader = new FileReader();
     reader.onload = (evt) => {
       try {
-        const XLSX = window.XLSX;
-        let wb;
-        if (isCsv) {
-          // CSV: UTF-8, oppure ANSI (Windows-1252) se salvato da Excel; separatore ";" o ",".
-          const buf = evt.target.result;
-          let testo = new TextDecoder("utf-8").decode(buf);
-          if (testo.includes("�")) testo = new TextDecoder("windows-1252").decode(buf);
-          testo = testo.replace(/^﻿/, "");
-          const primeRighe = testo.slice(0, 4000);
-          const sep = (primeRighe.match(/;/g) || []).length > (primeRighe.match(/,/g) || []).length ? ";" : ",";
-          wb = XLSX.read(testo, { type: "string", FS: sep, raw: true });
-        } else {
-          wb = XLSX.read(evt.target.result, { type: "array" });
-        }
-        // Foglio "SPALMATURA" (template); se manca ma il file ha un solo foglio (es. CSV), si usa quello.
-        const ws = wb.Sheets["SPALMATURA"] || (wb.SheetNames.length === 1 ? wb.Sheets[wb.SheetNames[0]] : null);
-        if (!ws) throw new Error(`Foglio 'SPALMATURA' non trovato nel file (fogli presenti: ${wb.SheetNames.join(", ")}).`);
-        const data = XLSX.utils.sheet_to_json(ws, { header: 1, defval: "" });
-        // Riga intestazioni (EDITORE, FORMATO, codici canale…): nel template è la 4ª,
-        // ma si cerca nelle prime 10 righe così va bene anche un CSV senza titolo sopra.
-        let hIdx = data.slice(0, 10).findIndex(r => norm(r[0]) === "EDITORE" && norm(r[1]) === "FORMATO");
+        const data = leggiRighe(evt.target.result, f.name);
+        // Riga intestazioni: EDITORE | FORMATO (template) oppure EDITORE | TIPO EDIZIONE (file obiettivi),
+        // cercata nelle prime 10 righe.
+        let hIdx = data.slice(0, 10).findIndex(r => norm(r[0]) === "EDITORE" && ["FORMATO", "TIPO EDIZIONE"].includes(norm(r[1])));
         if (hIdx < 0) hIdx = 3;
-        const intest = (data[hIdx] || []).map(h => norm(h).replace(/\s+/g, "_"));
-        const colCanali = intest.map((h, i) => [h, i]).filter(([h, i]) => i >= 2 && h && h !== "SOMMA_%" && h !== "SOMMA");
-        if (!colCanali.length) throw new Error("Intestazioni dei canali non trovate (serve una riga EDITORE | FORMATO | codici canale).");
+        // Colonne canale: per codice (template) o per nome del canale (file obiettivi); GDO è dentro Fastbook
+        const perNome = Object.fromEntries(Object.values(canaliInfo).map(c => [norm(c.nome), c.codice]));
+        const colCanali = [], sconosciute = [];
+        (data[hIdx] || []).forEach((h, i) => {
+          if (i < 2 || !norm(h)) return;
+          const hc = norm(h).replace(/\s+/g, "_");
+          if (COLONNE_TOTALE.has(hc)) return;
+          const cod = hc === "GDO" ? "FASTBOOK" : canaliInfo[hc] ? hc : perNome[norm(h)];
+          if (cod) colCanali.push([cod, i]); else sconosciute.push(String(h).trim());
+        });
+        if (sconosciute.length) throw new Error(`Colonne non riconosciute come canali: ${sconosciute.join(", ")}. Usa i codici o i nomi dei canali.`);
+        if (!colCanali.length) throw new Error("Intestazioni dei canali non trovate (serve una riga EDITORE | FORMATO o TIPO EDIZIONE | canali).");
+
         const errs = [];
         const lette = [];
         data.slice(hIdx + 1).forEach((r, idx) => {
-          if (!r.some(v => v !== "")) return;
+          if (!r.some(v => String(v).trim() !== "")) return;
           const nRiga = idx + hIdx + 2;
-          const editore = norm(r[0]);
-          const formato = FORMATI.find(x => x.toUpperCase() === norm(r[1]));
-          if (!editore || !formato) { errs.push(`riga ${nRiga}: editore o formato non valido`); return; }
+          const nomeFile = String(r[0] ?? "").trim();
+          const formato = FORMATO_DA_FILE[norm(r[1])];
+          if (!nomeFile || !formato) { errs.push(`riga ${nRiga}: editore o formato non valido ("${r[1]}")`); return; }
           const pesi = {};
           colCanali.forEach(([c, i]) => {
             const v = numOVuoto(r[i]);
             if (v === null) errs.push(`riga ${nRiga}: peso non valido per ${c}`);
-            else if (v !== "") pesi[c] = v;
+            else if (v !== "" && v !== 0) pesi[c] = r2((pesi[c] || 0) + v);
           });
-          lette.push({ key: chiave(editore, formato), editore_nome: editore, formato, pesi });
+          lette.push({ nomeFile, formato, pesi });
         });
         if (errs.length) throw new Error(`File non caricato, correggi: ${errs.slice(0, 5).join("; ")}${errs.length > 5 ? ` e altri ${errs.length - 5}` : ""}`);
-        // Le righe del file sostituiscono quelle esistenti; le altre restano come sono
-        setRighe(rs => {
-          const m = new Map(rs.map(r => [r.key, r]));
-          lette.forEach(r => m.set(r.key, r));
-          return [...m.values()];
-        });
-        setMsg(`Caricate ${lette.length} righe dal file: controlla le modifiche evidenziate e premi Salva.`);
+
+        const risolte = lette.map(l => ({ ...l, ...risolviEditore(l.nomeFile) }));
+        const ignoti = [...new Set(risolte.filter(r => !r.rk).map(r => r.nomeFile))];
+        if (ignoti.length) {
+          // alcuni nomi vanno abbinati a mano: la griglia si aggiorna dopo la conferma
+          setAbbina({ risolte, scelte: Object.fromEntries(ignoti.map(n => [n, ""])) });
+        } else applicaImport(risolte, {});
       } catch (err) { setErrore(err.message); }
     };
     reader.readAsArrayBuffer(f);
+  };
+
+  // Porta in griglia (come bozza) le righe risolte. `scelte`: nome del file → editore del Ranking ("" = salta)
+  const applicaImport = async (risolte, scelte) => {
+    setErrore("");
+    try {
+      const nuoviAlias = Object.entries(scelte).filter(([, ed]) => ed).map(([nome, ed]) => ({ alias: normEd(nome), editore_nome: ed }));
+      if (nuoviAlias.length) {
+        const res = await fetch(`${SUPABASE_URL}/rest/v1/alias_editori?on_conflict=alias`, {
+          method: "POST",
+          headers: headers(token, { "Content-Type": "application/json", Prefer: "resolution=merge-duplicates,return=minimal" }),
+          body: JSON.stringify(nuoviAlias),
+        });
+        if (!res.ok) throw new Error(`Errore salvataggio abbinamenti (${res.status})`);
+        setAliasMap(m => ({ ...m, ...Object.fromEntries(nuoviAlias.map(a => [a.alias, a.editore_nome])) }));
+      }
+      const conteggi = { uguale: 0, ridotto: 0, alias: 0, manuale: 0 };
+      const inattivi = new Set(), saltati = new Set(), doppioni = new Set();
+      const finali = new Map();
+      risolte.forEach(r => {
+        let rk = r.rk, via = r.via;
+        if (!rk && scelte[r.nomeFile]) { rk = ranking.find(x => x.editore_nome === scelte[r.nomeFile]); via = "manuale"; }
+        if (!rk) { saltati.add(r.nomeFile); return; }
+        if (rk.attivo === false) { inattivi.add(r.nomeFile); return; }
+        const k = chiave(rk.editore_nome, r.formato);
+        if (finali.has(k)) doppioni.add(`${rk.editore_nome} ${r.formato}`);
+        else conteggi[via]++;
+        finali.set(k, { key: k, editore_nome: rk.editore_nome, formato: r.formato, pesi: r.pesi });
+      });
+      // Linee figlie (spalmatura_linee): se nel file c'è la casa madre e non la linea, la linea eredita i pesi
+      let ereditate = 0;
+      linee.forEach(({ linea, madre }) => {
+        const rkLinea = ranking.find(x => x.editore_nome === linea);
+        if (rkLinea?.attivo === false) return;
+        FORMATI.forEach(fm => {
+          const m = finali.get(chiave(madre, fm));
+          if (m && !finali.has(chiave(linea, fm))) { finali.set(chiave(linea, fm), { key: chiave(linea, fm), editore_nome: linea, formato: fm, pesi: { ...m.pesi }, _ereditata: true }); ereditate++; }
+        });
+      });
+      const nuove = [...finali.values()].map(({ _ereditata, ...r }) => r);
+      setRighe(rs => {
+        const m = new Map(rs.map(r => [r.key, r]));
+        nuove.forEach(r => m.set(r.key, r));
+        return [...m.values()];
+      });
+      setAbbina(null);
+      const parti = [
+        `${conteggi.uguale} con nome uguale al Ranking`,
+        conteggi.ridotto && `${conteggi.ridotto} abbinate togliendo EDITORE/EDIZIONI/SRL`,
+        conteggi.alias && `${conteggi.alias} tramite alias`,
+        conteggi.manuale && `${conteggi.manuale} abbinate ora (salvate per le prossime volte)`,
+        ereditate && `${ereditate} linee figlie con i pesi della casa madre`,
+      ].filter(Boolean);
+      const esclusi = [
+        inattivi.size && `inattivi nel Ranking: ${[...inattivi].join(", ")}`,
+        saltati.size && `non abbinati: ${[...saltati].join(", ")}`,
+        doppioni.size && `presenti due volte (tenuta l'ultima riga): ${[...doppioni].join(", ")}`,
+      ].filter(Boolean);
+      setMsg(`Caricate ${nuove.length} righe dal file (${parti.join(", ")}).${esclusi.length ? ` Saltati — ${esclusi.join("; ")}.` : ""} Controlla le modifiche evidenziate e premi Salva.`);
+    } catch (err) { setErrore(err.message); }
   };
 
   // ─── Vista ─────────────────────────────────────────────────────────────────
@@ -363,9 +472,40 @@ export default function ModuloSpalmatura({ token, onDataChange }) {
         <button style={css.btn("green")} onClick={() => { setShowCopia(null); setShowNuovo(s => (s ? false : true)); }}>+ Nuovo editore</button>
         <button style={css.btn()} onClick={() => { setShowNuovo(false); setShowCopia(c => (c ? null : { da: "", a: "" })); }} title="Copia i pesi di un editore su un altro, anche nuovo entrante">⧉ Copia pesi</button>
         <button style={css.btn()} onClick={() => fileRef.current?.click()} title="Carica un file (.xlsx, .xls o .csv) nel formato del template SPALMATURA: le righe del file sostituiscono quelle in griglia (da salvare)">Importa Excel / CSV</button>
-        <input ref={fileRef} type="file" accept=".xlsx,.xls,.csv" style={{ display: "none" }} onChange={importa} />
+        <input ref={fileRef} type="file" accept=".xlsx,.xls,.csv,.txt" style={{ display: "none" }} onChange={importa} />
         <button style={css.btn()} onClick={esporta}>Esporta Excel</button>
       </div>
+
+      {abbina && (
+        <div style={{ ...css.card, borderColor: T.amber }}>
+          <div style={{ color: T.amber, fontWeight: 700, fontSize: "12px", marginBottom: 6 }}>Editori del file da abbinare ({Object.keys(abbina.scelte).length})</div>
+          <div style={{ color: T.textMid, fontSize: "11px", marginBottom: 10 }}>
+            Questi nomi non corrispondono a nessun editore del Ranking. Scegli a chi appartengono, oppure lascia "salta".
+            L'abbinamento viene ricordato: la prossima volta lo stesso nome si riconosce da solo.
+          </div>
+          <table style={{ borderCollapse: "collapse", marginBottom: 12 }}>
+            <tbody>
+              {Object.entries(abbina.scelte).map(([nome, scelta]) => (
+                <tr key={nome}>
+                  <td style={{ ...css.td, fontWeight: 600 }}>{nome}</td>
+                  <td style={css.td}>→</td>
+                  <td style={css.td}>
+                    <select style={{ ...css.input, minWidth: 260, color: scelta ? T.text : T.textDim }} value={scelta}
+                      onChange={e => setAbbina(a => ({ ...a, scelte: { ...a.scelte, [nome]: e.target.value } }))}>
+                      <option value="">— salta —</option>
+                      {ranking.filter(r => r.attivo !== false).map(r => r.editore_nome).sort().map(n => <option key={n} value={n}>{n}</option>)}
+                    </select>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+          <div style={{ display: "flex", gap: 8 }}>
+            <button style={css.btn("accent")} onClick={() => applicaImport(abbina.risolte, abbina.scelte)}>Conferma e carica</button>
+            <button style={css.btn()} onClick={() => setAbbina(null)}>Annulla import</button>
+          </div>
+        </div>
+      )}
 
       {showCopia && <CopiaPesi key={`${showCopia.da}|${showCopia.a}`} righe={righe} ranking={ranking} nuoviEntranti={nuoviEntranti} iniziale={showCopia} onAnnulla={() => setShowCopia(null)} onCopia={copiaPesi} />}
 
