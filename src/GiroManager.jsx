@@ -4341,6 +4341,7 @@ function ModuloAnticipiLancio({ token, userEmail }) {
   const [toast, setToast] = useState(null);
   const [firma, setFirma] = useState(() => localStorage.getItem("anticipiLancio_firma") || "");
   const [numeroLancio, setNumeroLancio] = useState("");
+  const [avvisoMail, setAvvisoMail] = useState(null); // mailto da aprire dopo l'avviso "premi CTRL + V"
   const emptyForm = { codice_cliente: "", ean: "", titolo: "", autore: "", editore: "", prezzo: "", quantita: "", numero_ordine: "", data_consegna_desiderata: "", note: "" };
   const [form, setForm] = useState(emptyForm);
 
@@ -4550,9 +4551,11 @@ function ModuloAnticipiLancio({ token, userEmail }) {
     const corpoTesto = `Buongiorno,\n\ndi seguito vi segnalo uno o più ordini da gestire con anticipo lancio:\n\n${tabellaTesto}\n\nGrazie di una conferma di presa in carico.\n\n${firma || "[Firma]"}`;
 
     const apriMail = (copiato) => {
-      const corpoMailto = copiato ? "" : corpoTesto; // se la copia non riesce, almeno il testo nella mail
-      window.location.href = `mailto:gestione.lancio@meli.it?subject=${encodeURIComponent(subject)}${corpoMailto ? `&body=${encodeURIComponent(corpoMailto)}` : ""}`;
-      showToast(copiato ? "Tabella copiata: nella mail premi Ctrl+V per incollarla" : "Copia negli appunti non riuscita: nella mail c'è il testo semplice", copiato ? "ok" : "err");
+      const url = `mailto:gestione.lancio@meli.it?subject=${encodeURIComponent(subject)}`;
+      // copia riuscita: prima l'avviso "premi CTRL + V", la mail si apre dal pulsante dell'avviso
+      if (copiato) { setAvvisoMail(url); return; }
+      window.location.href = `${url}&body=${encodeURIComponent(corpoTesto)}`; // se la copia non riesce, almeno il testo nella mail
+      showToast("Copia negli appunti non riuscita: nella mail c'è il testo semplice", "err");
     };
     try {
       navigator.clipboard.write([new ClipboardItem({
@@ -4728,6 +4731,20 @@ function ModuloAnticipiLancio({ token, userEmail }) {
           <div style={{ padding: 40, textAlign: "center", color: T.textDim }}>Nessun anticipo lancio in questa vista.</div>
         )}
       </div>
+
+      {/* AVVISO: la mail si apre vuota, il testo con la tabella è negli appunti */}
+      {avvisoMail && (
+        <div style={{ position: "fixed", inset: 0, background: "#000a", zIndex: 300, display: "flex", alignItems: "center", justifyContent: "center" }}>
+          <div style={{ background: T.surface, border: `1px solid ${T.accent}`, borderRadius: 6, padding: 28, width: 420, textAlign: "center" }}>
+            <div style={{ fontSize: "28px", marginBottom: 10 }}>📋</div>
+            <div style={{ color: T.text, fontSize: "15px", fontWeight: "700", marginBottom: 10 }}>Clicca CTRL + V per incollare il testo</div>
+            <div style={{ color: T.textMid, fontSize: "12px", lineHeight: 1.6, marginBottom: 20 }}>
+              Il testo della mail con la tabella è già copiato.<br />Quando si apre la mail, clicca nel corpo del messaggio e premi <b style={{ color: T.text }}>CTRL + V</b>.
+            </div>
+            <button style={css.btn("accent")} autoFocus onClick={() => { window.location.href = avvisoMail; setAvvisoMail(null); }}>OK, apri la mail</button>
+          </div>
+        </div>
+      )}
 
       {toast && (
         <div style={{ position: "fixed", bottom: 24, left: "50%", transform: "translateX(-50%)", background: toast.type === "err" ? "#4a1a2a" : "#1a3a2a", border: `1px solid ${toast.type === "err" ? T.red : T.green}`, color: toast.type === "err" ? T.red : T.green, borderRadius: 6, padding: "8px 20px", fontSize: "12px", zIndex: 999, boxShadow: "0 4px 20px #0008" }}>
