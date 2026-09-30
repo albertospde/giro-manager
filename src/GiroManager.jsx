@@ -1,6 +1,7 @@
 import { useState, useEffect, useMemo, useCallback, useRef } from "react";
 import ModuloImport from "./ModuloImport.jsx";
 import ModuloSpalmatura from "./ModuloSpalmatura.jsx";
+import ModuloFatturato from "./ModuloFatturato.jsx";
 import ModuloCaricoSemplice from "./ModuloCaricoSemplice.jsx";
 import ModuloPrenotato from "./ModuloPrenotato.jsx";
 import ModuloAvanzamento from "./ModuloAvanzamento.jsx";
@@ -4770,6 +4771,7 @@ const MODULES_IMPORT = [
   { id: "pubblicarpn", label: "Crea cedola su RPN", icon: "⇪" },
   { id: "prenotato", label: "Import Prenotato", icon: "↳" },
   { id: "spalmatura", label: "Pesi Spalmatura", icon: "⚖" },
+  { id: "fatturato", label: "Carica Fatturato", icon: "€" },
   { id: "rankingeditori", label: "Ranking Editori", icon: "🏷" },
   { id: "newentry", label: "Nuovi editori", icon: "🆕" },
   { id: "terne", label: "Aggiorna Terne", icon: "👥" },
@@ -4936,6 +4938,7 @@ export default function App() {
           {activeModule === "anticipilancio" && <ModuloAnticipiLancio token={session.token} userEmail={session.user?.email} />}
           {activeModule === "import" && <ModuloImport giriList={giriDB} token={session.token} onImportDone={refreshDati} />}
           {activeModule === "spalmatura" && <ModuloSpalmatura token={session.token} onDataChange={() => sbFetch("spalmatura_obiettivo?select=*", session.token).then(setSpalmatura)} />}
+          {activeModule === "fatturato" && <ModuloFatturato token={session.token} />}
           {activeModule === "newentry" && <ModuloEditoriNewEntry token={session.token} onDataChange={refreshDati} />}
           {activeModule === "terne" && <ModuloTerne token={session.token} />}
           {activeModule === "pubblicarpn" && <ModuloPubblicaRpn token={session.token} titoli={titoli} />}
