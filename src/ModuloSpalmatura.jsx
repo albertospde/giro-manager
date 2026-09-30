@@ -76,17 +76,21 @@ export default function ModuloSpalmatura({ token, onDataChange }) {
   const [soloFuori100, setSoloFuori100] = useState(false);
   const [showDiff, setShowDiff] = useState(false);
   const [showNuovo, setShowNuovo] = useState(false);
+  const [showCopia, setShowCopia] = useState(null);   // null | { da, a } per il pannello "Copia pesi"
+  const [nuoviEntranti, setNuoviEntranti] = useState([]);
   const [showSenzaPesi, setShowSenzaPesi] = useState(false);
   const fileRef = useRef(null);
 
   const carica = useCallback(async () => {
     setLoading(true); setErrore("");
     try {
-      const [sp, can, rk] = await Promise.all([
+      const [sp, can, rk, ne] = await Promise.all([
         fetchTutto("spalmatura_obiettivo?select=editore_nome,formato,canale_codice,percentuale&order=id", token),
         fetchTutto("canali?select=codice,nome,gruppo", token),
         fetchTutto("ranking_editori?select=editore_nome,ranking,cedola,attivo", token),
+        fetchTutto("editori_new_entry?select=nome_editore&attivo=eq.true", token).catch(() => []),
       ]);
+      setNuoviEntranti([...new Set(ne.map(x => norm(x.nome_editore)).filter(Boolean))]);
       const o = {};
       sp.forEach(x => {
         const k = chiave(norm(x.editore_nome), x.formato);
@@ -148,6 +152,26 @@ export default function ModuloSpalmatura({ token, onDataChange }) {
     setRighe(rs => [...rs, { key: k, editore_nome, formato, pesi: base ? { ...base } : {} }]);
     setShowNuovo(false);
     setFiltro(editore_nome);
+  };
+
+  // Copia i pesi di un editore su un altro (per i formati scelti): crea le righe mancanti,
+  // sovrascrive quelle esistenti. Resta in bozza fino a Salva.
+  const copiaPesi = ({ da, a, formati }) => {
+    setRighe(rs => {
+      const out = [...rs];
+      formati.forEach(f => {
+        const src = rs.find(r => r.key === chiave(da, f));
+        if (!src) return;
+        const k = chiave(a, f);
+        const i = out.findIndex(r => r.key === k);
+        const riga = { key: k, editore_nome: a, formato: f, pesi: { ...src.pesi } };
+        if (i >= 0) out[i] = riga; else out.push(riga);
+      });
+      return out;
+    });
+    setShowCopia(null);
+    setFiltro(a);
+    setMsg(`Pesi di ${da} copiati su ${a} (${formati.join(" e ")}): controlla e premi Salva.`);
   };
 
   // ─── Differenze da salvare ─────────────────────────────────────────────────
@@ -303,7 +327,7 @@ export default function ModuloSpalmatura({ token, onDataChange }) {
           <div style={{ marginTop: 12, fontSize: "11px", color: T.textMid, lineHeight: 1.8 }}>
             <b style={{ color: T.red }}>Editori attivi senza pesi</b> (clicca per aggiungerli):{" "}
             {stat.senzaPesi.map(r => (
-              <button key={r.editore_nome} style={{ ...css.mini, margin: "0 4px 4px 0" }} onClick={() => { setShowNuovo(r.editore_nome); setShowSenzaPesi(false); }}>{r.editore_nome}</button>
+              <button key={r.editore_nome} style={{ ...css.mini, margin: "0 4px 4px 0" }} title="Copia su questo editore i pesi di un altro editore" onClick={() => { setShowNuovo(false); setShowCopia({ da: "", a: r.editore_nome }); setShowSenzaPesi(false); }}>{r.editore_nome}</button>
             ))}
           </div>
         )}
@@ -318,11 +342,14 @@ export default function ModuloSpalmatura({ token, onDataChange }) {
         </select>
         <label style={{ color: T.textMid, fontSize: "12px", display: "flex", gap: 4, alignItems: "center" }}><input type="checkbox" checked={soloFuori100} onChange={e => setSoloFuori100(e.target.checked)} /> solo somma ≠ 100</label>
         <div style={{ flex: 1 }} />
-        <button style={css.btn("green")} onClick={() => setShowNuovo(s => (s ? false : true))}>+ Nuovo editore</button>
+        <button style={css.btn("green")} onClick={() => { setShowCopia(null); setShowNuovo(s => (s ? false : true)); }}>+ Nuovo editore</button>
+        <button style={css.btn()} onClick={() => { setShowNuovo(false); setShowCopia(c => (c ? null : { da: "", a: "" })); }} title="Copia i pesi di un editore su un altro, anche nuovo entrante">⧉ Copia pesi</button>
         <button style={css.btn()} onClick={() => fileRef.current?.click()} title="Carica un file nel formato del template SPALMATURA: le righe del file sostituiscono quelle in griglia (da salvare)">Importa Excel</button>
         <input ref={fileRef} type="file" accept=".xlsx,.xls" style={{ display: "none" }} onChange={importa} />
         <button style={css.btn()} onClick={esporta}>Esporta Excel</button>
       </div>
+
+      {showCopia && <CopiaPesi key={`${showCopia.da}|${showCopia.a}`} righe={righe} ranking={ranking} nuoviEntranti={nuoviEntranti} iniziale={showCopia} onAnnulla={() => setShowCopia(null)} onCopia={copiaPesi} />}
 
       {showNuovo && <NuovaRiga righe={righe} ranking={ranking} iniziale={typeof showNuovo === "string" ? showNuovo : ""} onAnnulla={() => setShowNuovo(false)} onAggiungi={aggiungi} />}
 
@@ -400,6 +427,7 @@ export default function ModuloSpalmatura({ token, onDataChange }) {
                   <td style={css.td}>
                     {!ok && s > 0 && <><button style={{ ...css.mini, color: T.accent, borderColor: T.accent }} title="Riproporziona i pesi perché la somma faccia 100" onClick={() => normalizza(r.key)}>→100</button>{" "}</>}
                     {o && <><button style={css.mini} title="Ripristina i valori salvati" onClick={() => ripristina(r.key)}>↺</button>{" "}</>}
+                    <button style={css.mini} title="Copia i pesi di questo editore su un altro" onClick={() => { setShowNuovo(false); setShowCopia({ da: r.editore_nome, a: "" }); }}>⧉</button>{" "}
                     <button style={{ ...css.mini, color: T.red }} title="Elimina la riga (tutti i pesi di questo editore+formato)" onClick={() => elimina(r.key)}>✕</button>
                   </td>
                 </tr>
@@ -408,6 +436,62 @@ export default function ModuloSpalmatura({ token, onDataChange }) {
             {filtrate.length === 0 && <tr><td colSpan={canali.length + 4} style={{ ...css.td, color: T.textDim, padding: 16 }}>Nessuna riga.</td></tr>}
           </tbody>
         </table>
+      </div>
+    </div>
+  );
+}
+
+// ─── Copia pesi da un editore a un altro ─────────────────────────────────────
+function CopiaPesi({ righe, ranking, nuoviEntranti, iniziale, onCopia, onAnnulla }) {
+  const [da, setDa] = useState(iniziale.da || "");
+  const [a, setA] = useState(iniziale.a || "");
+  const [scelti, setScelti] = useState(null); // null = tutti i formati disponibili
+  const nomeDa = norm(da), nomeA = norm(a);
+
+  const conPesi = useMemo(() => [...new Set(righe.map(r => r.editore_nome))].sort(), [righe]);
+  const destinazioni = useMemo(() => {
+    const senza = new Set(conPesi);
+    // prima i nuovi entranti e gli editori senza pesi, poi tutti gli altri
+    const tutti = [...new Set([...nuoviEntranti, ...ranking.map(r => r.editore_nome)])];
+    return [...tutti.filter(n => !senza.has(n)).sort(), ...tutti.filter(n => senza.has(n)).sort()];
+  }, [conPesi, ranking, nuoviEntranti]);
+
+  const formatiDa = FORMATI.filter(f => righe.some(r => r.key === chiave(nomeDa, f)));
+  const formati = (scelti ?? formatiDa).filter(f => formatiDa.includes(f));
+  const sovrascritti = formati.filter(f => righe.some(r => r.key === chiave(nomeA, f)));
+  const noto = !nomeA || ranking.some(r => r.editore_nome === nomeA) || nuoviEntranti.includes(nomeA);
+  const ok = nomeDa && nomeA && nomeDa !== nomeA && formati.length > 0;
+
+  return (
+    <div style={{ ...css.card, borderColor: T.accent }}>
+      <div style={{ color: T.accent, fontWeight: 700, fontSize: "12px", marginBottom: 10 }}>⧉ Copia pesi da un editore a un altro</div>
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(220px, 1fr))", gap: 10 }}>
+        <label style={css.label}>Copia i pesi di *
+          <input style={css.input} list="gm-spalm-da" value={da} onChange={e => { setDa(e.target.value); setScelti(null); }} placeholder="editore con pesi" autoFocus={!iniziale.da} />
+          <datalist id="gm-spalm-da">{conPesi.map(n => <option key={n} value={n} />)}</datalist>
+        </label>
+        <label style={css.label}>Sull'editore *
+          <input style={css.input} list="gm-spalm-a" value={a} onChange={e => setA(e.target.value)} placeholder="anche nuovo entrante" autoFocus={!!iniziale.da} />
+          <datalist id="gm-spalm-a">{destinazioni.map(n => <option key={n} value={n}>{conPesi.includes(n) ? "ha già pesi" : nuoviEntranti.includes(n) ? "nuovo entrante · senza pesi" : "senza pesi"}</option>)}</datalist>
+        </label>
+        <div style={css.label}>Formati
+          <div style={{ display: "flex", gap: 12, alignItems: "center", minHeight: 26 }}>
+            {nomeDa && formatiDa.length === 0 && <span style={{ color: T.red }}>questo editore non ha pesi</span>}
+            {formatiDa.map(f => (
+              <label key={f} style={{ display: "flex", gap: 4, alignItems: "center", color: T.text }}>
+                <input type="checkbox" checked={formati.includes(f)} onChange={e => setScelti(e.target.checked ? [...new Set([...formati, f])] : formati.filter(x => x !== f))} /> {f}
+              </label>
+            ))}
+          </div>
+        </div>
+      </div>
+      {nomeDa && nomeDa === nomeA && <div style={{ color: T.red, fontSize: "11px", marginTop: 8 }}>Scegli due editori diversi.</div>}
+      {sovrascritti.length > 0 && nomeDa !== nomeA && <div style={{ color: T.amber, fontSize: "11px", marginTop: 8 }}>⚠ {nomeA} ha già pesi {sovrascritti.join(" e ")}: verranno sostituiti (fino a Salva puoi sempre annullare).</div>}
+      {!noto && <div style={{ color: T.amber, fontSize: "11px", marginTop: 8 }}>{nomeA} non è in Ranking editori né tra i nuovi editori: i pesi valgono solo se il nome coincide con quello dei titoli.</div>}
+      <div style={{ display: "flex", gap: 8, marginTop: 12, alignItems: "center" }}>
+        <button style={css.btn("accent", !ok)} disabled={!ok} onClick={() => onCopia({ da: nomeDa, a: nomeA, formati })}>Copia</button>
+        <button style={css.btn()} onClick={onAnnulla}>Annulla</button>
+        {ok && <span style={{ color: T.textMid, fontSize: "11px" }}>{nomeDa} → {nomeA} · {formati.join(" + ")} — poi premi Salva</span>}
       </div>
     </div>
   );
