@@ -1,0 +1,33 @@
+name: Aggiornamento prenotato del mattino
+
+# Aggiorna da RPN il prenotato di Fine Giro per tutti i giri e le cedole extra non chiusi.
+# GitHub usa l'ora UTC: 3:00 e 4:00 UTC coprono le 5:00 italiane sia con l'ora legale che con
+# quella solare. Lo script parte solo dopo le 5:00 italiane; il secondo passaggio riprende
+# soltanto ciò che non è riuscito al primo.
+on:
+  schedule:
+    - cron: "0 3 * * *"
+    - cron: "0 4 * * *"
+  workflow_dispatch:
+
+concurrency:
+  group: prenotato-notturno
+  cancel-in-progress: false
+
+jobs:
+  aggiorna:
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - name: Installa lettore Excel
+        run: npm install --no-save --no-package-lock xlsx@0.18.5
+      - name: Aggiorna prenotato da RPN
+        run: node --max-old-space-size=6144 scripts/prenotato-notturno.mjs
+        env:
+          GIRO_PRENOTATO_CRON_KEY: ${{ secrets.GIRO_PRENOTATO_CRON_KEY }}
+          NODE_EXTRA_CA_CERTS: scripts/sectigo-rpn.pem
+          FORZA: ${{ github.event_name == 'workflow_dispatch' && '1' || '' }}
