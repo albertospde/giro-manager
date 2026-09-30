@@ -4522,24 +4522,43 @@ function ModuloAnticipiLancio({ token, userEmail }) {
     if (!numeroLancio.trim()) { showToast("Indica il numero di lancio a cui trasmetti", "err"); return; }
 
     const subject = `Anticipi Lancio - Lancio ${numeroLancio.trim()}`;
-    const righeTesto = righeSel.map(r => {
-      const parti = [
-        `Cliente ${r.codice_cliente}`,
-        `EAN ${r.ean}`,
-        r.titolo,
-        r.autore,
-        r.editore,
-        r.prezzo != null ? `€ ${Number(r.prezzo).toFixed(2)}` : null,
-        `Qtà ${r.quantita}`,
-        r.numero_ordine ? `N° ordine ${r.numero_ordine}` : null,
-        r.data_consegna_desiderata ? `Consegna desiderata ${fmtDataIt(r.data_consegna_desiderata)}` : null,
-      ].filter(Boolean);
-      return "- " + parti.join(" - ");
-    }).join("\n");
 
-    const corpo = `Buongiorno,\n\ndi seguito vi segnalo uno o più ordini da gestire con anticipo lancio:\n\n${righeTesto}\n\nGrazie di una conferma di presa in carico.\n\n${firma || "[Firma]"}`;
+    // mailto accetta solo testo semplice: il corpo con la tabella a griglia va negli appunti
+    // (HTML + testo separato da tabulazioni) e si incolla nella mail con Ctrl+V.
+    const colonne = [
+      ["Cliente", r => r.codice_cliente],
+      ["EAN", r => r.ean],
+      ["Titolo", r => r.titolo],
+      ["Autore", r => r.autore],
+      ["Editore", r => r.editore],
+      ["Prezzo", r => r.prezzo != null ? `€ ${Number(r.prezzo).toFixed(2).replace(".", ",")}` : ""],
+      ["Qtà", r => r.quantita],
+      ["N° ordine", r => r.numero_ordine],
+      ["Consegna desiderata", r => r.data_consegna_desiderata ? fmtDataIt(r.data_consegna_desiderata) : ""],
+    ];
+    const esc = (v) => String(v ?? "").replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+    const cella = "border:1px solid #808080;padding:4px 8px;font-family:Calibri,Arial,sans-serif;font-size:11pt;";
+    const tabellaHtml =
+      `<table style="border-collapse:collapse;border:1px solid #808080;">` +
+      `<tr>${colonne.map(([h]) => `<th style="${cella}background:#d9e1f2;text-align:left;">${esc(h)}</th>`).join("")}</tr>` +
+      righeSel.map(r => `<tr>${colonne.map(([h, f]) => `<td style="${cella}${h === "Qtà" || h === "Prezzo" ? "text-align:right;" : ""}">${esc(f(r))}</td>`).join("")}</tr>`).join("") +
+      `</table>`;
+    const p = (t) => `<p style="font-family:Calibri,Arial,sans-serif;font-size:11pt;margin:0 0 12px 0;">${t}</p>`;
+    const corpoHtml = `<div>${p("Buongiorno,")}${p("di seguito vi segnalo uno o più ordini da gestire con anticipo lancio:")}${tabellaHtml}<br>${p("Grazie di una conferma di presa in carico.")}${p(esc(firma || "[Firma]").replace(/\n/g, "<br>"))}</div>`;
+    const tabellaTesto = [colonne.map(([h]) => h), ...righeSel.map(r => colonne.map(([, f]) => String(f(r) ?? "")))].map(c => c.join("\t")).join("\n");
+    const corpoTesto = `Buongiorno,\n\ndi seguito vi segnalo uno o più ordini da gestire con anticipo lancio:\n\n${tabellaTesto}\n\nGrazie di una conferma di presa in carico.\n\n${firma || "[Firma]"}`;
 
-    window.location.href = `mailto:gestione.lancio@meli.it?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(corpo)}`;
+    const apriMail = (copiato) => {
+      const corpoMailto = copiato ? "" : corpoTesto; // se la copia non riesce, almeno il testo nella mail
+      window.location.href = `mailto:gestione.lancio@meli.it?subject=${encodeURIComponent(subject)}${corpoMailto ? `&body=${encodeURIComponent(corpoMailto)}` : ""}`;
+      showToast(copiato ? "Tabella copiata: nella mail premi Ctrl+V per incollarla" : "Copia negli appunti non riuscita: nella mail c'è il testo semplice", copiato ? "ok" : "err");
+    };
+    try {
+      navigator.clipboard.write([new ClipboardItem({
+        "text/html": new Blob([corpoHtml], { type: "text/html" }),
+        "text/plain": new Blob([corpoTesto], { type: "text/plain" }),
+      })]).then(() => apriMail(true), () => apriMail(false));
+    } catch { apriMail(false); }
 
     righeSel.forEach(r => segnaGestito(r.id));
     setSelected(new Set());
@@ -4639,7 +4658,7 @@ function ModuloAnticipiLancio({ token, userEmail }) {
             <label style={{ color: T.textMid, fontSize: "9px", textTransform: "uppercase", letterSpacing: "0.06em", display: "block", marginBottom: 2 }}>Firma mail</label>
             <input style={{ ...css.input, width: 160 }} placeholder="Firma per la mail..." value={firma} onChange={e => setFirma(e.target.value)} />
           </div>
-          <button style={{ ...css.btn(), borderColor: T.accent, color: T.accent, alignSelf: "flex-end" }} onClick={creaMail} disabled={selected.size === 0}>✉️ Crea mail{selected.size > 0 ? ` (${selected.size})` : ""}</button>
+          <button style={{ ...css.btn(), borderColor: T.accent, color: T.accent, alignSelf: "flex-end" }} onClick={creaMail} disabled={selected.size === 0} title="Copia negli appunti la mail con la tabella degli ordini selezionati e apre una mail nuova: incolla con Ctrl+V">✉️ Crea mail{selected.size > 0 ? ` (${selected.size})` : ""}</button>
           <button style={{ ...css.btn(), borderColor: T.green, color: T.green, alignSelf: "flex-end" }} onClick={apriNuovo}>+ Nuovo</button>
         </div>
       </div>
