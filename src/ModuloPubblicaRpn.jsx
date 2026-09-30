@@ -107,8 +107,44 @@ export default function ModuloPubblicaRpn({ token, titoli }) {
   useEffect(() => { if (!giroSel && giri.length) setGiroSel(giri[0]); }, [giri, giroSel]);
   const cedole = useMemo(() => Object.entries(cedolePerGiro[giroSel] || {}).sort((a, b) => a[0].localeCompare(b[0])), [cedolePerGiro, giroSel]);
 
+  // Obiettivi: dopo ogni creazione/aggiornamento della cedola si caricano su RPN in automatico
+  // con l'obiettivo assegnato in GiroManager (stesso file del pulsante "Carica obiettivi" della home
+  // di RPN: Cedola | Ean | Obiettivo copie). Edge function rpn-obiettivi, account RPN dell'utente.
+  const [esitoObj, setEsitoObj] = useState(null);
+  const righeObiettivi = (nCedola) => (titoli || [])
+    .filter(t => t.n_cedola === nCedola && t.ean && Number(t.obiettivo_assegnato) > 0)
+    .map(t => [nCedola, String(t.ean), Number(t.obiettivo_assegnato)]);
+
+  const caricaObiettivi = async (nCedola) => {
+    const righe = righeObiettivi(nCedola);
+    if (!righe.length) return { ok: true, vuoto: true, msg: "nessun titolo con obiettivo in GiroManager" };
+    const copie = righe.reduce((s, r) => s + r[2], 0);
+    try {
+      const XLSX = window.XLSX;
+      const ws = XLSX.utils.aoa_to_sheet([["Cedola", "Ean", "Obiettivo copie"], ...righe]);
+      const wb = XLSX.utils.book_new();
+      XLSX.utils.book_append_sheet(wb, ws, "Foglio1");
+      const r = await fetch(`${SUPABASE_URL}/functions/v1/rpn-obiettivi`, {
+        method: "POST",
+        headers: { apikey: SUPABASE_KEY, Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
+        body: JSON.stringify({ file_base64: XLSX.write(wb, { type: "base64", bookType: "xlsx" }), nome_file: `obiettivi ${nCedola}.xlsx` }),
+      });
+      const j = await r.json().catch(() => ({}));
+      if (!r.ok) throw new Error(j.error || `Errore ${r.status}`);
+      const risp = j.risposta && typeof j.risposta === "object" ? j.risposta : { message: String(j.risposta ?? "") };
+      const ok = j.status >= 200 && j.status < 300 && risp.success !== false;
+      const nonCollegati = risp.eanNotConnectedToCedola || risp.nonConnected || [];
+      return {
+        ok, titoli: righe.length, copie,
+        msg: j.status === 401 || j.status === 403 ? "RPN non consente il caricamento degli obiettivi con il tuo account (servono i permessi ADMIN o RESPONSABILE)"
+          : (risp.message || risp.error || risp.detail || (ok ? "caricati" : `RPN ha risposto con errore ${j.status}`)),
+        nonCollegati: Array.isArray(nonCollegati) ? nonCollegati.map(x => (typeof x === "object" ? x.ean ?? JSON.stringify(x) : x)) : [],
+      };
+    } catch (e) { return { ok: false, titoli: righe.length, copie, msg: e.message, nonCollegati: [] }; }
+  };
+
   const apri = async (nCedola) => {
-    setSel(nCedola); setPreview(null); setEsito(null); setErrore(""); setBusy("preview");
+    setSel(nCedola); setPreview(null); setEsito(null); setEsitoObj(null); setErrore(""); setBusy("preview");
     try {
       const p = await chiama("preview", token, { n_cedola: nCedola });
       setPreview(p);
@@ -125,12 +161,21 @@ export default function ModuloPubblicaRpn({ token, titoli }) {
       p.da_rimuovere.length && `TOGLIERE ${p.da_rimuovere.length} titoli non più in GiroManager`,
       p.ordine_da_aggiornare && "riordinare i titoli",
     ].filter(Boolean);
-    if (!cosa.length) { setEsito({ info: "Già allineata: nulla da fare." }); return; }
+    const nObj = righeObiettivi(p.n_cedola).length;
+    setEsitoObj(null);
+    if (!cosa.length) {
+      // titoli già allineati: si aggiornano comunque gli obiettivi
+      setEsito({ info: "Titoli già allineati." });
+      setBusy("apply"); setEsitoObj(await caricaObiettivi(p.n_cedola)); setBusy("");
+      return;
+    }
+    if (nObj) cosa.push(`caricare gli obiettivi di ${nObj} titoli`);
     if (!window.confirm(`Su RPN sto per:\n• ${cosa.join("\n• ")}\n\nProcedo?`)) return;
     setBusy("apply"); setErrore("");
     try {
       const r = await chiama("apply", token, { n_cedola: p.n_cedola, ...date });
       setEsito(r.esito); setPreview({ ...r.stato, account: p.account });
+      setEsitoObj(await caricaObiettivi(p.n_cedola));
       await caricaStato();
     } catch (e) { setErrore(e.message); }
     setBusy("");
@@ -158,7 +203,7 @@ export default function ModuloPubblicaRpn({ token, titoli }) {
     for (const n of lista) {
       try {
         const r = await chiama("apply", token, { n_cedola: n });
-        out.push({ n, ok: true, esito: r.esito, mancanti: r.stato.mancanti.length });
+        out.push({ n, ok: true, esito: r.esito, mancanti: r.stato.mancanti.length, obj: await caricaObiettivi(n) });
       } catch (e) { out.push({ n, ok: false, errore: e.message }); }
       setBatch({ fatto: out.length, tot: lista.length, out: [...out] });
     }
@@ -175,7 +220,7 @@ export default function ModuloPubblicaRpn({ token, titoli }) {
         <div style={css.sub}>
           Crea su RPN giro e cedola se mancano, aggancia i titoli nell'ordine di "Giri e Cedole" e toglie quelli non più presenti in GiroManager.
           I titoli che RPN non ha ancora in anagrafica vengono ritentati in automatico ogni notte. L'attivazione per gli agenti è un passaggio separato.
-          Note, top 100, obiettivi e gemelli restano solo in GiroManager (RPN non li gestisce).
+          Insieme ai titoli vengono caricati su RPN anche gli obiettivi assegnati in GiroManager. Note, top 100 e gemelli restano solo in GiroManager.
         </div>
       </div>
 
@@ -216,6 +261,7 @@ export default function ModuloPubblicaRpn({ token, titoli }) {
               {batch.out.map(o => (
                 <div key={o.n} style={{ color: o.ok ? T.green : T.red, fontSize: "11px", marginBottom: 2 }}>
                   {o.ok ? "✓" : "✗"} {o.n}{o.ok ? ` — +${o.esito.aggiunti} −${o.esito.rimossi}${o.esito.cedola_creata ? " · creata" : ""}${o.mancanti ? ` · ${o.mancanti} non ancora in RPN` : ""}` : ` — ${o.errore}`}
+                  {o.obj && <span style={{ color: o.obj.ok ? T.textMid : T.red }}> · obiettivi: {o.obj.vuoto ? o.obj.msg : o.obj.ok ? `${o.obj.titoli} titoli, ${o.obj.copie.toLocaleString("it")} copie` : o.obj.msg}{o.obj.nonCollegati?.length ? ` (${o.obj.nonCollegati.length} EAN non collegati)` : ""}</span>}
                 </div>
               ))}
             </div>
@@ -272,6 +318,15 @@ export default function ModuloPubblicaRpn({ token, titoli }) {
                 <div style={{ marginTop: 12, padding: 10, border: `1px solid ${T.green}55`, borderRadius: 4, fontSize: "12px", color: T.green }}>
                   {esito.info ?? <>✓ Fatto{esito.giro_creato ? " · giro creato" : ""}{esito.cedola_creata ? " · cedola creata" : ""} · agganciati {esito.aggiunti} · tolti {esito.rimossi} · ordinati {esito.ordinati}</>}
                   {esito.avvisi?.length > 0 && <div style={{ color: T.amber, marginTop: 6 }}>Avvisi RPN: {esito.avvisi.join(" | ")}</div>}
+                </div>
+              )}
+              {busy === "apply" && !esitoObj && esito && <div style={{ ...css.sub, marginTop: 8 }}>Caricamento obiettivi su RPN…</div>}
+              {esitoObj && (
+                <div style={{ marginTop: 8, padding: 10, border: `1px solid ${(esitoObj.ok ? T.green : T.red)}55`, borderRadius: 4, fontSize: "12px", color: esitoObj.ok ? T.green : T.red }}>
+                  {esitoObj.vuoto ? `Obiettivi: ${esitoObj.msg}.`
+                    : esitoObj.ok ? `✓ Obiettivi caricati su RPN: ${esitoObj.titoli} titoli, ${esitoObj.copie.toLocaleString("it")} copie${esitoObj.msg && esitoObj.msg !== "caricati" ? ` — ${esitoObj.msg}` : ""}`
+                    : `⚠ Obiettivi non caricati: ${esitoObj.msg}`}
+                  {esitoObj.nonCollegati?.length > 0 && <div style={{ color: T.amber, marginTop: 6 }}>EAN non collegati alla cedola su RPN ({esitoObj.nonCollegati.length}): {esitoObj.nonCollegati.join(", ")}</div>}
                 </div>
               )}
 
