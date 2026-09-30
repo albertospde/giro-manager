@@ -242,29 +242,47 @@ export default function ModuloSpalmatura({ token, onDataChange }) {
     e.target.value = "";
     if (!f) return;
     setErrore(""); setMsg("");
+    const isCsv = /\.csv$/i.test(f.name) || f.type === "text/csv";
     const reader = new FileReader();
     reader.onload = (evt) => {
       try {
         const XLSX = window.XLSX;
-        const wb = XLSX.read(evt.target.result, { type: "array" });
-        const ws = wb.Sheets["SPALMATURA"];
-        if (!ws) throw new Error("Foglio 'SPALMATURA' non trovato nel file.");
+        let wb;
+        if (isCsv) {
+          // CSV: UTF-8, oppure ANSI (Windows-1252) se salvato da Excel; separatore ";" o ",".
+          const buf = evt.target.result;
+          let testo = new TextDecoder("utf-8").decode(buf);
+          if (testo.includes("�")) testo = new TextDecoder("windows-1252").decode(buf);
+          testo = testo.replace(/^﻿/, "");
+          const primeRighe = testo.slice(0, 4000);
+          const sep = (primeRighe.match(/;/g) || []).length > (primeRighe.match(/,/g) || []).length ? ";" : ",";
+          wb = XLSX.read(testo, { type: "string", FS: sep, raw: true });
+        } else {
+          wb = XLSX.read(evt.target.result, { type: "array" });
+        }
+        // Foglio "SPALMATURA" (template); se manca ma il file ha un solo foglio (es. CSV), si usa quello.
+        const ws = wb.Sheets["SPALMATURA"] || (wb.SheetNames.length === 1 ? wb.Sheets[wb.SheetNames[0]] : null);
+        if (!ws) throw new Error(`Foglio 'SPALMATURA' non trovato nel file (fogli presenti: ${wb.SheetNames.join(", ")}).`);
         const data = XLSX.utils.sheet_to_json(ws, { header: 1, defval: "" });
-        // Riga 4 = intestazioni (EDITORE, FORMATO, codici canale…), dati da riga 5
-        const intest = (data[3] || []).map(h => norm(h).replace(/\s+/g, "_"));
+        // Riga intestazioni (EDITORE, FORMATO, codici canale…): nel template è la 4ª,
+        // ma si cerca nelle prime 10 righe così va bene anche un CSV senza titolo sopra.
+        let hIdx = data.slice(0, 10).findIndex(r => norm(r[0]) === "EDITORE" && norm(r[1]) === "FORMATO");
+        if (hIdx < 0) hIdx = 3;
+        const intest = (data[hIdx] || []).map(h => norm(h).replace(/\s+/g, "_"));
         const colCanali = intest.map((h, i) => [h, i]).filter(([h, i]) => i >= 2 && h && h !== "SOMMA_%" && h !== "SOMMA");
-        if (!colCanali.length) throw new Error("Intestazioni dei canali non trovate in riga 4.");
+        if (!colCanali.length) throw new Error("Intestazioni dei canali non trovate (serve una riga EDITORE | FORMATO | codici canale).");
         const errs = [];
         const lette = [];
-        data.slice(4).forEach((r, idx) => {
+        data.slice(hIdx + 1).forEach((r, idx) => {
           if (!r.some(v => v !== "")) return;
+          const nRiga = idx + hIdx + 2;
           const editore = norm(r[0]);
-          const formato = String(r[1] ?? "").trim();
-          if (!editore || !FORMATI.includes(formato)) { errs.push(`riga ${idx + 5}: editore o formato non valido`); return; }
+          const formato = FORMATI.find(x => x.toUpperCase() === norm(r[1]));
+          if (!editore || !formato) { errs.push(`riga ${nRiga}: editore o formato non valido`); return; }
           const pesi = {};
           colCanali.forEach(([c, i]) => {
             const v = numOVuoto(r[i]);
-            if (v === null) errs.push(`riga ${idx + 5}: peso non valido per ${c}`);
+            if (v === null) errs.push(`riga ${nRiga}: peso non valido per ${c}`);
             else if (v !== "") pesi[c] = v;
           });
           lette.push({ key: chiave(editore, formato), editore_nome: editore, formato, pesi });
@@ -344,8 +362,8 @@ export default function ModuloSpalmatura({ token, onDataChange }) {
         <div style={{ flex: 1 }} />
         <button style={css.btn("green")} onClick={() => { setShowCopia(null); setShowNuovo(s => (s ? false : true)); }}>+ Nuovo editore</button>
         <button style={css.btn()} onClick={() => { setShowNuovo(false); setShowCopia(c => (c ? null : { da: "", a: "" })); }} title="Copia i pesi di un editore su un altro, anche nuovo entrante">⧉ Copia pesi</button>
-        <button style={css.btn()} onClick={() => fileRef.current?.click()} title="Carica un file nel formato del template SPALMATURA: le righe del file sostituiscono quelle in griglia (da salvare)">Importa Excel</button>
-        <input ref={fileRef} type="file" accept=".xlsx,.xls" style={{ display: "none" }} onChange={importa} />
+        <button style={css.btn()} onClick={() => fileRef.current?.click()} title="Carica un file (.xlsx, .xls o .csv) nel formato del template SPALMATURA: le righe del file sostituiscono quelle in griglia (da salvare)">Importa Excel / CSV</button>
+        <input ref={fileRef} type="file" accept=".xlsx,.xls,.csv" style={{ display: "none" }} onChange={importa} />
         <button style={css.btn()} onClick={esporta}>Esporta Excel</button>
       </div>
 
