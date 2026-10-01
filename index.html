@@ -4,11 +4,18 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Giro Manager</title>
+    <script>
+      // Tema chiaro/scuro condiviso con il PDE Hub (stessa chiave): impostato prima del caricamento
+      try { if (localStorage.getItem("pde-hub-theme") === "light") document.documentElement.setAttribute("data-theme", "light"); } catch (e) {}
+    </script>
     <style>
       * { margin: 0; padding: 0; box-sizing: border-box; }
+      html { color-scheme: dark; }
       body { background: #0f0f0f; }
+      html[data-theme="light"] { color-scheme: light; }
+      html[data-theme="light"] body { background: #eef2f9; }
     </style>
-    <script type="module" crossorigin src="/giro-manager/assets/index-CYMDMxvi.js"></script>
+    <script type="module" crossorigin src="/giro-manager/assets/index-BUKf3um4.js"></script>
   </head>
   <body>
     <div id="root"></div>
