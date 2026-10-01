@@ -1,11 +1,12 @@
 import { useState, useCallback, useMemo } from "react";
 import { fetchPrenotatoRpn, parseEaggrega, importAggregato, CANALI_LABELS } from "./rpnPrenotatoSync.js";
+import { tema, cv } from "./tema.js";
 
-const T = {
+const T = tema({
   bg: "#1a2140", surface: "#212d54", border: "#2e3d6b", borderHi: "#3d4f82",
   text: "#f0f2f8", textMid: "#8b9cc8", textDim: "#4a5a8a",
   accent: "#7b9fe8", green: "#4caf7d", red: "#e05c5c",
-};
+});
 
 const css = {
   btn: (v = "default") => ({ padding: "6px 14px", border: `1px solid ${v === "accent" ? T.accent : T.border}`, background: v === "accent" ? T.accent : "transparent", color: v === "accent" ? "#000" : T.text, cursor: "pointer", fontSize: "12px", fontFamily: "inherit", borderRadius: 3, fontWeight: v === "accent" ? "700" : "400" }),

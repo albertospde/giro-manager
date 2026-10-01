@@ -1,13 +1,14 @@
 import { useState, useEffect, useMemo, useCallback } from "react";
+import { tema, cv } from "./tema.js";
 
 const SUPABASE_URL = "https://tdflwenlylhctxssatax.supabase.co";
 const SUPABASE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InRkZmx3ZW5seWxoY3R4c3NhdGF4Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzYzMzgyNzYsImV4cCI6MjA5MTkxNDI3Nn0.l35qEL7LOvyYuI1McQlVqj4vbyTqmlevcmqWbTGYi2Q";
 
-const T = {
+const T = tema({
   bg: "#1a2140", surface: "#212d54", border: "#2e3d6b", borderHi: "#3d4f82",
   text: "#f0f2f8", textMid: "#8b9cc8", textDim: "#4a5a8a",
   accent: "#7b9fe8", green: "#4caf7d", red: "#e05c5c", blue: "#4a5da0", purple: "#9c6fcf",
-};
+});
 
 const css = {
   app: { background: T.bg, color: T.text, minHeight: "100vh", fontFamily: "'Inter', 'Segoe UI', Arial, sans-serif", fontSize: "13px" },
@@ -1015,7 +1016,7 @@ export default function ModuloAvanzamento({ titoli, prenotato, canali, token, ru
           </div>
         </div>
         {nonNeiGiriReport && nonNeiGiriReport.length > 0 && (
-          <div style={{ display: "flex", alignItems: "center", gap: 12, background: "#4a1a2a", border: `1px solid ${T.red}`, borderRadius: 4, padding: "10px 14px" }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 12, background: cv("#4a1a2a", "#fdecec"), border: `1px solid ${T.red}`, borderRadius: 4, padding: "10px 14px" }}>
             <span style={{ color: T.red, fontSize: "12px", flex: 1 }}>
               ⚠ Ultimo upload catalogo: <b>{nonNeiGiriReport.length} EAN</b> esclusi perché non presenti in nessun Giro — non compaiono in Avanzamento Novità.
             </span>
@@ -1029,18 +1030,18 @@ export default function ModuloAvanzamento({ titoli, prenotato, canali, token, ru
           <KpiCard label="Valore prenotato" value={`€ ${kpi.valPrenotato.toLocaleString("it", { maximumFractionDigits: 0 })}`} color={T.green} />
           <KpiCard label="Valore prenotato (escl. sbloccati)" value={`€ ${kpi.valPrenotatoNetto.toLocaleString("it", { maximumFractionDigits: 0 })}`} color={T.green} />
           <KpiCard label="Valore lancio" value={`€ ${kpi.valoreLancio.toLocaleString("it", { maximumFractionDigits: 0 })}`} color={T.accent} sub={`${kpi.numLanciati} titoli lanciati`} />
-          <KpiCard label={`Titoli sbloccati ${filterAnno || ""}`} value={kpi.numSbloccati.toLocaleString("it")} color="#e8a838" />
-          <KpiCard label="Valore sbloccati" value={`€ ${kpi.valoreSbloccato.toLocaleString("it", { maximumFractionDigits: 0 })}`} color="#e8a838" sub="valore finito nei rifornimenti (teorico)" />
+          <KpiCard label={`Titoli sbloccati ${filterAnno || ""}`} value={kpi.numSbloccati.toLocaleString("it")} color={cv("#e8a838", "#b7791f")} />
+          <KpiCard label="Valore sbloccati" value={`€ ${kpi.valoreSbloccato.toLocaleString("it", { maximumFractionDigits: 0 })}`} color={cv("#e8a838", "#b7791f")} sub="valore finito nei rifornimenti (teorico)" />
           <div style={{ background: T.surface, border: `1px solid ${T.border}`, borderRadius: 4, padding: "16px 20px", minWidth: 200 }}>
             <div style={{ color: T.textMid, fontSize: "10px", letterSpacing: "0.1em", textTransform: "uppercase", marginBottom: 8 }}>Avanzamento totale</div>
             <div style={{ color: kpi.pctAvanzamento >= 80 ? T.green : kpi.pctAvanzamento >= 50 ? T.accent : T.red, fontSize: "28px", fontWeight: "700", lineHeight: 1, marginBottom: 8 }}>{kpi.pctAvanzamento}%</div>
             <div style={{ height: 8, background: T.borderHi, borderRadius: 4, overflow: "hidden", display: "flex" }}>
               <div style={{ width: `${Math.round(kpi.numLanciati / Math.max(kpi.totTitoli, 1) * 100)}%`, height: "100%", background: T.accent }} />
-              <div style={{ width: `${Math.round(kpi.numSbloccati / Math.max(kpi.totTitoli, 1) * 100)}%`, height: "100%", background: "#e8a838" }} />
+              <div style={{ width: `${Math.round(kpi.numSbloccati / Math.max(kpi.totTitoli, 1) * 100)}%`, height: "100%", background: cv("#e8a838", "#b7791f") }} />
             </div>
             <div style={{ display: "flex", gap: 12, marginTop: 6, fontSize: "10px" }}>
               <span style={{ color: T.accent }}>● {kpi.numLanciati} lanciati</span>
-              <span style={{ color: "#e8a838" }}>● {kpi.numSbloccati} sbloccati</span>
+              <span style={{ color: cv("#e8a838", "#b7791f") }}>● {kpi.numSbloccati} sbloccati</span>
             </div>
           </div>
           <KpiCard label="Avanzamento novità" value={`${kpi.pctAvanzamentoNovita}%`} color={kpi.pctAvanzamentoNovita >= 80 ? T.green : kpi.pctAvanzamentoNovita >= 50 ? T.accent : T.red} sub={`${kpi.numLanciati} di ${kpi.totNovitaGestite} (esclusi sbloccati)`} />
@@ -1118,7 +1119,7 @@ export default function ModuloAvanzamento({ titoli, prenotato, canali, token, ru
               </div>
               <div>
                 <div style={{ fontSize: "9px", textTransform: "uppercase", letterSpacing: "0.06em", marginBottom: 3 }}>Valore sbloccati (teorico)</div>
-                <div style={{ color: "#e8a838", fontWeight: "700", fontSize: "16px" }}>€ {kpi.valoreSbloccato.toLocaleString("it", { maximumFractionDigits: 0 })}</div>
+                <div style={{ color: cv("#e8a838", "#b7791f"), fontWeight: "700", fontSize: "16px" }}>€ {kpi.valoreSbloccato.toLocaleString("it", { maximumFractionDigits: 0 })}</div>
               </div>
               <div>
                 <div style={{ fontSize: "9px", textTransform: "uppercase", letterSpacing: "0.06em", marginBottom: 3 }}>Pipeline (pren. da lanciare/sbloccare)</div>
@@ -1183,7 +1184,7 @@ export default function ModuloAvanzamento({ titoli, prenotato, canali, token, ru
               // "0 di prossima pubblicazione" (a prescindere dalle copie)
               const isRif = !n.num_lancio && n.stato_vendita && n.stato_vendita !== "0";
               return (
-                <tr key={n.ean || i} style={{ background: isRif ? "#1a1f38" : (i % 2 === 0 ? "transparent" : T.surface + "66"), opacity: isRif ? 0.6 : 1 }}>
+                <tr key={n.ean || i} style={{ background: isRif ? cv("#1a1f38", "#e9edf6") : (i % 2 === 0 ? "transparent" : T.surface + "66"), opacity: isRif ? 0.6 : 1 }}>
                   <td style={{ ...css.td, color: T.textMid, fontSize: "10px", whiteSpace: "nowrap" }}>{n.nome_cedola}</td>
                   <td style={{ ...css.td, fontFamily: "monospace", fontSize: "11px", color: T.textMid }}>{n.ean}</td>
                   <td style={{ ...css.td, maxWidth: 220 }}><div style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", fontWeight: "600" }}>{n.titolo}</div></td>
@@ -1235,7 +1236,7 @@ export default function ModuloAvanzamento({ titoli, prenotato, canali, token, ru
 
       {/* TOAST */}
       {toast && (
-        <div style={{ position: "fixed", bottom: 24, left: "50%", transform: "translateX(-50%)", background: toast.type === "err" ? "#4a1a2a" : "#1a3a2a", border: `1px solid ${toast.type === "err" ? T.red : T.green}`, color: toast.type === "err" ? T.red : T.green, borderRadius: 6, padding: "8px 20px", fontSize: "12px", zIndex: 999, boxShadow: "0 4px 20px #0008" }}>
+        <div style={{ position: "fixed", bottom: 24, left: "50%", transform: "translateX(-50%)", background: toast.type === "err" ? cv("#4a1a2a", "#fdecec") : cv("#1a3a2a", "#e7f6ee"), border: `1px solid ${toast.type === "err" ? T.red : T.green}`, color: toast.type === "err" ? T.red : T.green, borderRadius: 6, padding: "8px 20px", fontSize: "12px", zIndex: 999, boxShadow: "0 4px 20px #0008" }}>
           {toast.msg}
         </div>
       )}

@@ -10,6 +10,7 @@ import ModuloTerne from "./ModuloTerne.jsx";
 import ModuloPubblicaRpn from "./ModuloPubblicaRpn.jsx";
 import ModuloRankingEditori from "./ModuloRankingEditori.jsx";
 import { fetchPrenotatoRpn, fetchPrenotatoRpnCedola, parseEaggrega, importAggregato } from "./rpnPrenotatoSync.js";
+import { tema, cv, impostaTema, temaAttivo } from "./tema.js";
 
 const SUPABASE_URL = "https://tdflwenlylhctxssatax.supabase.co";
 const SUPABASE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InRkZmx3ZW5seWxoY3R4c3NhdGF4Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzYzMzgyNzYsImV4cCI6MjA5MTkxNDI3Nn0.l35qEL7LOvyYuI1McQlVqj4vbyTqmlevcmqWbTGYi2Q";
@@ -192,11 +193,11 @@ const sbSetStatoChiusura = async (tipo, chiave, chiuso, token) => {
   return r.ok;
 };
 
-const T = {
+const T = tema({
   bg: "#1a2140", surface: "#212d54", border: "#2e3d6b", borderHi: "#3d4f82",
   text: "#f0f2f8", textMid: "#8b9cc8", textDim: "#4a5a8a",
   accent: "#7b9fe8", green: "#4caf7d", red: "#e05c5c", blue: "#4a5da0", purple: "#9c6fcf",
-};
+});
 
 const css = {
   app: { background: T.bg, color: T.text, minHeight: "100vh", fontFamily: "'Inter', 'Segoe UI', Arial, sans-serif", fontSize: "13px" },
@@ -823,7 +824,7 @@ function Modulocalendariogiri({ token, ruolo }) {
       </table>
 
       {toast && (
-        <div style={{ position: "fixed", bottom: 24, left: "50%", transform: "translateX(-50%)", background: toast.type === "err" ? "#4a1a2a" : "#1a3a2a", border: `1px solid ${toast.type === "err" ? T.red : T.green}`, color: toast.type === "err" ? T.red : T.green, borderRadius: 6, padding: "8px 20px", fontSize: "12px", zIndex: 999, boxShadow: "0 4px 20px #0008" }}>
+        <div style={{ position: "fixed", bottom: 24, left: "50%", transform: "translateX(-50%)", background: toast.type === "err" ? cv("#4a1a2a", "#fdecec") : cv("#1a3a2a", "#e7f6ee"), border: `1px solid ${toast.type === "err" ? T.red : T.green}`, color: toast.type === "err" ? T.red : T.green, borderRadius: 6, padding: "8px 20px", fontSize: "12px", zIndex: 999, boxShadow: "0 4px 20px #0008" }}>
           {toast.msg}
         </div>
       )}
@@ -1489,7 +1490,7 @@ function ModuloCedola({ titoli, giriList, onUpdateTitolo, onDeleteTitolo, spalma
 
       {/* TOAST LOCALE */}
       {toastCedola && (
-        <div style={{ position: "fixed", bottom: 24, left: "50%", transform: "translateX(-50%)", background: toastCedola.type === "err" ? "#4a1a2a" : "#1a3a2a", border: `1px solid ${toastCedola.type === "err" ? T.red : T.green}`, color: toastCedola.type === "err" ? T.red : T.green, borderRadius: 6, padding: "8px 20px", fontSize: "12px", zIndex: 999, boxShadow: "0 4px 20px #0008" }}>
+        <div style={{ position: "fixed", bottom: 24, left: "50%", transform: "translateX(-50%)", background: toastCedola.type === "err" ? cv("#4a1a2a", "#fdecec") : cv("#1a3a2a", "#e7f6ee"), border: `1px solid ${toastCedola.type === "err" ? T.red : T.green}`, color: toastCedola.type === "err" ? T.red : T.green, borderRadius: 6, padding: "8px 20px", fontSize: "12px", zIndex: 999, boxShadow: "0 4px 20px #0008" }}>
           {toastCedola.msg}
         </div>
       )}
@@ -2960,7 +2961,7 @@ if (!r.ok) throw new Error(await r.text());
           <KpiCard label="Copie lanciate" value={kpi.copieLanciate.toLocaleString("it")} color={T.accent} sub={`€ ${kpi.valoreLanciate.toLocaleString("it", { maximumFractionDigits: 0 })}`} />
 
           <KpiCard label="Fine Giro" value={kpi.totFineGiro.toLocaleString("it")} color={T.purple} sub={`€ ${kpi.valoreFineGiro.toLocaleString("it", { maximumFractionDigits: 0 })}`} />
-          <KpiCard label="Amazon" value={kpi.totAmazon.toLocaleString("it")} color="#e8a838" sub={`€ ${kpi.valoreAmazon.toLocaleString("it", { maximumFractionDigits: 0 })}`} />
+          <KpiCard label="Amazon" value={kpi.totAmazon.toLocaleString("it")} color={cv("#e8a838", "#b7791f")} sub={`€ ${kpi.valoreAmazon.toLocaleString("it", { maximumFractionDigits: 0 })}`} />
           <KpiCard label="Teorico totale" value={kpi.totTeorico.toLocaleString("it")} color={T.text} sub={`€ ${kpi.valoreTeorico.toLocaleString("it", { maximumFractionDigits: 0 })}`} />
         </div>
 
@@ -2977,7 +2978,7 @@ if (!r.ok) throw new Error(await r.text());
                 <span style={{ fontSize: "11px", fontWeight: "700", color: T.accent, minWidth: 40, textAlign: "right" }}>{v.lanciate.toLocaleString("it")}</span>
               </div>
               {v.amazon > 0 && (
-                <div style={{ fontSize: "9px", color: "#e8a838" }}>🅰 {v.amazon.toLocaleString("it")}</div>
+                <div style={{ fontSize: "9px", color: cv("#e8a838", "#b7791f") }}>🅰 {v.amazon.toLocaleString("it")}</div>
               )}
               <div style={{ fontSize: "9px", color: T.textDim, marginTop: 2 }}>{v.titoli} titoli · € {Math.round(v.valore).toLocaleString("it")}</div>
             </div>
@@ -3000,7 +3001,7 @@ if (!r.ok) throw new Error(await r.text());
               <th style={{ ...css.th, cursor: "pointer" }} onClick={() => toggleSort("pren_fine_giro")}>F.G.{sortIcon("pren_fine_giro")}</th>
               <th style={css.th} title="Quantità extra inserita a mano, sommata al totale F.G.">Ced.Int.</th>
               <th style={{ ...css.th, cursor: "pointer" }} onClick={() => toggleSort("prenotato_trasmesso")}>P.O. Meli{sortIcon("prenotato_trasmesso")}</th>
-              <th style={{ ...css.th, cursor: "pointer", color: "#e8a838" }} onClick={() => toggleSort("pren_amazon")}>Amazon{sortIcon("pren_amazon")}</th>
+              <th style={{ ...css.th, cursor: "pointer", color: cv("#e8a838", "#b7791f") }} onClick={() => toggleSort("pren_amazon")}>Amazon{sortIcon("pren_amazon")}</th>
               <th style={{ ...css.th, cursor: "pointer" }} onClick={() => toggleSort("teorico")}>Tot. Teorico{sortIcon("teorico")}</th>
               <th style={{ ...css.th, cursor: "pointer" }} onClick={() => toggleSort("delta_portale")} title="Fine Giro vs Tot. Teorico">FG vs Tot.Teorico{sortIcon("delta_portale")}</th>
               <th style={css.th}>Uscita</th>
@@ -3034,7 +3035,7 @@ if (!r.ok) throw new Error(await r.text());
                   ) : (
                     <div style={{ cursor: "pointer", display: "flex", alignItems: "center", gap: 4 }}
                       onClick={() => setEditCell({ id: r.id, field: "cedole", value: r.cedole_manual || r.cedole.join(", ") || "" })}>
-                      {r.cedole.length > 0 ? r.cedole.map((c, ci) => <span key={ci} style={{ color: r.is_manual_cedole ? "#e8a838" : T.textMid }}>{ci > 0 && ", "}{c}</span>) : <span style={{ color: T.textDim }}>—</span>}
+                      {r.cedole.length > 0 ? r.cedole.map((c, ci) => <span key={ci} style={{ color: r.is_manual_cedole ? cv("#e8a838", "#b7791f") : T.textMid }}>{ci > 0 && ", "}{c}</span>) : <span style={{ color: T.textDim }}>—</span>}
                       <span style={{ color: T.accent, fontSize: "10px" }}>✎</span>
                     </div>
                   )}
@@ -3052,7 +3053,7 @@ if (!r.ok) throw new Error(await r.text());
                   ) : (
                     <div style={{ cursor: "pointer", display: "flex", alignItems: "center", gap: 4 }}
                       onClick={() => setEditCell({ id: r.id, field: "fg", value: String(r.pren_fine_giro_manual || r.pren_fine_giro || "") })}>
-                      <span style={{ color: r.pren_fine_giro > 0 ? (r.is_manual_fg ? "#e8a838" : T.purple) : T.textDim }}>{r.pren_fine_giro > 0 ? r.pren_fine_giro.toLocaleString("it") : "—"}</span>
+                      <span style={{ color: r.pren_fine_giro > 0 ? (r.is_manual_fg ? cv("#e8a838", "#b7791f") : T.purple) : T.textDim }}>{r.pren_fine_giro > 0 ? r.pren_fine_giro.toLocaleString("it") : "—"}</span>
                       <span style={{ color: T.accent, fontSize: "10px" }}>✎</span>
                     </div>
                   )}
@@ -3067,7 +3068,7 @@ if (!r.ok) throw new Error(await r.text());
                     </div>
                   ) : (
                     <div style={{ display: "flex", alignItems: "center", gap: 4 }} title={r.ced_integrativa_nota || "Nessuna nota — clic sulla 📝 per aggiungerne una"}>
-                      <span style={{ cursor: "pointer", color: r.ced_integrativa > 0 ? "#e8a838" : T.textDim }}
+                      <span style={{ cursor: "pointer", color: r.ced_integrativa > 0 ? cv("#e8a838", "#b7791f") : T.textDim }}
                         onClick={() => setEditCell({ id: r.id, field: "cedint", value: String(r.ced_integrativa_manual || "") })}>
                         {r.ced_integrativa > 0 ? r.ced_integrativa.toLocaleString("it") : "—"}
                       </span>
@@ -3080,7 +3081,7 @@ if (!r.ok) throw new Error(await r.text());
                 </td>
                 <td style={{ ...css.td, fontWeight: "600" }}>
                   {r.is_live_amazon ? (
-                    <span style={{ color: "#e8a838" }}>{r.pren_amazon.toLocaleString("it")}</span>
+                    <span style={{ color: cv("#e8a838", "#b7791f") }}>{r.pren_amazon.toLocaleString("it")}</span>
                   ) : editCell?.id === r.id && editCell?.field === "amazon" ? (
                     <div style={{ display: "flex", gap: 3, alignItems: "center" }}>
                       <input type="number" style={{ ...css.input, width: 70, padding: "2px 5px", fontSize: "11px" }} value={editCell.value} autoFocus
@@ -3091,7 +3092,7 @@ if (!r.ok) throw new Error(await r.text());
                   ) : (
                     <div style={{ cursor: "pointer", display: "flex", alignItems: "center", gap: 4 }}
                       onClick={() => setEditCell({ id: r.id, field: "amazon", value: String(r.pren_amazon_manual || r.pren_amazon || "") })}>
-                      <span style={{ color: r.pren_amazon > 0 ? (r.is_manual_amazon ? "#e8a838" : "#e8a838") : T.textDim }}>{r.pren_amazon > 0 ? r.pren_amazon.toLocaleString("it") : "—"}</span>
+                      <span style={{ color: r.pren_amazon > 0 ? (r.is_manual_amazon ? cv("#e8a838", "#b7791f") : cv("#e8a838", "#b7791f")) : T.textDim }}>{r.pren_amazon > 0 ? r.pren_amazon.toLocaleString("it") : "—"}</span>
                       <span style={{ color: T.accent, fontSize: "10px" }}>✎</span>
                     </div>
                   )}
@@ -3106,7 +3107,7 @@ if (!r.ok) throw new Error(await r.text());
                         {(r.delta_portale > 0 ? "+" : "") + r.delta_portale.toLocaleString("it")}
                         {r.delta_spiegato_da_stampatore && (
                           <div
-                            style={{ fontSize: "9px", fontWeight: 500, color: "#e8a838", whiteSpace: "nowrap" }}
+                            style={{ fontSize: "9px", fontWeight: 500, color: cv("#e8a838", "#b7791f"), whiteSpace: "nowrap" }}
                             title="Quantità Diretti da Tipografia già in Fine Giro ma non ancora sul Portafoglio Ordini Meli"
                           >
                             di cui {r.pren_stampatore.toLocaleString("it")} da stampatore
@@ -3127,13 +3128,13 @@ if (!r.ok) throw new Error(await r.text());
                       fontSize: "11px",
                       fontWeight: "700",
                       color: r.giorno_uscita === "martedì" ? T.accent : T.green,
-                      borderColor: r.is_override ? "#e8a838" : T.border,
+                      borderColor: r.is_override ? cv("#e8a838", "#b7791f") : T.border,
                     }}
                   >
                     <option value="martedì">Martedì</option>
                     <option value="venerdì">Venerdì</option>
                   </select>
-                  {r.is_override && <span style={{ color: "#e8a838", fontSize: "9px", marginLeft: 4 }}>✎</span>}
+                  {r.is_override && <span style={{ color: cv("#e8a838", "#b7791f"), fontSize: "9px", marginLeft: 4 }}>✎</span>}
                 </td>
               </tr>
             ))}
@@ -3145,7 +3146,7 @@ if (!r.ok) throw new Error(await r.text());
       </div>
 
       {toast && (
-        <div style={{ position: "fixed", bottom: 24, left: "50%", transform: "translateX(-50%)", background: toast.type === "err" ? "#4a1a2a" : "#1a3a2a", border: `1px solid ${toast.type === "err" ? T.red : T.green}`, color: toast.type === "err" ? T.red : T.green, borderRadius: 6, padding: "8px 20px", fontSize: "12px", zIndex: 999, boxShadow: "0 4px 20px #0008" }}>
+        <div style={{ position: "fixed", bottom: 24, left: "50%", transform: "translateX(-50%)", background: toast.type === "err" ? cv("#4a1a2a", "#fdecec") : cv("#1a3a2a", "#e7f6ee"), border: `1px solid ${toast.type === "err" ? T.red : T.green}`, color: toast.type === "err" ? T.red : T.green, borderRadius: 6, padding: "8px 20px", fontSize: "12px", zIndex: 999, boxShadow: "0 4px 20px #0008" }}>
           {toast.msg}
         </div>
       )}
@@ -3153,10 +3154,10 @@ if (!r.ok) throw new Error(await r.text());
       {/* POPUP ANTICIPI LANCIO NOTIFICATI */}
       {anticipiPopup && (
         <div style={{ position: "fixed", inset: 0, background: "#000a", zIndex: 300, display: "flex", alignItems: "center", justifyContent: "center" }} onClick={() => setAnticipiPopup(null)}>
-          <div style={{ background: T.surface, border: `1px solid #e8a838`, borderRadius: 6, padding: 28, width: 520, maxHeight: "80vh", overflowY: "auto" }} onClick={e => e.stopPropagation()}>
+          <div style={{ background: T.surface, border: `1px solid ${cv("#e8a838", "#b7791f")}`, borderRadius: 6, padding: 28, width: 520, maxHeight: "80vh", overflowY: "auto" }} onClick={e => e.stopPropagation()}>
             <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 6 }}>
               <span style={{ fontSize: "22px" }}>🔔</span>
-              <span style={{ color: "#e8a838", fontWeight: "700", fontSize: "14px" }}>ANTICIPI LANCIO SBLOCCATI</span>
+              <span style={{ color: cv("#e8a838", "#b7791f"), fontWeight: "700", fontSize: "14px" }}>ANTICIPI LANCIO SBLOCCATI</span>
             </div>
             <div style={{ color: T.textMid, fontSize: "12px", marginBottom: 16 }}>
               {anticipiPopup.length === 1
@@ -3916,11 +3917,11 @@ function ModuloVerificaLanciAmazon({ token, titoli, prenotato, canali }) {
       {/* KPI */}
       <div style={{ padding: "16px 20px", borderBottom: `1px solid ${T.border}` }}>
         <div style={{ display: "flex", gap: 12, flexWrap: "wrap" }}>
-          <KpiCard label="Proposto ad Amazon" value={kpiVerifica.totProposto.toLocaleString("it")} color="#e8a838" sub={`€ ${kpiVerifica.valoreProposto.toLocaleString("it", { maximumFractionDigits: 0 })}`} />
+          <KpiCard label="Proposto ad Amazon" value={kpiVerifica.totProposto.toLocaleString("it")} color={cv("#e8a838", "#b7791f")} sub={`€ ${kpiVerifica.valoreProposto.toLocaleString("it", { maximumFractionDigits: 0 })}`} />
           <KpiCard label="Confermato (Netto)" value={kpiVerifica.totConfermato.toLocaleString("it")} color={T.green} sub={`€ ${kpiVerifica.valoreConfermato.toLocaleString("it", { maximumFractionDigits: 0 })}`} />
           <KpiCard label="Scostamento vs proposta" value={(kpiVerifica.scostamento > 0 ? "+" : "") + kpiVerifica.scostamento.toLocaleString("it")} color={kpiVerifica.scostamento < 0 ? T.red : T.green} sub={`${kpiVerifica.valoreScostamento > 0 ? "+" : ""}€ ${kpiVerifica.valoreScostamento.toLocaleString("it", { maximumFractionDigits: 0 })}`} />
           <KpiCard label="Titoli confermati" value={kpiVerifica.nConfermati} color={T.text} />
-          <KpiCard label="In attesa di conferma" value={kpiVerifica.nInAttesa} color={kpiVerifica.nInAttesa > 0 ? "#e8a838" : T.textMid} />
+          <KpiCard label="In attesa di conferma" value={kpiVerifica.nInAttesa} color={kpiVerifica.nInAttesa > 0 ? cv("#e8a838", "#b7791f") : T.textMid} />
         </div>
       </div>
 
@@ -3973,7 +3974,7 @@ function ModuloVerificaLanciAmazon({ token, titoli, prenotato, canali }) {
                 </div>
               )}
               <div style={{ fontSize: "12px", color: T.text, marginBottom: 10 }}>
-                Trovati <b style={{ color: "#e8a838" }}>{mailParseResult.length}</b> titoli nella mail. Gli altri <b style={{ color: T.green }}>{mailPreview?.autoConfermati ?? 0}</b> titoli del lancio (senza differenza) verranno confermati in automatico sulla proposta iniziale PDE (Amazon Cedola). Tutti i valori esistenti verranno sovrascritti.
+                Trovati <b style={{ color: cv("#e8a838", "#b7791f") }}>{mailParseResult.length}</b> titoli nella mail. Gli altri <b style={{ color: T.green }}>{mailPreview?.autoConfermati ?? 0}</b> titoli del lancio (senza differenza) verranno confermati in automatico sulla proposta iniziale PDE (Amazon Cedola). Tutti i valori esistenti verranno sovrascritti.
               </div>
               {mailParseResult.length > 0 && (
                 <div style={{ maxHeight: 260, overflowY: "auto", marginBottom: 12, border: `1px solid ${T.border}`, borderRadius: 4 }}>
@@ -4042,7 +4043,7 @@ function ModuloVerificaLanciAmazon({ token, titoli, prenotato, canali }) {
           ) : (
             <>
               <div style={{ fontSize: "12px", color: T.text, marginBottom: 10 }}>
-                Trovati <b style={{ color: "#e8a838" }}>{ordiniPreview?.totRighe ?? 0}</b> EAN nel file, di cui <b style={{ color: T.green }}>{ordiniPreview?.matched ?? 0}</b> corrispondono a titoli del lancio {filterLancio}/{filterAnno} selezionato. Verranno aggiornati solo questi.
+                Trovati <b style={{ color: cv("#e8a838", "#b7791f") }}>{ordiniPreview?.totRighe ?? 0}</b> EAN nel file, di cui <b style={{ color: T.green }}>{ordiniPreview?.matched ?? 0}</b> corrispondono a titoli del lancio {filterLancio}/{filterAnno} selezionato. Verranno aggiornati solo questi.
               </div>
               {ordiniParseResult.length > 0 && (
                 <div style={{ maxHeight: 260, overflowY: "auto", marginBottom: 12, border: `1px solid ${T.border}`, borderRadius: 4 }}>
@@ -4115,7 +4116,7 @@ function ModuloVerificaLanciAmazon({ token, titoli, prenotato, canali }) {
           ) : (
             <>
               <div style={{ fontSize: "12px", color: T.text, marginBottom: 10 }}>
-                Trovati <b style={{ color: "#e8a838" }}>{proposteParseResult.length}</b> EAN nel file, di cui <b style={{ color: T.green }}>{proposteApplyPreview?.matched ?? 0}</b> nel lancio {filterLancio}/{filterAnno} selezionato ({proposteApplyPreview?.conQuantita ?? 0} con quantità in Proposta Amazon).
+                Trovati <b style={{ color: cv("#e8a838", "#b7791f") }}>{proposteParseResult.length}</b> EAN nel file, di cui <b style={{ color: T.green }}>{proposteApplyPreview?.matched ?? 0}</b> nel lancio {filterLancio}/{filterAnno} selezionato ({proposteApplyPreview?.conQuantita ?? 0} con quantità in Proposta Amazon).
               </div>
               <div style={{ display: "flex", gap: 10 }}>
                 <button style={css.btn("accent")} disabled={proposteProcessing} onClick={confirmApplyProposte}>
@@ -4158,7 +4159,7 @@ function ModuloVerificaLanciAmazon({ token, titoli, prenotato, canali }) {
           ) : (
             <>
               <div style={{ fontSize: "12px", color: T.text, marginBottom: 10 }}>
-                Trovati <b style={{ color: "#e8a838" }}>{preorderParseResult.length}</b> EAN nel file, di cui <b style={{ color: T.green }}>{preorderApplyPreview?.matched ?? 0}</b> nel lancio {filterLancio}/{filterAnno} selezionato ({preorderApplyPreview?.conQuantita ?? 0} con quantità preorder &gt; 0).
+                Trovati <b style={{ color: cv("#e8a838", "#b7791f") }}>{preorderParseResult.length}</b> EAN nel file, di cui <b style={{ color: T.green }}>{preorderApplyPreview?.matched ?? 0}</b> nel lancio {filterLancio}/{filterAnno} selezionato ({preorderApplyPreview?.conQuantita ?? 0} con quantità preorder &gt; 0).
               </div>
               <div style={{ display: "flex", gap: 10 }}>
                 <button style={css.btn("accent")} disabled={preorderProcessing} onClick={confirmApplyPreorder}>
@@ -4192,7 +4193,7 @@ function ModuloVerificaLanciAmazon({ token, titoli, prenotato, canali }) {
                 <span style={{ fontSize: "11px", fontWeight: "700", color: T.green, minWidth: 40, textAlign: "right" }}>{e.confermato.toLocaleString("it")}</span>
               </div>
               {e.proposto > 0 && (
-                <div style={{ fontSize: "9px", color: "#e8a838" }}>🎯 {e.proposto.toLocaleString("it")} · € {Math.round(e.valoreProposto).toLocaleString("it")}</div>
+                <div style={{ fontSize: "9px", color: cv("#e8a838", "#b7791f") }}>🎯 {e.proposto.toLocaleString("it")} · € {Math.round(e.valoreProposto).toLocaleString("it")}</div>
               )}
               <div style={{ fontSize: "9px", color: T.textDim, marginTop: 2 }}>{e.titoli} titoli · € {Math.round(e.valore).toLocaleString("it")}</div>
             </div>
@@ -4212,7 +4213,7 @@ function ModuloVerificaLanciAmazon({ token, titoli, prenotato, canali }) {
               <th style={css.th}>Editore</th>
               <th style={css.th}>Prezzo</th>
               <th style={css.th} title="Totale teorico (F.G. trasmesso + Amazon)">Totale</th>
-              <th style={{ ...css.th, color: "#e8a838" }} title="Amazon in cedola (attuale)">Amazon cedola</th>
+              <th style={{ ...css.th, color: cv("#e8a838", "#b7791f") }} title="Amazon in cedola (attuale)">Amazon cedola</th>
               <th style={css.th} title="Quantità proposta ad Amazon">Proposta Amaz</th>
               <th style={css.th} title="Taglio prenotazione = (Proposta-Cedola)/Cedola">Taglio %</th>
               <th style={css.th} title="Proposta interna PDE">Proposta PDE</th>
@@ -4270,7 +4271,7 @@ function ModuloVerificaLanciAmazon({ token, titoli, prenotato, canali }) {
                   <td style={{ ...css.td, color: T.accent, fontWeight: "600", whiteSpace: "nowrap", maxWidth: 130, overflow: "hidden", textOverflow: "ellipsis" }}>{r.editore}</td>
                   <td style={{ ...css.td, whiteSpace: "nowrap" }}>€ {(r.prezzo || 0).toFixed(2)}</td>
                   <td style={css.td}>{r.vE.toLocaleString("it")}</td>
-                  <td style={{ ...css.td, color: "#e8a838", fontWeight: "600" }}>{r.vF.toLocaleString("it")}</td>
+                  <td style={{ ...css.td, color: cv("#e8a838", "#b7791f"), fontWeight: "600" }}>{r.vF.toLocaleString("it")}</td>
                   <td style={css.td}>{editVACell("proposta_amaz")}</td>
                   <td style={{ ...css.td, color: r.vH == null ? T.textDim : r.vH < 0 ? T.red : T.green }}>{r.vH != null ? (r.vH * 100).toFixed(1) + "%" : "—"}</td>
                   <td style={css.td}>{editVACell("proposta_pde", "number", r.vG != null && r.vG !== r.vF)}</td>
@@ -4287,7 +4288,7 @@ function ModuloVerificaLanciAmazon({ token, titoli, prenotato, canali }) {
                   <td style={css.td}>{editVACell("preorder")}</td>
                   <td style={css.td}>{r.vV != null ? r.vV.toLocaleString("it") : "—"}</td>
                   <td style={{ ...css.td, textAlign: "center", cursor: "pointer" }} onClick={() => saveVerificaAmazon(r.anno_lancio, r.num_lancio, r.ean, { richiesta_rifornimento: !r.vX })}>
-                    {r.vX ? <span style={{ color: "#e8a838" }}>⚠️</span> : <span style={{ color: T.textDim }}>—</span>}
+                    {r.vX ? <span style={{ color: cv("#e8a838", "#b7791f") }}>⚠️</span> : <span style={{ color: T.textDim }}>—</span>}
                   </td>
                   <td style={{ ...css.td, textAlign: "center", cursor: "pointer" }} onClick={() => saveVerificaAmazon(r.anno_lancio, r.num_lancio, r.ean, { rottura_stock: !r.vY })}>
                     {r.vY ? <span style={{ color: T.red }}>🔴</span> : <span style={{ color: T.textDim }}>—</span>}
@@ -4303,7 +4304,7 @@ function ModuloVerificaLanciAmazon({ token, titoli, prenotato, canali }) {
       </div>
 
       {toast && (
-        <div style={{ position: "fixed", bottom: 24, left: "50%", transform: "translateX(-50%)", background: toast.type === "err" ? "#4a1a2a" : "#1a3a2a", border: `1px solid ${toast.type === "err" ? T.red : T.green}`, color: toast.type === "err" ? T.red : T.green, borderRadius: 6, padding: "8px 20px", fontSize: "12px", zIndex: 999, boxShadow: "0 4px 20px #0008" }}>
+        <div style={{ position: "fixed", bottom: 24, left: "50%", transform: "translateX(-50%)", background: toast.type === "err" ? cv("#4a1a2a", "#fdecec") : cv("#1a3a2a", "#e7f6ee"), border: `1px solid ${toast.type === "err" ? T.red : T.green}`, color: toast.type === "err" ? T.red : T.green, borderRadius: 6, padding: "8px 20px", fontSize: "12px", zIndex: 999, boxShadow: "0 4px 20px #0008" }}>
           {toast.msg}
         </div>
       )}
@@ -4598,7 +4599,7 @@ function ModuloAnticipiLancio({ token, userEmail }) {
                 </button>
               </div>
               {(cercandoTitolo || cercaEanEsito) && (
-                <div style={{ gridColumn: "1/-1", fontSize: "11px", marginTop: -6, color: cercandoTitolo ? T.textMid : (cercaEanEsito.ok ? T.green : "#e8a838") }}>
+                <div style={{ gridColumn: "1/-1", fontSize: "11px", marginTop: -6, color: cercandoTitolo ? T.textMid : (cercaEanEsito.ok ? T.green : cv("#e8a838", "#b7791f")) }}>
                   {cercandoTitolo ? "Ricerca su BookUp in corso..." : cercaEanEsito.msg}
                 </div>
               )}
@@ -4632,7 +4633,7 @@ function ModuloAnticipiLancio({ token, userEmail }) {
               </div>
             </div>
             {editingId && form.ean && (
-              <div style={{ color: "#e8a838", fontSize: "11px", marginTop: 8 }}>
+              <div style={{ color: cv("#e8a838", "#b7791f"), fontSize: "11px", marginTop: 8 }}>
                 ⚠ Se cambi l'EAN, lo stato torna a "Da gestire" finché non viene ri-lanciato.
               </div>
             )}
@@ -4654,10 +4655,10 @@ function ModuloAnticipiLancio({ token, userEmail }) {
           <button key={k} style={css.btn(filterStato === k ? "accent" : "default")} onClick={() => setFilterStato(k)}>{label}</button>
         ))}
         <input style={{ ...css.input, width: 200 }} placeholder="Cerca cliente / EAN / titolo..." value={search} onChange={e => setSearch(e.target.value)} />
-        <div style={{ marginLeft: "auto", display: "flex", gap: 8, alignItems: "center" }}>
+        <div style={{ marginLeft: "auto", display: "flex", gap: 8, alignItems: "center", flexShrink: 0 }}>
           <div>
-            <label style={{ color: selected.size > 0 && !numeroLancio.trim() ? "#e8a838" : T.textMid, fontSize: "9px", textTransform: "uppercase", letterSpacing: "0.06em", display: "block", marginBottom: 2 }}>N° lancio da trasmettere *</label>
-            <input style={{ ...css.input, width: 120, borderColor: selected.size > 0 && !numeroLancio.trim() ? "#e8a838" : undefined }} placeholder="es. 38" value={numeroLancio} onChange={e => setNumeroLancio(e.target.value)} />
+            <label style={{ color: selected.size > 0 && !numeroLancio.trim() ? cv("#e8a838", "#b7791f") : T.textMid, fontSize: "9px", textTransform: "uppercase", letterSpacing: "0.06em", display: "block", marginBottom: 2 }}>N° lancio da trasmettere *</label>
+            <input style={{ ...css.input, width: 120, borderColor: selected.size > 0 && !numeroLancio.trim() ? cv("#e8a838", "#b7791f") : undefined }} placeholder="es. 38" value={numeroLancio} onChange={e => setNumeroLancio(e.target.value)} />
           </div>
           <div>
             <label style={{ color: T.textMid, fontSize: "9px", textTransform: "uppercase", letterSpacing: "0.06em", display: "block", marginBottom: 2 }}>Firma mail</label>
@@ -4671,7 +4672,7 @@ function ModuloAnticipiLancio({ token, userEmail }) {
       {/* KPI */}
       <div style={{ padding: "14px 20px", borderBottom: `1px solid ${T.border}`, display: "flex", gap: 12 }}>
         <KpiCard label="Da gestire" value={counts.totale_da_gestire} color={T.textMid} />
-        <KpiCard label="🔔 Notificati" value={counts.notificato} color="#e8a838" />
+        <KpiCard label="🔔 Notificati" value={counts.notificato} color={cv("#e8a838", "#b7791f")} />
         <KpiCard label="Gestiti" value={counts.gestito} color={T.green} />
       </div>
 
@@ -4697,11 +4698,11 @@ function ModuloAnticipiLancio({ token, userEmail }) {
           </thead>
           <tbody>
             {dataFiltrata.map((r, i) => (
-              <tr key={r.id} style={{ background: r.stato === "notificato" ? "#e8a83822" : (i % 2 === 0 ? "transparent" : T.surface + "66") }}>
+              <tr key={r.id} style={{ background: r.stato === "notificato" ? cv("#e8a83822", "#b7791f22") : (i % 2 === 0 ? "transparent" : T.surface + "66") }}>
                 <td style={css.td}><input type="checkbox" checked={selected.has(r.id)} onChange={() => toggleSelect(r.id)} style={{ accentColor: T.accent }} /></td>
                 <td style={css.td}>
                   {r.stato === "gestito" && <Badge label="Gestito" color={T.green} />}
-                  {r.stato === "notificato" && <Badge label="🔔 Notificato" color="#e8a838" />}
+                  {r.stato === "notificato" && <Badge label="🔔 Notificato" color={cv("#e8a838", "#b7791f")} />}
                   {r.stato === "da_gestire" && <Badge label="Da gestire" color={T.textMid} />}
                   {r.lanci_settimanali && <div style={{ fontSize: "10px", color: T.textDim, marginTop: 2 }}>lancio {r.lanci_settimanali.num_lancio}/{r.lanci_settimanali.anno_lancio}</div>}
                 </td>
@@ -4748,7 +4749,7 @@ function ModuloAnticipiLancio({ token, userEmail }) {
       )}
 
       {toast && (
-        <div style={{ position: "fixed", bottom: 24, left: "50%", transform: "translateX(-50%)", background: toast.type === "err" ? "#4a1a2a" : "#1a3a2a", border: `1px solid ${toast.type === "err" ? T.red : T.green}`, color: toast.type === "err" ? T.red : T.green, borderRadius: 6, padding: "8px 20px", fontSize: "12px", zIndex: 999, boxShadow: "0 4px 20px #0008" }}>
+        <div style={{ position: "fixed", bottom: 24, left: "50%", transform: "translateX(-50%)", background: toast.type === "err" ? cv("#4a1a2a", "#fdecec") : cv("#1a3a2a", "#e7f6ee"), border: `1px solid ${toast.type === "err" ? T.red : T.green}`, color: toast.type === "err" ? T.red : T.green, borderRadius: 6, padding: "8px 20px", fontSize: "12px", zIndex: 999, boxShadow: "0 4px 20px #0008" }}>
           {toast.msg}
         </div>
       )}
@@ -4778,8 +4779,23 @@ const MODULES_IMPORT = [
 ];
 
 const style = document.createElement('style');
-style.textContent = `button:hover { filter: brightness(1.3); } @keyframes gm-spin { to { transform: rotate(360deg); } }`;
+style.textContent = `button:hover { filter: brightness(${cv("1.3", "0.94")}); } @keyframes gm-spin { to { transform: rotate(360deg); } }`;
 document.head.appendChild(style);
+
+// Selettore tema chiaro/scuro (scelta condivisa con il PDE Hub, vedi tema.js)
+function SelettoreTema() {
+  return (
+    <div role="group" aria-label="Tema" style={{ display: "flex", border: `1px solid ${T.border}`, borderRadius: 4, overflow: "hidden" }}>
+      {[["light", "☀ Chiaro"], ["dark", "☾ Scuro"]].map(([v, l]) => (
+        <button key={v} onClick={() => impostaTema(v)} aria-pressed={temaAttivo === v}
+          style={{ padding: "4px 10px", fontSize: "11px", border: "none", fontFamily: "inherit", whiteSpace: "nowrap", cursor: temaAttivo === v ? "default" : "pointer",
+            background: temaAttivo === v ? T.accent : "transparent", color: temaAttivo === v ? cv("#000", "#fff") : T.textMid, fontWeight: temaAttivo === v ? 700 : 400 }}>
+          {l}
+        </button>
+      ))}
+    </div>
+  );
+}
 
 export default function App() {
   const [session, setSession] = useState(null);
@@ -4921,7 +4937,10 @@ export default function App() {
           <span style={{ color: T.accent, fontSize: "11px", letterSpacing: "0.12em", textTransform: "uppercase" }}>{[...MODULES, ...MODULES_IMPORT].find(m => m.id === activeModule)?.label}</span>
           <span style={{ color: T.borderHi }}>·</span>
           <span style={{ color: T.textMid, fontSize: "11px" }}>{titoli.length} titoli · {[...new Set(titoli.map(t => t.n_cedola).filter(Boolean))].length} cedole</span>
-          {ruolo !== "agente" && <button style={{ ...css.btn(), marginLeft: "auto", fontSize: "11px", padding: "4px 10px" }} onClick={refreshDati}>↺ Aggiorna</button>}
+          <div style={{ marginLeft: "auto", display: "flex", gap: 8, alignItems: "center", flexShrink: 0 }}>
+            {ruolo !== "agente" && <button style={{ ...css.btn(), fontSize: "11px", padding: "4px 10px", whiteSpace: "nowrap" }} onClick={refreshDati}>↺ Aggiorna</button>}
+            <SelettoreTema />
+          </div>
         </div>
         <div style={{ flex: 1, overflow: "hidden", display: "flex", flexDirection: "column" }}>
           {/* MOD 3: Passato spalmatura alla Dashboard */}

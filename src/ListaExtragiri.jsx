@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { cv } from "./tema.js";
 
 // Raggruppa le cedole extra: quelle con "campagna"/"campagne" nel nome
 // finiscono in un gruppo a parte, le altre restano nell'elenco piatto.
@@ -22,7 +23,7 @@ function CedolaButton({ label, onClick }) {
         background: "transparent",
         border: "1px solid #5b7fd4",
         borderRadius: 6,
-        color: "#8fb0ff",
+        color: cv("#8fb0ff", "#2f56b8"),
         fontSize: 12,
         fontWeight: 600,
         letterSpacing: 0.3,

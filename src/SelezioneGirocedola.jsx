@@ -1,3 +1,5 @@
+import { cv } from "./tema.js";
+
 // Divide le cedole extra in due liste: quelle con "campagna"/"campagne" nel nome
 // vanno nella colonna CAMPAGNE, le altre restano in EXTRAGIRI.
 const RE_CAMPAGNA = /campagn[ae]/i;
@@ -11,8 +13,8 @@ export function dividiExtragiriECampagne(cedoleExtra, campoNome = "n_cedola") {
 function Bottone({ label, variante = "extra", onClick }) {
   const stili = {
     giro: { background: "#8fa8e8", border: "none", color: "#12183a" },
-    extra: { background: "transparent", border: "1px solid #5b7fd4", color: "#8fb0ff" },
-    campagna: { background: "transparent", border: "1px solid #7a5bd4", color: "#b08fff" },
+    extra: { background: "transparent", border: "1px solid #5b7fd4", color: cv("#8fb0ff", "#2f56b8") },
+    campagna: { background: "transparent", border: "1px solid #7a5bd4", color: cv("#b08fff", "#6a3fc0") },
   };
   return (
     <button
@@ -38,7 +40,7 @@ function Bottone({ label, variante = "extra", onClick }) {
 function Colonna({ titolo, anno, onCambiaAnno, children }) {
   return (
     <div style={{ minWidth: 220 }}>
-      <div style={{ textAlign: "center", fontWeight: 700, color: "#fff", marginBottom: 12, fontSize: 13 }}>
+      <div style={{ textAlign: "center", fontWeight: 700, color: cv("#fff", "#16204a"), marginBottom: 12, fontSize: 13 }}>
         {titolo}
       </div>
       {onCambiaAnno && (
@@ -76,7 +78,7 @@ export default function SelezioneGiroCedola({
 
   return (
     <div>
-      <div style={{ textAlign: "center", color: "#8fb0ff", marginBottom: 24 }}>
+      <div style={{ textAlign: "center", color: cv("#8fb0ff", "#2f56b8"), marginBottom: 24 }}>
         Seleziona un giro o una cedola extra
       </div>
       <div style={{ display: "flex", gap: 48, justifyContent: "center" }}>

@@ -1,5 +1,6 @@
 import { useState, useMemo, useCallback, useEffect } from "react";
 import { resolveGiri } from "./ModuloImport.jsx";
+import { tema, cv } from "./tema.js";
 
 // ═══════════════════════════════════════════════════════════════════════════
 // TRASCINAMENTO FILE GLOBALE
@@ -100,11 +101,11 @@ attivaDragDropGlobale();
 const SUPABASE_URL = "https://tdflwenlylhctxssatax.supabase.co";
 const SUPABASE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InRkZmx3ZW5seWxoY3R4c3NhdGF4Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzYzMzgyNzYsImV4cCI6MjA5MTkxNDI3Nn0.l35qEL7LOvyYuI1McQlVqj4vbyTqmlevcmqWbTGYi2Q";
 
-const T = {
+const T = tema({
   bg: "#0f0f0f", surface: "#161616", border: "#252525", borderHi: "#333333",
   text: "#e8e8e8", textMid: "#888888", textDim: "#444444",
   accent: "#c8a96e", green: "#4caf7d", red: "#e05c5c", blue: "#5b8fd4", orange: "#e0a24c",
-};
+});
 const css = {
   btn: (v = "default") => ({ padding: "6px 14px", border: `1px solid ${v === "accent" ? T.accent : v === "danger" ? T.red : T.border}`, background: v === "accent" ? T.accent : v === "danger" ? T.red + "22" : "transparent", color: v === "accent" ? "#000" : v === "danger" ? T.red : T.text, cursor: "pointer", fontSize: "12px", fontFamily: "inherit", borderRadius: 3, fontWeight: v === "accent" ? "700" : "400" }),
   th: { padding: "8px 10px", textAlign: "left", color: T.textMid, fontWeight: "400", fontSize: "11px", letterSpacing: "0.08em", textTransform: "uppercase", borderBottom: `1px solid ${T.border}`, whiteSpace: "nowrap", background: T.surface, position: "sticky", top: 0 },

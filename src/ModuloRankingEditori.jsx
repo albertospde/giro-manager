@@ -1,4 +1,5 @@
 import { useState, useEffect, useMemo, useCallback, useRef } from "react";
+import { tema, cv } from "./tema.js";
 
 // ─── Ranking Editori ─────────────────────────────────────────────────────────
 // Anagrafica e sequenza editori (tabella ranking_editori): è l'ordine con cui gli editori compaiono
@@ -12,11 +13,11 @@ import { useState, useEffect, useMemo, useCallback, useRef } from "react";
 const SUPABASE_URL = "https://tdflwenlylhctxssatax.supabase.co";
 const SUPABASE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InRkZmx3ZW5seWxoY3R4c3NhdGF4Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzYzMzgyNzYsImV4cCI6MjA5MTkxNDI3Nn0.l35qEL7LOvyYuI1McQlVqj4vbyTqmlevcmqWbTGYi2Q";
 
-const T = {
+const T = tema({
   bg: "#1a2140", surface: "#212d54", border: "#2e3d6b", borderHi: "#3d4f82",
   text: "#f0f2f8", textMid: "#8b9cc8", textDim: "#4a5a8a",
   accent: "#7b9fe8", green: "#4caf7d", red: "#e05c5c", amber: "#e0a84c",
-};
+});
 const CAT_COLORI = { A: "#7b9fe8", B: "#4caf7d", C: "#e0a84c", KIDS: "#d47bd4", SERVICE: "#8b9cc8" };
 const CATEGORIE = ["A", "B", "C", "KIDS", "SERVICE"];
 const PROMOZIONI = ["PDE Promozione", "PDE Service"];

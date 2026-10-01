@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback } from "react";
+import { tema, cv } from "./tema.js";
 
 // ─── Aggiorna Terne (Agente – Editore – Libreria) ─────────────────────────────
 // RPN è la fonte: le terne vivono nel pannello admin RPN (Terne › Associazione agenti).
@@ -15,11 +16,11 @@ const HEADERS_ATTESE = ["codice agente", "codice editore", "codice libreria"];
 const CHUNK_CARICA = 10000;
 const CHUNK_INSERISCI = 20000;
 
-const T = {
+const T = tema({
   bg: "#1a2140", surface: "#212d54", border: "#2e3d6b", borderHi: "#3d4f82",
   text: "#f0f2f8", textMid: "#8b9cc8", textDim: "#4a5a8a",
   accent: "#7b9fe8", green: "#4caf7d", red: "#e05c5c", amber: "#e0a84c",
-};
+});
 const css = {
   btn: (v = "default", disabled = false) => ({ padding: "7px 16px", border: `1px solid ${v === "accent" ? T.accent : v === "danger" ? T.red : T.border}`, background: v === "accent" ? T.accent : v === "danger" ? T.red + "22" : "transparent", color: v === "accent" ? "#000" : v === "danger" ? T.red : T.text, cursor: disabled ? "default" : "pointer", fontSize: "12px", fontFamily: "inherit", borderRadius: 3, fontWeight: v === "accent" ? "700" : "400", opacity: disabled ? 0.5 : 1 }),
   card: { background: T.surface, border: `1px solid ${T.border}`, borderRadius: 6, padding: 20, marginBottom: 16 },
