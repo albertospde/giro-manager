@@ -106,7 +106,11 @@ export default function ModuloSpalmatura({ token, onDataChange }) {
     alta: 10, taglioAlta: 10,               // resa ≥ 10% → perde il 10%
     virtuosa: 5, aumentoMax: 40,            // resa ≤ 5% → riceve le quote tolte, fino a +40% del suo peso
     pesoMinimo: 2,                          // canali sotto il 2% di peso: troppo piccoli per giudicare la resa
-    tetto: 30, prudenza: 5, neutri: ["IBS", "ALTRI_ONLINE"],
+    // Eccezione Amazon (decisione di Alberto, 01/10/2026): peso fisso 10% per tutti, gli altri canali
+    // riproporzionati sul resto; esclusi gli editori sotto (e le loro linee figlie). 0 = eccezione spenta.
+    amazonFisso: 10,
+    amazonEsclusi: ["ALPHA TEST", "ALPHA TEST TU", "RAFFAELLO CORTINA", "SOLFERINO", "SOLFERINO RAGAZZI", "CAIRO EDITORE"],
+    tetto: 30, prudenza: 5, neutri: ["IBS", "ALTRI_ONLINE", "AMAZON"],
   });
 
   const carica = useCallback(async () => {
@@ -485,9 +489,12 @@ export default function ModuloSpalmatura({ token, onDataChange }) {
     const calcola = parResa.metodo === "regole" ? calcolaRegole : calcolaCorrezione;
     righe.forEach(r => {
       const rs = resa.rese[r.key];
-      if (!rs || !somma(r.pesi)) return;
-      const { nuovi, info } = calcola(r.pesi, rs, parResa);
-      out.push({ key: r.key, prima: r.pesi, nuovi, info, rese: rs.perCanale });
+      if (!somma(r.pesi)) return;
+      // senza rese nel file la riga riceve solo l'eccezione Amazon (se prevista)
+      const { nuovi: calcolati, info } = rs ? calcola(r.pesi, rs, parResa) : { nuovi: { ...r.pesi }, info: {} };
+      const nuovi = applicaAmazonFisso(r.editore_nome, calcolati, parResa);
+      if (!rs && somma(Object.fromEntries(Object.keys(nuovi).map(c => [c, Math.abs((nuovi[c] || 0) - (Number(r.pesi[c]) || 0))]))) === 0) return;
+      out.push({ key: r.key, prima: r.pesi, nuovi, info, rese: rs ? rs.perCanale : {} });
     });
     const senzaPesi = Object.keys(resa.rese).filter(k => !righe.some(r => r.key === k));
     const perCanale = canali.map(c => {
@@ -844,6 +851,20 @@ function calcolaCorrezione(pesi, rs, par) {
   return { nuovi: chiudiRiga(grezzi, sommaPrima), info: {} };
 }
 
+// ─── Eccezione Amazon a peso fisso ────────────────────────────────────────────
+// Amazon prende `amazonFisso`% (se l'editore ha già un peso Amazon e non è tra gli esclusi);
+// gli altri canali si riproporzionano sul resto mantenendo i loro rapporti.
+function applicaAmazonFisso(editore, pesi, { amazonFisso, amazonEsclusi }) {
+  const fisso = Number(amazonFisso) || 0;
+  const a = Number(pesi.AMAZON) || 0;
+  if (!fisso || !a || (amazonEsclusi || []).includes(editore)) return pesi;
+  const tot = Object.values(pesi).reduce((s, v) => s + (Number(v) || 0), 0);
+  if (tot - a <= 0 || fisso >= tot) return pesi;
+  const altri = Object.entries(pesi).filter(([c, v]) => c !== "AMAZON" && Number(v) > 0).map(([c, v]) => [c, Number(v)]);
+  const nuovi = chiudiRiga(altri, tot - fisso);
+  return { ...pesi, ...nuovi, AMAZON: fisso };
+}
+
 // ─── Regole a soglie ─────────────────────────────────────────────────────────
 // 1. Ogni canale finisce in una fascia in base alla sua resa (prudente):
 //      critica (≥ soglia critica) → perde taglioCritica% del suo peso
@@ -938,6 +959,13 @@ function PannelloResa({ resa, correzione, par, setPar, canaliInfo, onApplica, on
       ) : (
         <div style={{ color: T.textMid, fontSize: "11px", marginBottom: 12 }}>Ogni canale sale o scende in proporzione a quanto la sua resa è sotto o sopra la media dell'editore.</div>
       )}
+      <div style={{ background: T.bg, border: `1px solid ${T.border}`, borderRadius: 4, padding: "8px 12px", marginBottom: 12, fontSize: "12px", color: T.text, lineHeight: 2 }}>
+        <b>Eccezione Amazon</b> — peso fisso <Num v={par.amazonFisso} on={num("amazonFisso")} />% per tutti gli editori (0 = spenta), gli altri canali si riproporzionano.
+        <div style={{ color: T.textMid, fontSize: "11px" }}>Esclusi (separati da virgola):{" "}
+          <input style={{ ...css.input, width: "min(560px, 100%)", padding: "2px 6px" }} defaultValue={(par.amazonEsclusi || []).join(", ")}
+            onBlur={e => { const v = e.target.value.split(",").map(x => x.trim().toUpperCase()).filter(Boolean); setPar(p => ({ ...p, amazonEsclusi: v })); }} />
+        </div>
+      </div>
       <div style={{ display: "flex", gap: 18, flexWrap: "wrap", marginBottom: 12, alignItems: "flex-end" }}>
         {par.metodo === "formula" && <label style={css.label} title="Di quanto può cambiare al massimo il peso di un canale rispetto a oggi">Variazione massima (±%)
           <input style={{ ...css.input, width: 80 }} defaultValue={par.tetto} onBlur={num("tetto")} />
