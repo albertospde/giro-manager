@@ -102,7 +102,7 @@ export default function ModuloSpalmatura({ token, onDataChange }) {
   const [resa, setResa] = useState(null);        // file rese caricato: { nomeFile, rese: chiave → { perCanale, totale }, nonAbbinati }
   const [parResa, setParResa] = useState({
     metodo: "regole",                       // "regole" (soglie di resa) | "formula" (proporzionale)
-    critica: 20, taglioCritica: 30,         // resa ≥ 20% → il canale perde il 30% del suo peso
+    critica: 25, taglioCritica: 30,         // resa ≥ 25% → il canale perde il 30% del suo peso
     alta: 10, taglioAlta: 10,               // resa ≥ 10% → perde il 10%
     virtuosa: 5, aumentoMax: 40,            // resa ≤ 5% → riceve le quote tolte, fino a +40% del suo peso
     pesoMinimo: 2,                          // canali sotto il 2% di peso: troppo piccoli per giudicare la resa
@@ -362,12 +362,20 @@ export default function ModuloSpalmatura({ token, onDataChange }) {
     reader.onload = (evt) => {
       try {
         const { lette } = leggiFileCanali(leggiRighe(evt.target.result, f.name), { somma: false });
-        const rese = {}, nonAbbinati = new Set();
+        const rese = {}, nonAbbinati = new Set(), via = {};
         lette.forEach(l => {
-          const { rk } = risolviEditore(l.nomeFile);
+          const { rk, via: v } = risolviEditore(l.nomeFile);
           if (!rk) { nonAbbinati.add(l.nomeFile); return; }
-          rese[chiave(rk.editore_nome, l.formato)] = { perCanale: l.pesi, totale: l.totale };
+          const k = chiave(rk.editore_nome, l.formato);
+          // se due righe del file finiscono sullo stesso editore, vince quella col nome identico
+          if (rese[k] && v !== "uguale") return;
+          rese[k] = { perCanale: l.pesi, totale: l.totale };
+          via[k] = v;
         });
+        // linee figlie senza riga propria nel file: usano la resa della casa madre
+        linee.forEach(({ linea, madre }) => FORMATI.forEach(fm => {
+          if (!rese[chiave(linea, fm)] && rese[chiave(madre, fm)]) rese[chiave(linea, fm)] = rese[chiave(madre, fm)];
+        }));
         if (!Object.keys(rese).length) throw new Error("Nessun editore del file rese corrisponde a quelli del Ranking.");
         setResa({ nomeFile: f.name, rese, nonAbbinati: [...nonAbbinati] });
       } catch (err) { setErrore(err.message); }
