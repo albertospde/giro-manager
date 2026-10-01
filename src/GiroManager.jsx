@@ -4793,7 +4793,7 @@ function CambiaPassword({ email, token, onClose }) {
 
   const conferma = async () => {
     if (!f.vecchia || !f.nuova || !f.ripeti) { setErrore("Compila tutti e tre i campi."); return; }
-    if (f.nuova.length < 6) { setErrore("La nuova password deve avere almeno 6 caratteri."); return; }
+    if (f.nuova.length < 8) { setErrore("La nuova password deve avere almeno 8 caratteri."); return; }
     if (f.nuova !== f.ripeti) { setErrore("La nuova password e la ripetizione non coincidono."); return; }
     if (f.nuova === f.vecchia) { setErrore("La nuova password è uguale a quella vecchia."); return; }
     setSalvando(true);
