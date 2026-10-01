@@ -4782,6 +4782,75 @@ const style = document.createElement('style');
 style.textContent = `button:hover { filter: brightness(${cv("1.3", "0.94")}); } @keyframes gm-spin { to { transform: rotate(360deg); } }`;
 document.head.appendChild(style);
 
+// Cambio password dell'utente collegato: la vecchia password si verifica con un accesso
+// (email + vecchia password), poi si salva la nuova sull'account Supabase.
+function CambiaPassword({ email, token, onClose }) {
+  const [f, setF] = useState({ vecchia: "", nuova: "", ripeti: "" });
+  const [errore, setErrore] = useState("");
+  const [salvando, setSalvando] = useState(false);
+  const [fatto, setFatto] = useState(false);
+  const set = (k) => (e) => { setF(x => ({ ...x, [k]: e.target.value })); setErrore(""); };
+
+  const conferma = async () => {
+    if (!f.vecchia || !f.nuova || !f.ripeti) { setErrore("Compila tutti e tre i campi."); return; }
+    if (f.nuova.length < 6) { setErrore("La nuova password deve avere almeno 6 caratteri."); return; }
+    if (f.nuova !== f.ripeti) { setErrore("La nuova password e la ripetizione non coincidono."); return; }
+    if (f.nuova === f.vecchia) { setErrore("La nuova password è uguale a quella vecchia."); return; }
+    setSalvando(true);
+    try {
+      const verifica = await sb.auth.signIn(email, f.vecchia);
+      if (!verifica?.access_token) { setErrore("La vecchia password non è corretta."); setSalvando(false); return; }
+      const r = await fetch(`${SUPABASE_URL}/auth/v1/user`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json", "apikey": SUPABASE_KEY, "Authorization": `Bearer ${verifica.access_token || token}` },
+        body: JSON.stringify({ password: f.nuova }),
+      });
+      if (!r.ok) {
+        const j = await r.json().catch(() => ({}));
+        setErrore(j.msg || j.message || j.error_description || "Errore durante il cambio password.");
+        setSalvando(false); return;
+      }
+      setFatto(true);
+    } catch (e) { setErrore("Errore di connessione: " + e.message); }
+    setSalvando(false);
+  };
+
+  const campo = (k, label) => (
+    <label style={{ display: "block", marginBottom: 12 }}>
+      <span style={{ color: T.textMid, fontSize: "10px", textTransform: "uppercase", letterSpacing: "0.08em", display: "block", marginBottom: 4 }}>{label}</span>
+      <input type="password" value={f[k]} onChange={set(k)} onKeyDown={e => { if (e.key === "Enter") conferma(); }}
+        autoFocus={k === "vecchia"} autoComplete={k === "vecchia" ? "current-password" : "new-password"}
+        style={{ ...css.input, width: "100%", boxSizing: "border-box" }} />
+    </label>
+  );
+
+  return (
+    <div style={{ position: "fixed", inset: 0, background: "#000a", zIndex: 400, display: "flex", alignItems: "center", justifyContent: "center" }}>
+      <div style={{ background: T.surface, border: `1px solid ${T.borderHi}`, borderRadius: 6, padding: 28, width: 380 }}>
+        {fatto ? (
+          <div style={{ textAlign: "center" }}>
+            <div style={{ fontSize: "30px", marginBottom: 10 }}>✅</div>
+            <div style={{ color: T.text, fontSize: "15px", fontWeight: "700", marginBottom: 20 }}>Password cambiata con successo</div>
+            <button style={css.btn("accent")} autoFocus onClick={onClose}>OK</button>
+          </div>
+        ) : (
+          <>
+            <div style={{ color: T.accent, fontWeight: "700", fontSize: "13px", marginBottom: 18 }}>🔑 CAMBIA PASSWORD</div>
+            {campo("vecchia", "Vecchia password")}
+            {campo("nuova", "Nuova password")}
+            {campo("ripeti", "Ripeti nuova password")}
+            {errore && <div style={{ color: T.red, fontSize: "12px", marginBottom: 12 }}>⚠ {errore}</div>}
+            <div style={{ display: "flex", justifyContent: "flex-end", gap: 8, marginTop: 8 }}>
+              <button style={css.btn()} onClick={onClose} disabled={salvando}>Annulla</button>
+              <button style={css.btn("accent")} onClick={conferma} disabled={salvando}>{salvando ? "Salvataggio…" : "Conferma"}</button>
+            </div>
+          </>
+        )}
+      </div>
+    </div>
+  );
+}
+
 // Selettore tema chiaro/scuro (scelta condivisa con il PDE Hub, vedi tema.js)
 function SelettoreTema() {
   return (
@@ -4800,6 +4869,7 @@ function SelettoreTema() {
 export default function App() {
   const [session, setSession] = useState(null);
   const [checkingAuth, setCheckingAuth] = useState(true);
+  const [cambioPassword, setCambioPassword] = useState(false);
   const [activeModule, setActiveModule] = useState("dashboard");
   const [titoli, setTitoli] = useState([]);
   const [prenotato, setPrenotato] = useState([]);
@@ -4923,12 +4993,6 @@ export default function App() {
         <div style={{ padding: "12px 16px", borderTop: `1px solid ${T.border}` }}>
           <div style={{ color: T.textDim, fontSize: "10px", marginBottom: 2 }}>{session.user?.email}</div>
           <div style={{ color: T.textDim, fontSize: "10px", marginBottom: 6, textTransform: "uppercase", letterSpacing: "0.06em" }}>{ruolo}</div>
-          <button style={{ ...css.btn(), fontSize: "11px", padding: "4px 10px", width: "100%", marginBottom: 4 }} onClick={async () => {
-            const nuova = prompt("Nuova password (min. 6 caratteri):"); if (!nuova || nuova.length < 6) { alert("Password troppo corta."); return; }
-            const conferma = prompt("Conferma nuova password:"); if (nuova !== conferma) { alert("Le password non coincidono."); return; }
-            const r = await fetch(`${SUPABASE_URL}/auth/v1/user`, { method: "PUT", headers: { "Content-Type": "application/json", "apikey": SUPABASE_KEY, "Authorization": `Bearer ${session.token}` }, body: JSON.stringify({ password: nuova }) });
-            if (r.ok) alert("Password aggiornata."); else alert("Errore aggiornamento password.");
-          }}>Modifica password</button>
           <button style={{ ...css.btn(), fontSize: "11px", padding: "4px 10px", width: "100%" }} onClick={handleLogout}>Esci</button>
         </div>
       </div>
@@ -4939,9 +5003,11 @@ export default function App() {
           <span style={{ color: T.textMid, fontSize: "11px" }}>{titoli.length} titoli · {[...new Set(titoli.map(t => t.n_cedola).filter(Boolean))].length} cedole</span>
           <div style={{ marginLeft: "auto", display: "flex", gap: 8, alignItems: "center", flexShrink: 0 }}>
             {ruolo !== "agente" && <button style={{ ...css.btn(), fontSize: "11px", padding: "4px 10px", whiteSpace: "nowrap" }} onClick={refreshDati}>↺ Aggiorna</button>}
+            <button style={{ ...css.btn(), fontSize: "11px", padding: "4px 10px", whiteSpace: "nowrap" }} onClick={() => setCambioPassword(true)}>🔑 Cambia password</button>
             <SelettoreTema />
           </div>
         </div>
+        {cambioPassword && <CambiaPassword email={session.user?.email} token={session.token} onClose={() => setCambioPassword(false)} />}
         <div style={{ flex: 1, overflow: "hidden", display: "flex", flexDirection: "column" }}>
           {/* MOD 3: Passato spalmatura alla Dashboard */}
           {activeModule === "dashboard" && <ModuloDashboard titoli={titoli} prenotato={prenotato} canali={canali} spalmatura={spalmatura} ruolo={ruolo} />}
