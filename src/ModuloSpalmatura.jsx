@@ -11,7 +11,8 @@ import { tema, cv } from "./tema.js";
 //   "Esporta Excel" produce lo stesso template, quindi si può scaricare, modificare e ricaricare.
 // • "Correggi con resa" carica il file delle rese sulle novità (stesso formato: editore, tipo edizione,
 //   una colonna per canale + Totale = resa media editore) e corregge i pesi in griglia: chi rende meno
-//   della media dell'editore guadagna peso, chi rende di più ne perde. Resta in bozza fino a Salva.
+//   della media dell'editore guadagna peso, chi rende di più ne perde. Due metodi: "Regole a soglie"
+//   (resa critica/alta → taglio, resa virtuosa → riceve) o "Formula proporzionale". Resta in bozza fino a Salva.
 
 const SUPABASE_URL = "https://tdflwenlylhctxssatax.supabase.co";
 const SUPABASE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InRkZmx3ZW5seWxoY3R4c3NhdGF4Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzYzMzgyNzYsImV4cCI6MjA5MTkxNDI3Nn0.l35qEL7LOvyYuI1McQlVqj4vbyTqmlevcmqWbTGYi2Q";
@@ -99,7 +100,14 @@ export default function ModuloSpalmatura({ token, onDataChange }) {
   const fileRef = useRef(null);
   const resaRef = useRef(null);
   const [resa, setResa] = useState(null);        // file rese caricato: { nomeFile, rese: chiave → { perCanale, totale }, nonAbbinati }
-  const [parResa, setParResa] = useState({ tetto: 30, prudenza: 5, neutri: ["IBS", "ALTRI_ONLINE"] });
+  const [parResa, setParResa] = useState({
+    metodo: "regole",                       // "regole" (soglie di resa) | "formula" (proporzionale)
+    critica: 20, taglioCritica: 30,         // resa ≥ 20% → il canale perde il 30% del suo peso
+    alta: 10, taglioAlta: 10,               // resa ≥ 10% → perde il 10%
+    virtuosa: 5, aumentoMax: 40,            // resa ≤ 5% → riceve le quote tolte, fino a +40% del suo peso
+    pesoMinimo: 2,                          // canali sotto il 2% di peso: troppo piccoli per giudicare la resa
+    tetto: 30, prudenza: 5, neutri: ["IBS", "ALTRI_ONLINE"],
+  });
 
   const carica = useCallback(async () => {
     setLoading(true); setErrore("");
@@ -466,11 +474,12 @@ export default function ModuloSpalmatura({ token, onDataChange }) {
   const correzione = useMemo(() => {
     if (!resa) return null;
     const out = [];
+    const calcola = parResa.metodo === "regole" ? calcolaRegole : calcolaCorrezione;
     righe.forEach(r => {
       const rs = resa.rese[r.key];
       if (!rs || !somma(r.pesi)) return;
-      const nuovi = calcolaCorrezione(r.pesi, rs, parResa);
-      out.push({ key: r.key, prima: r.pesi, nuovi });
+      const { nuovi, info } = calcola(r.pesi, rs, parResa);
+      out.push({ key: r.key, prima: r.pesi, nuovi, info, rese: rs.perCanale });
     });
     const senzaPesi = Object.keys(resa.rese).filter(k => !righe.some(r => r.key === k));
     const perCanale = canali.map(c => {
@@ -478,9 +487,16 @@ export default function ModuloSpalmatura({ token, onDataChange }) {
       if (!presenti.length) return null;
       const media = (k) => r2(presenti.reduce((s, x) => s + (Number(x[k][c]) || 0), 0) / presenti.length);
       const delta = presenti.map(x => (Number(x.nuovi[c]) || 0) - (Number(x.prima[c]) || 0));
-      return { c, prima: media("prima"), dopo: media("nuovi"), su: delta.filter(d => d > 0.05).length, giu: delta.filter(d => d < -0.05).length };
+      const conResa = presenti.filter(x => x.rese[c] !== undefined && x.rese[c] !== "");
+      const resaMedia = conResa.length ? r2(conResa.reduce((s, x) => s + Number(x.rese[c]), 0) / conResa.length) : null;
+      const fascia = (f) => presenti.filter(x => x.info.fasce?.[c] === f).length;
+      return { c, prima: media("prima"), dopo: media("nuovi"), su: delta.filter(d => d > 0.05).length, giu: delta.filter(d => d < -0.05).length,
+        resaMedia, critica: fascia("critica"), alta: fascia("alta"), virtuosa: fascia("virtuosa") };
     }).filter(Boolean);
-    return { righe: out, senzaPesi, perCanale };
+    const senzaBeneficiari = out.filter(x => x.info.senzaBeneficiari).map(x => x.key.replace("|", " · "));
+    const conTagli = out.filter(x => x.info.tagli).length;
+    const tagliRidotti = out.filter(x => x.info.tagliRidotti).length;
+    return { righe: out, senzaPesi, perCanale, senzaBeneficiari, conTagli, tagliRidotti };
   }, [resa, righe, parResa, canali]);
 
   const filtrate = ordinate.filter(r =>
@@ -775,34 +791,116 @@ function NuovaRiga({ righe, ranking, iniziale, onAggiungi, onAnnulla }) {
 //   2. fattore = (1 − resa canale) / (1 − resa media editore): sopra 1 il canale trattiene più della media.
 //   3. nuovo peso = peso × fattore, con un tetto (es. ±30%), poi la riga torna alla somma di partenza.
 // Canali "neutri" (rese non tracciate, es. IBS) o senza dato di resa usano la resa media: restano proporzionali.
-function calcolaCorrezione(pesi, { perCanale, totale }, { tetto, prudenza, neutri }) {
+// Base comune: voci con peso > 0, resa media editore e resa "prudente" di ogni canale (null = neutro/senza dato)
+// regole=true: resa reale del canale (non ammorbidita); i canali sotto `pesoMinimo` sono troppo piccoli per giudicare → neutri
+function preparaRese(pesi, { perCanale, totale }, { prudenza, neutri, pesoMinimo }, regole = false) {
   const voci = Object.entries(pesi).map(([c, v]) => [c, Number(v) || 0]).filter(([, v]) => v > 0);
   const sommaPrima = voci.reduce((s, [, v]) => s + v, 0);
   // resa media editore: colonna Totale del file, altrimenti media delle rese pesata sui pesi
   let media = totale === "" || totale == null ? null : Number(totale) / 100;
   if (media == null) {
-    const conResa = voci.filter(([c]) => perCanale[c] !== undefined);
+    const conResa = voci.filter(([c]) => perCanale[c] !== undefined && perCanale[c] !== "");
     const p = conResa.reduce((s, [, v]) => s + v, 0);
     media = p ? conResa.reduce((s, [c, v]) => s + v * Number(perCanale[c]) / 100, 0) / p : 0;
   }
-  if (media >= 1) return { ...pesi };
   const k = Math.max(0, Number(prudenza) || 0) / 100;
-  const cap = Math.max(0, Number(tetto) || 0) / 100;
-  const grezzi = voci.map(([c, v]) => {
+  const resaDi = {};
+  voci.forEach(([c, v]) => {
     const rc = perCanale[c];
-    let resaUsata = media;
-    if (!neutri.includes(c) && rc !== undefined && rc !== "") {
-      const quota = v / 100;
-      resaUsata = (quota * Number(rc) / 100 + k * media) / (quota + k || 1);
-    }
-    const fattore = Math.min(1 + cap, Math.max(1 - cap, (1 - resaUsata) / (1 - media)));
-    return [c, v * fattore];
+    if (neutri.includes(c) || rc === undefined || rc === "") { resaDi[c] = null; return; }
+    if (regole) { resaDi[c] = v < (Number(pesoMinimo) || 0) ? null : Number(rc) / 100; return; }
+    const quota = v / 100;
+    resaDi[c] = (quota * Number(rc) / 100 + k * media) / (quota + k || 1);
   });
+  return { voci, sommaPrima, media, resaDi };
+}
+
+// Riporta i valori alla somma di partenza, scarto di arrotondamento sul canale più pesante
+function chiudiRiga(grezzi, sommaPrima) {
   const sommaGrezzi = grezzi.reduce((s, [, v]) => s + v, 0) || 1;
   const nuovi = Object.fromEntries(grezzi.map(([c, v]) => [c, r2(v * sommaPrima / sommaGrezzi)]));
   const max = Object.keys(nuovi).reduce((a, c) => (nuovi[c] > (nuovi[a] ?? -1) ? c : a), null);
   if (max) nuovi[max] = r2(nuovi[max] + r2(sommaPrima) - somma(nuovi));
   return nuovi;
+}
+
+function calcolaCorrezione(pesi, rs, par) {
+  const { voci, sommaPrima, media, resaDi } = preparaRese(pesi, rs, par);
+  if (media >= 1) return { nuovi: { ...pesi }, info: {} };
+  const cap = Math.max(0, Number(par.tetto) || 0) / 100;
+  const grezzi = voci.map(([c, v]) => {
+    const resaUsata = resaDi[c] == null ? media : resaDi[c];
+    const fattore = Math.min(1 + cap, Math.max(1 - cap, (1 - resaUsata) / (1 - media)));
+    return [c, v * fattore];
+  });
+  return { nuovi: chiudiRiga(grezzi, sommaPrima), info: {} };
+}
+
+// ─── Regole a soglie ─────────────────────────────────────────────────────────
+// 1. Ogni canale finisce in una fascia in base alla sua resa (prudente):
+//      critica (≥ soglia critica) → perde taglioCritica% del suo peso
+//      alta    (≥ soglia alta)    → perde taglioAlta% del suo peso
+//      virtuosa (≤ soglia virtuosa) → riceve
+//      normale / neutro / senza dato → invariato
+// 2. Le quote tolte vanno ai canali virtuosi, in proporzione al loro peso, ciascuno al massimo +aumentoMax%.
+//    Quello che avanza (o tutto, se non ci sono virtuosi) va ai canali "normali", con lo stesso tetto;
+//    se resta ancora qualcosa torna ai canali tagliati (il taglio si riduce). I neutri non ricevono mai.
+//    Se tutti i canali giudicabili sono alta/critica, le quote si redistribuiscono tra loro favorendo chi rende meno.
+//    Qui la resa è quella reale; i canali sotto pesoMinimo (es. 2%) sono troppo piccoli per giudicare → invariati.
+function calcolaRegole(pesi, rs, par) {
+  const { voci, sommaPrima, resaDi } = preparaRese(pesi, rs, par, true);
+  const pct = (x) => Math.max(0, Number(x) || 0) / 100;
+  const fasce = {};
+  voci.forEach(([c]) => {
+    const r = resaDi[c];
+    fasce[c] = r == null ? "neutro" : r >= pct(par.critica) ? "critica" : r >= pct(par.alta) ? "alta" : r <= pct(par.virtuosa) ? "virtuosa" : "normale";
+  });
+  const nuovo = Object.fromEntries(voci);
+  let pool = 0;
+  voci.forEach(([c, v]) => {
+    const t = fasce[c] === "critica" ? pct(par.taglioCritica) : fasce[c] === "alta" ? pct(par.taglioAlta) : 0;
+    if (t) { nuovo[c] = v * (1 - Math.min(1, t)); pool += v - nuovo[c]; }
+  });
+  if (pool <= 0) return { nuovi: { ...pesi }, info: { fasce } };
+
+  // distribuisce `quanto` su `canali` in proporzione a `base`, rispettando un tetto per canale
+  const distribuisci = (quanto, canali, base, tetto) => {
+    let attivi = canali.filter(c => base(c) > 0);
+    while (quanto > 1e-9 && attivi.length) {
+      const tot = attivi.reduce((s, c) => s + base(c), 0);
+      let avanzo = 0;
+      const ancora = [];
+      attivi.forEach(c => {
+        const quota = quanto * base(c) / tot;
+        const spazio = tetto(c) - nuovo[c];
+        if (quota >= spazio) { nuovo[c] += Math.max(0, spazio); avanzo += quota - Math.max(0, spazio); }
+        else { nuovo[c] += quota; ancora.push(c); }
+      });
+      quanto = avanzo; attivi = ancora;
+    }
+    return quanto;
+  };
+  const orig = Object.fromEntries(voci);
+  const virtuosi = voci.filter(([c]) => fasce[c] === "virtuosa").map(([c]) => c);
+  const normali = voci.filter(([c]) => fasce[c] === "normale").map(([c]) => c);
+  const tagliati = voci.filter(([c]) => ["critica", "alta"].includes(fasce[c])).map(([c]) => c);
+  const senzaBeneficiari = virtuosi.length === 0;
+  const max = c => orig[c] * (1 + pct(par.aumentoMax));
+  let resto = distribuisci(pool, virtuosi, c => orig[c], max);
+  if (resto > 1e-9) resto = distribuisci(resto, normali, c => orig[c] * (1 - resaDi[c]), max);
+  let tagliRidotti = false;
+  if (resto > 1e-9) {
+    if (!virtuosi.length && !normali.length) {
+      // tutti i canali giudicabili sono in fascia alta/critica: le quote tornano a loro, di più a chi rende meno
+      distribuisci(resto, tagliati, c => orig[c] * (1 - resaDi[c]) ** 2, () => Infinity);
+    } else {
+      // chi riceve è già al massimo: quel che avanza torna ai canali tagliati (il taglio si riduce)
+      distribuisci(resto, tagliati, c => orig[c] - nuovo[c], c => orig[c]);
+      tagliRidotti = true;
+    }
+  }
+  const nuovi = chiudiRiga(voci.map(([c]) => [c, nuovo[c]]), sommaPrima);
+  return { nuovi, info: { fasce, tagli: true, senzaBeneficiari, tagliRidotti } };
 }
 
 function PannelloResa({ resa, correzione, par, setPar, canaliInfo, onApplica, onAnnulla }) {
@@ -815,13 +913,32 @@ function PannelloResa({ resa, correzione, par, setPar, canaliInfo, onApplica, on
         Il peso di ogni canale viene ricalcolato su quello che <b style={{ color: T.text }}>vende davvero</b> (fornito meno rese), non su quello che gli spedisci.
         Chi rende meno della media dell'editore guadagna peso, chi rende di più ne perde. La somma di ogni riga non cambia.
       </div>
+      <div style={{ display: "flex", gap: 6, marginBottom: 12 }}>
+        {[["regole", "Regole a soglie"], ["formula", "Formula proporzionale"]].map(([m, l]) => (
+          <button key={m} style={css.btn(par.metodo === m ? "accent" : "default")} onClick={() => setPar(p => ({ ...p, metodo: m }))}>{l}</button>
+        ))}
+      </div>
+      {par.metodo === "regole" ? (
+        <div style={{ background: T.bg, border: `1px solid ${T.border}`, borderRadius: 4, padding: "10px 12px", marginBottom: 12, fontSize: "12px", color: T.text, lineHeight: 2.2 }}>
+          <div><span style={{ color: T.red, fontWeight: 700 }}>● Resa critica</span> — resa ≥ <Num v={par.critica} on={num("critica")} />% → il canale perde il <Num v={par.taglioCritica} on={num("taglioCritica")} />% del suo peso</div>
+          <div><span style={{ color: T.amber, fontWeight: 700 }}>● Resa alta</span> — resa ≥ <Num v={par.alta} on={num("alta")} />% → perde il <Num v={par.taglioAlta} on={num("taglioAlta")} />%</div>
+          <div><span style={{ color: T.green, fontWeight: 700 }}>● Resa virtuosa</span> — resa ≤ <Num v={par.virtuosa} on={num("virtuosa")} />% → riceve le quote tolte agli altri, al massimo +<Num v={par.aumentoMax} on={num("aumentoMax")} />% del suo peso</div>
+          <div style={{ color: T.textMid, fontSize: "11px", lineHeight: 1.5, marginTop: 4 }}>
+            Tra le soglie il peso resta invariato. Se i virtuosi sono già al massimo (o mancano), le quote vanno ai canali intermedi; se non c'è spazio, il taglio si riduce. I canali neutri (non affidabili o troppo piccoli) non cambiano.
+          </div>
+        </div>
+      ) : (
+        <div style={{ color: T.textMid, fontSize: "11px", marginBottom: 12 }}>Ogni canale sale o scende in proporzione a quanto la sua resa è sotto o sopra la media dell'editore.</div>
+      )}
       <div style={{ display: "flex", gap: 18, flexWrap: "wrap", marginBottom: 12, alignItems: "flex-end" }}>
-        <label style={css.label} title="Di quanto può cambiare al massimo il peso di un canale rispetto a oggi">Variazione massima (±%)
+        {par.metodo === "formula" && <label style={css.label} title="Di quanto può cambiare al massimo il peso di un canale rispetto a oggi">Variazione massima (±%)
           <input style={{ ...css.input, width: 80 }} defaultValue={par.tetto} onBlur={num("tetto")} />
-        </label>
-        <label style={css.label} title="Nei canali piccoli la resa conta meno e si avvicina alla media dell'editore. 0 = nessuna prudenza">Prudenza canali piccoli
+        </label>}
+        {par.metodo === "formula" ? <label style={css.label} title="Nei canali piccoli la resa conta meno e si avvicina alla media dell'editore. 0 = nessuna prudenza">Prudenza canali piccoli
           <input style={{ ...css.input, width: 80 }} defaultValue={par.prudenza} onBlur={num("prudenza")} />
-        </label>
+        </label> : <label style={css.label} title="Sotto questo peso pochi titoli fanno impazzire la percentuale di resa: il canale resta invariato">Ignora canali con peso sotto (%)
+          <input style={{ ...css.input, width: 80 }} defaultValue={par.pesoMinimo} onBlur={num("pesoMinimo")} />
+        </label>}
         <div style={css.label}>Canali con resa non affidabile (restano invariati)
           <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
             {correzione.perCanale.map(({ c }) => (
@@ -834,7 +951,9 @@ function PannelloResa({ resa, correzione, par, setPar, canaliInfo, onApplica, on
       </div>
       <table style={{ borderCollapse: "collapse", marginBottom: 12 }}>
         <thead><tr>
-          <th style={css.th}>Canale</th><th style={{ ...css.th, textAlign: "right" }}>Peso medio oggi</th><th style={{ ...css.th, textAlign: "right" }}>Peso medio corretto</th>
+          <th style={css.th}>Canale</th><th style={{ ...css.th, textAlign: "right" }}>Resa media</th>
+          {par.metodo === "regole" && <th style={{ ...css.th, textAlign: "right" }} title="Numero di editori in cui il canale è in fascia critica / alta / virtuosa">Critica · Alta · Virtuosa</th>}
+          <th style={{ ...css.th, textAlign: "right" }}>Peso medio oggi</th><th style={{ ...css.th, textAlign: "right" }}>Peso medio corretto</th>
           <th style={{ ...css.th, textAlign: "right" }}>Differenza</th><th style={{ ...css.th, textAlign: "right" }}>Editori ↑</th><th style={{ ...css.th, textAlign: "right" }}>Editori ↓</th>
         </tr></thead>
         <tbody>
@@ -843,6 +962,10 @@ function PannelloResa({ resa, correzione, par, setPar, canaliInfo, onApplica, on
             return (
               <tr key={x.c}>
                 <td style={css.td}>{canaliInfo[x.c]?.nome || x.c}{par.neutri.includes(x.c) && <span style={{ color: T.textDim, fontSize: "10px", marginLeft: 6 }}>neutro</span>}</td>
+                <td style={{ ...css.td, textAlign: "right", color: x.resaMedia == null ? T.textDim : x.resaMedia >= par.critica ? T.red : x.resaMedia >= par.alta ? T.amber : x.resaMedia <= par.virtuosa ? T.green : T.text }}>{x.resaMedia == null ? "—" : `${x.resaMedia}%`}</td>
+                {par.metodo === "regole" && <td style={{ ...css.td, textAlign: "right" }}>
+                  <span style={{ color: T.red }}>{x.critica}</span> · <span style={{ color: T.amber }}>{x.alta}</span> · <span style={{ color: T.green }}>{x.virtuosa}</span>
+                </td>}
                 <td style={{ ...css.td, textAlign: "right" }}>{x.prima}%</td>
                 <td style={{ ...css.td, textAlign: "right" }}>{x.dopo}%</td>
                 <td style={{ ...css.td, textAlign: "right", fontWeight: 700, color: d > 0.05 ? T.green : d < -0.05 ? T.red : T.textMid }}>{d > 0 ? "+" : ""}{d} pt</td>
@@ -853,6 +976,13 @@ function PannelloResa({ resa, correzione, par, setPar, canaliInfo, onApplica, on
           })}
         </tbody>
       </table>
+      {par.metodo === "regole" && (
+        <div style={{ color: T.textMid, fontSize: "11px", marginBottom: 10, lineHeight: 1.6 }}>
+          Regole scattate su <b style={{ color: T.text }}>{correzione.conTagli}</b> righe su {correzione.righe.length}.
+          {correzione.senzaBeneficiari.length > 0 && <span style={{ color: T.amber }}> Senza canali virtuosi: {correzione.senzaBeneficiari.join(", ")}.</span>}
+          {correzione.tagliRidotti > 0 && <span> Su {correzione.tagliRidotti} righe il taglio è stato ridotto perché i canali virtuosi erano già al massimo.</span>}
+        </div>
+      )}
       {(resa.nonAbbinati.length > 0 || correzione.senzaPesi.length > 0) && (
         <div style={{ color: T.amber, fontSize: "11px", marginBottom: 10, lineHeight: 1.6 }}>
           {resa.nonAbbinati.length > 0 && <div>Non riconosciuti nel Ranking (ignorati): {resa.nonAbbinati.join(", ")}</div>}
@@ -866,4 +996,9 @@ function PannelloResa({ resa, correzione, par, setPar, canaliInfo, onApplica, on
       </div>
     </div>
   );
+}
+
+function Num({ v, on }) {
+  return <input inputMode="decimal" style={{ ...css.input, width: 46, textAlign: "right", padding: "2px 4px" }} defaultValue={v} onBlur={on}
+    onKeyDown={e => { if (e.key === "Enter") e.currentTarget.blur(); }} />;
 }
