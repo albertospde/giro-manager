@@ -9,6 +9,9 @@ import { tema, cv } from "./tema.js";
 // • Le modifiche restano in bozza finché non premi Salva (come Ranking editori).
 // • "Importa Excel" carica il template SPALMATURA nella griglia come modifiche non salvate;
 //   "Esporta Excel" produce lo stesso template, quindi si può scaricare, modificare e ricaricare.
+// • "Correggi con resa" carica il file delle rese sulle novità (stesso formato: editore, tipo edizione,
+//   una colonna per canale + Totale = resa media editore) e corregge i pesi in griglia: chi rende meno
+//   della media dell'editore guadagna peso, chi rende di più ne perde. Resta in bozza fino a Salva.
 
 const SUPABASE_URL = "https://tdflwenlylhctxssatax.supabase.co";
 const SUPABASE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InRkZmx3ZW5seWxoY3R4c3NhdGF4Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzYzMzgyNzYsImV4cCI6MjA5MTkxNDI3Nn0.l35qEL7LOvyYuI1McQlVqj4vbyTqmlevcmqWbTGYi2Q";
@@ -94,6 +97,9 @@ export default function ModuloSpalmatura({ token, onDataChange }) {
   const [linee, setLinee] = useState([]);        // [{ linea, madre }] linee figlie → casa madre
   const [abbina, setAbbina] = useState(null);    // import in attesa: editori del file da abbinare a mano
   const fileRef = useRef(null);
+  const resaRef = useRef(null);
+  const [resa, setResa] = useState(null);        // file rese caricato: { nomeFile, rese: chiave → { perCanale, totale }, nonAbbinati }
+  const [parResa, setParResa] = useState({ tetto: 30, prudenza: 5, neutri: ["IBS", "ALTRI_ONLINE"] });
 
   const carica = useCallback(async () => {
     setLoading(true); setErrore("");
@@ -295,6 +301,79 @@ export default function ModuloSpalmatura({ token, onDataChange }) {
     return { rk: null, via: null };
   };
 
+  // Dalle righe del file (template o export obiettivi/rese) alle righe { nomeFile, formato, pesi, totale }.
+  // somma=true: più colonne sullo stesso canale si sommano (pesi); false: vale la prima (rese).
+  const leggiFileCanali = (data, { somma: sommaCol }) => {
+    // Riga intestazioni: EDITORE | FORMATO (template) oppure EDITORE | TIPO EDIZIONE (file obiettivi),
+    // cercata nelle prime 10 righe.
+    let hIdx = data.slice(0, 10).findIndex(r => norm(r[0]) === "EDITORE" && ["FORMATO", "TIPO EDIZIONE"].includes(norm(r[1])));
+    if (hIdx < 0) hIdx = 3;
+    // Colonne canale: per codice (template) o per nome del canale (file obiettivi); GDO è dentro Fastbook
+    const perNome = Object.fromEntries(Object.values(canaliInfo).map(c => [norm(c.nome), c.codice]));
+    const colCanali = [], sconosciute = [];
+    let colTotale = -1;
+    (data[hIdx] || []).forEach((h, i) => {
+      if (i < 2 || !norm(h)) return;
+      const hc = norm(h).replace(/\s+/g, "_");
+      if (COLONNE_TOTALE.has(hc)) { if (colTotale < 0) colTotale = i; return; }
+      const cod = hc === "GDO" ? "FASTBOOK" : canaliInfo[hc] ? hc : perNome[norm(h)];
+      if (cod) colCanali.push([cod, i]); else sconosciute.push(String(h).trim());
+    });
+    if (sconosciute.length) throw new Error(`Colonne non riconosciute come canali: ${sconosciute.join(", ")}. Usa i codici o i nomi dei canali.`);
+    if (!colCanali.length) throw new Error("Intestazioni dei canali non trovate (serve una riga EDITORE | FORMATO o TIPO EDIZIONE | canali).");
+
+    const errs = [];
+    const lette = [];
+    data.slice(hIdx + 1).forEach((r, idx) => {
+      if (!r.some(v => String(v).trim() !== "")) return;
+      const nRiga = idx + hIdx + 2;
+      const nomeFile = String(r[0] ?? "").trim();
+      const formato = FORMATO_DA_FILE[norm(r[1])];
+      if (!nomeFile || !formato) { errs.push(`riga ${nRiga}: editore o formato non valido ("${r[1]}")`); return; }
+      const pesi = {};
+      colCanali.forEach(([c, i]) => {
+        const v = numOVuoto(r[i]);
+        if (v === null) errs.push(`riga ${nRiga}: valore non valido per ${c}`);
+        else if (sommaCol) { if (v !== "" && v !== 0) pesi[c] = r2((pesi[c] || 0) + v); }
+        else if (v !== "" && !(c in pesi)) pesi[c] = v;
+      });
+      const totale = colTotale >= 0 ? numOVuoto(r[colTotale]) : "";
+      lette.push({ nomeFile, formato, pesi, totale: totale === null ? "" : totale });
+    });
+    if (errs.length) throw new Error(`File non caricato, correggi: ${errs.slice(0, 5).join("; ")}${errs.length > 5 ? ` e altri ${errs.length - 5}` : ""}`);
+    return { lette };
+  };
+
+  // ─── Correzione con le rese ────────────────────────────────────────────────
+  const caricaRese = (e) => {
+    const f = e.target.files[0];
+    e.target.value = "";
+    if (!f) return;
+    setErrore(""); setMsg("");
+    const reader = new FileReader();
+    reader.onload = (evt) => {
+      try {
+        const { lette } = leggiFileCanali(leggiRighe(evt.target.result, f.name), { somma: false });
+        const rese = {}, nonAbbinati = new Set();
+        lette.forEach(l => {
+          const { rk } = risolviEditore(l.nomeFile);
+          if (!rk) { nonAbbinati.add(l.nomeFile); return; }
+          rese[chiave(rk.editore_nome, l.formato)] = { perCanale: l.pesi, totale: l.totale };
+        });
+        if (!Object.keys(rese).length) throw new Error("Nessun editore del file rese corrisponde a quelli del Ranking.");
+        setResa({ nomeFile: f.name, rese, nonAbbinati: [...nonAbbinati] });
+      } catch (err) { setErrore(err.message); }
+    };
+    reader.readAsArrayBuffer(f);
+  };
+
+  const applicaResa = () => {
+    const perKey = Object.fromEntries(correzione.righe.map(c => [c.key, c.nuovi]));
+    setRighe(rs => rs.map(r => (perKey[r.key] ? { ...r, pesi: perKey[r.key] } : r)));
+    setMsg(`Pesi corretti con le rese su ${correzione.righe.length} righe: i valori cambiati sono evidenziati (passa sopra una cella per vedere il valore di prima). Controlla e premi Salva.`);
+    setResa(null);
+  };
+
   const importa = (e) => {
     const f = e.target.files[0];
     e.target.value = "";
@@ -303,42 +382,7 @@ export default function ModuloSpalmatura({ token, onDataChange }) {
     const reader = new FileReader();
     reader.onload = (evt) => {
       try {
-        const data = leggiRighe(evt.target.result, f.name);
-        // Riga intestazioni: EDITORE | FORMATO (template) oppure EDITORE | TIPO EDIZIONE (file obiettivi),
-        // cercata nelle prime 10 righe.
-        let hIdx = data.slice(0, 10).findIndex(r => norm(r[0]) === "EDITORE" && ["FORMATO", "TIPO EDIZIONE"].includes(norm(r[1])));
-        if (hIdx < 0) hIdx = 3;
-        // Colonne canale: per codice (template) o per nome del canale (file obiettivi); GDO è dentro Fastbook
-        const perNome = Object.fromEntries(Object.values(canaliInfo).map(c => [norm(c.nome), c.codice]));
-        const colCanali = [], sconosciute = [];
-        (data[hIdx] || []).forEach((h, i) => {
-          if (i < 2 || !norm(h)) return;
-          const hc = norm(h).replace(/\s+/g, "_");
-          if (COLONNE_TOTALE.has(hc)) return;
-          const cod = hc === "GDO" ? "FASTBOOK" : canaliInfo[hc] ? hc : perNome[norm(h)];
-          if (cod) colCanali.push([cod, i]); else sconosciute.push(String(h).trim());
-        });
-        if (sconosciute.length) throw new Error(`Colonne non riconosciute come canali: ${sconosciute.join(", ")}. Usa i codici o i nomi dei canali.`);
-        if (!colCanali.length) throw new Error("Intestazioni dei canali non trovate (serve una riga EDITORE | FORMATO o TIPO EDIZIONE | canali).");
-
-        const errs = [];
-        const lette = [];
-        data.slice(hIdx + 1).forEach((r, idx) => {
-          if (!r.some(v => String(v).trim() !== "")) return;
-          const nRiga = idx + hIdx + 2;
-          const nomeFile = String(r[0] ?? "").trim();
-          const formato = FORMATO_DA_FILE[norm(r[1])];
-          if (!nomeFile || !formato) { errs.push(`riga ${nRiga}: editore o formato non valido ("${r[1]}")`); return; }
-          const pesi = {};
-          colCanali.forEach(([c, i]) => {
-            const v = numOVuoto(r[i]);
-            if (v === null) errs.push(`riga ${nRiga}: peso non valido per ${c}`);
-            else if (v !== "" && v !== 0) pesi[c] = r2((pesi[c] || 0) + v);
-          });
-          lette.push({ nomeFile, formato, pesi });
-        });
-        if (errs.length) throw new Error(`File non caricato, correggi: ${errs.slice(0, 5).join("; ")}${errs.length > 5 ? ` e altri ${errs.length - 5}` : ""}`);
-
+        const { lette } = leggiFileCanali(leggiRighe(evt.target.result, f.name), { somma: true });
         const risolte = lette.map(l => ({ ...l, ...risolviEditore(l.nomeFile) }));
         const ignoti = [...new Set(risolte.filter(r => !r.rk).map(r => r.nomeFile))];
         if (ignoti.length) {
@@ -418,6 +462,27 @@ export default function ModuloSpalmatura({ token, onDataChange }) {
     return { fuori, editori: conPesi.size, senzaPesi };
   }, [righe, ranking]);
 
+  // Pesi corretti con le rese (calcolo spiegato in calcolaCorrezione, in fondo al file)
+  const correzione = useMemo(() => {
+    if (!resa) return null;
+    const out = [];
+    righe.forEach(r => {
+      const rs = resa.rese[r.key];
+      if (!rs || !somma(r.pesi)) return;
+      const nuovi = calcolaCorrezione(r.pesi, rs, parResa);
+      out.push({ key: r.key, prima: r.pesi, nuovi });
+    });
+    const senzaPesi = Object.keys(resa.rese).filter(k => !righe.some(r => r.key === k));
+    const perCanale = canali.map(c => {
+      const presenti = out.filter(x => c in x.prima);
+      if (!presenti.length) return null;
+      const media = (k) => r2(presenti.reduce((s, x) => s + (Number(x[k][c]) || 0), 0) / presenti.length);
+      const delta = presenti.map(x => (Number(x.nuovi[c]) || 0) - (Number(x.prima[c]) || 0));
+      return { c, prima: media("prima"), dopo: media("nuovi"), su: delta.filter(d => d > 0.05).length, giu: delta.filter(d => d < -0.05).length };
+    }).filter(Boolean);
+    return { righe: out, senzaPesi, perCanale };
+  }, [resa, righe, parResa, canali]);
+
   const filtrate = ordinate.filter(r =>
     (!filtro || r.editore_nome.includes(norm(filtro))) &&
     (!filtroFormato || r.formato === filtroFormato) &&
@@ -474,8 +539,15 @@ export default function ModuloSpalmatura({ token, onDataChange }) {
         <button style={css.btn()} onClick={() => { setShowNuovo(false); setShowCopia(c => (c ? null : { da: "", a: "" })); }} title="Copia i pesi di un editore su un altro, anche nuovo entrante">⧉ Copia pesi</button>
         <button style={css.btn()} onClick={() => fileRef.current?.click()} title="Carica un file (.xlsx, .xls o .csv) nel formato del template SPALMATURA: le righe del file sostituiscono quelle in griglia (da salvare)">Importa Excel / CSV</button>
         <input ref={fileRef} type="file" accept=".xlsx,.xls,.csv,.txt" style={{ display: "none" }} onChange={importa} />
+        <button style={css.btn()} onClick={() => resaRef.current?.click()} title="Carica il file delle rese sulle novità per editore e canale: i pesi in griglia vengono corretti (chi rende meno guadagna peso). Resta in bozza fino a Salva.">↺ Correggi con resa</button>
+        <input ref={resaRef} type="file" accept=".xlsx,.xls,.csv,.txt" style={{ display: "none" }} onChange={caricaRese} />
         <button style={css.btn()} onClick={esporta}>Esporta Excel</button>
       </div>
+
+      {resa && correzione && (
+        <PannelloResa resa={resa} correzione={correzione} par={parResa} setPar={setParResa} canaliInfo={canaliInfo}
+          onApplica={applicaResa} onAnnulla={() => setResa(null)} />
+      )}
 
       {abbina && (
         <div style={{ ...css.card, borderColor: T.amber }}>
@@ -691,6 +763,106 @@ function NuovaRiga({ righe, ranking, iniziale, onAggiungi, onAnnulla }) {
         <button style={css.btn("green", !ok)} disabled={!ok} onClick={() => onAggiungi({ editore_nome: nome, formato, copiaDa })}>Aggiungi</button>
         <button style={css.btn()} onClick={onAnnulla}>Annulla</button>
         {ok && <span style={{ color: T.textMid, fontSize: "11px" }}>Poi compila i pesi in tabella e premi Salva</span>}
+      </div>
+    </div>
+  );
+}
+
+// ─── Correzione pesi con le rese ─────────────────────────────────────────────
+// Idea: conta quello che il canale VENDE, non quello che gli spedisci.
+//   1. resa del canale "prudente": nei canali piccoli pochi titoli fanno impazzire la percentuale,
+//      quindi la resa viene avvicinata alla media dell'editore (più il canale è piccolo, più ci si avvicina).
+//   2. fattore = (1 − resa canale) / (1 − resa media editore): sopra 1 il canale trattiene più della media.
+//   3. nuovo peso = peso × fattore, con un tetto (es. ±30%), poi la riga torna alla somma di partenza.
+// Canali "neutri" (rese non tracciate, es. IBS) o senza dato di resa usano la resa media: restano proporzionali.
+function calcolaCorrezione(pesi, { perCanale, totale }, { tetto, prudenza, neutri }) {
+  const voci = Object.entries(pesi).map(([c, v]) => [c, Number(v) || 0]).filter(([, v]) => v > 0);
+  const sommaPrima = voci.reduce((s, [, v]) => s + v, 0);
+  // resa media editore: colonna Totale del file, altrimenti media delle rese pesata sui pesi
+  let media = totale === "" || totale == null ? null : Number(totale) / 100;
+  if (media == null) {
+    const conResa = voci.filter(([c]) => perCanale[c] !== undefined);
+    const p = conResa.reduce((s, [, v]) => s + v, 0);
+    media = p ? conResa.reduce((s, [c, v]) => s + v * Number(perCanale[c]) / 100, 0) / p : 0;
+  }
+  if (media >= 1) return { ...pesi };
+  const k = Math.max(0, Number(prudenza) || 0) / 100;
+  const cap = Math.max(0, Number(tetto) || 0) / 100;
+  const grezzi = voci.map(([c, v]) => {
+    const rc = perCanale[c];
+    let resaUsata = media;
+    if (!neutri.includes(c) && rc !== undefined && rc !== "") {
+      const quota = v / 100;
+      resaUsata = (quota * Number(rc) / 100 + k * media) / (quota + k || 1);
+    }
+    const fattore = Math.min(1 + cap, Math.max(1 - cap, (1 - resaUsata) / (1 - media)));
+    return [c, v * fattore];
+  });
+  const sommaGrezzi = grezzi.reduce((s, [, v]) => s + v, 0) || 1;
+  const nuovi = Object.fromEntries(grezzi.map(([c, v]) => [c, r2(v * sommaPrima / sommaGrezzi)]));
+  const max = Object.keys(nuovi).reduce((a, c) => (nuovi[c] > (nuovi[a] ?? -1) ? c : a), null);
+  if (max) nuovi[max] = r2(nuovi[max] + r2(sommaPrima) - somma(nuovi));
+  return nuovi;
+}
+
+function PannelloResa({ resa, correzione, par, setPar, canaliInfo, onApplica, onAnnulla }) {
+  const num = (campo) => (e) => { const v = parseFloat(String(e.target.value).replace(",", ".")); setPar(p => ({ ...p, [campo]: isNaN(v) ? 0 : v })); };
+  const toggleNeutro = (c) => setPar(p => ({ ...p, neutri: p.neutri.includes(c) ? p.neutri.filter(x => x !== c) : [...p.neutri, c] }));
+  return (
+    <div style={{ ...css.card, borderColor: T.accent }}>
+      <div style={{ color: T.accent, fontWeight: 700, fontSize: "12px", marginBottom: 6 }}>↺ Correzione pesi con le rese — {resa.nomeFile}</div>
+      <div style={{ color: T.textMid, fontSize: "11px", lineHeight: 1.6, marginBottom: 12 }}>
+        Il peso di ogni canale viene ricalcolato su quello che <b style={{ color: T.text }}>vende davvero</b> (fornito meno rese), non su quello che gli spedisci.
+        Chi rende meno della media dell'editore guadagna peso, chi rende di più ne perde. La somma di ogni riga non cambia.
+      </div>
+      <div style={{ display: "flex", gap: 18, flexWrap: "wrap", marginBottom: 12, alignItems: "flex-end" }}>
+        <label style={css.label} title="Di quanto può cambiare al massimo il peso di un canale rispetto a oggi">Variazione massima (±%)
+          <input style={{ ...css.input, width: 80 }} defaultValue={par.tetto} onBlur={num("tetto")} />
+        </label>
+        <label style={css.label} title="Nei canali piccoli la resa conta meno e si avvicina alla media dell'editore. 0 = nessuna prudenza">Prudenza canali piccoli
+          <input style={{ ...css.input, width: 80 }} defaultValue={par.prudenza} onBlur={num("prudenza")} />
+        </label>
+        <div style={css.label}>Canali con resa non affidabile (restano invariati)
+          <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
+            {correzione.perCanale.map(({ c }) => (
+              <label key={c} style={{ display: "flex", gap: 4, alignItems: "center", color: T.text, fontSize: "11px" }}>
+                <input type="checkbox" checked={par.neutri.includes(c)} onChange={() => toggleNeutro(c)} /> {canaliInfo[c]?.nome || c}
+              </label>
+            ))}
+          </div>
+        </div>
+      </div>
+      <table style={{ borderCollapse: "collapse", marginBottom: 12 }}>
+        <thead><tr>
+          <th style={css.th}>Canale</th><th style={{ ...css.th, textAlign: "right" }}>Peso medio oggi</th><th style={{ ...css.th, textAlign: "right" }}>Peso medio corretto</th>
+          <th style={{ ...css.th, textAlign: "right" }}>Differenza</th><th style={{ ...css.th, textAlign: "right" }}>Editori ↑</th><th style={{ ...css.th, textAlign: "right" }}>Editori ↓</th>
+        </tr></thead>
+        <tbody>
+          {correzione.perCanale.map(x => {
+            const d = r2(x.dopo - x.prima);
+            return (
+              <tr key={x.c}>
+                <td style={css.td}>{canaliInfo[x.c]?.nome || x.c}{par.neutri.includes(x.c) && <span style={{ color: T.textDim, fontSize: "10px", marginLeft: 6 }}>neutro</span>}</td>
+                <td style={{ ...css.td, textAlign: "right" }}>{x.prima}%</td>
+                <td style={{ ...css.td, textAlign: "right" }}>{x.dopo}%</td>
+                <td style={{ ...css.td, textAlign: "right", fontWeight: 700, color: d > 0.05 ? T.green : d < -0.05 ? T.red : T.textMid }}>{d > 0 ? "+" : ""}{d} pt</td>
+                <td style={{ ...css.td, textAlign: "right", color: T.green }}>{x.su || ""}</td>
+                <td style={{ ...css.td, textAlign: "right", color: T.red }}>{x.giu || ""}</td>
+              </tr>
+            );
+          })}
+        </tbody>
+      </table>
+      {(resa.nonAbbinati.length > 0 || correzione.senzaPesi.length > 0) && (
+        <div style={{ color: T.amber, fontSize: "11px", marginBottom: 10, lineHeight: 1.6 }}>
+          {resa.nonAbbinati.length > 0 && <div>Non riconosciuti nel Ranking (ignorati): {resa.nonAbbinati.join(", ")}</div>}
+          {correzione.senzaPesi.length > 0 && <div>Con resa ma senza pesi in griglia (ignorati): {correzione.senzaPesi.map(k => k.replace("|", " · ")).join(", ")}</div>}
+        </div>
+      )}
+      <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+        <button style={css.btn("accent", !correzione.righe.length)} disabled={!correzione.righe.length} onClick={onApplica}>Applica a {correzione.righe.length} righe</button>
+        <button style={css.btn()} onClick={onAnnulla}>Annulla</button>
+        <span style={{ color: T.textMid, fontSize: "11px" }}>Poi controlli in griglia e premi Salva</span>
       </div>
     </div>
   );
