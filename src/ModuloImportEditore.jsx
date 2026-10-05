@@ -137,7 +137,7 @@ const CAMPI = [
 
 // Riconoscimento intestazioni (su testo normalizzato minuscolo senza accenti)
 const RX = {
-  gemello: /(gemell|twin|abbinat|collegat|correlat|comparab|affin|titol[oi] (simil|di riferimento)|(ean|isbn) (simil|di riferimento))/,
+  gemello: /(gemell|\bgem\b|twin|abbinat|collegat|correlat|comparab|affin|titol[oi] (simil|di riferimento)|(ean|isbn) (simil|di riferimento))/,
   ean: /\b(ean|isbn|ean ?13|isbn ?13|barcode|codice a barre)\b/,
   titolo: /^(titolo|title|titoli)\b|titolo (opera|libro|volume)/,
   autore: /(autor|author|a cura)/,
@@ -358,6 +358,23 @@ function rilevaMapping(aoa, headerRow) {
     const v = dati.map(r => r?.[i]).filter(x => typeof x === "string" && x.trim());
     return v.length > 0 && v.filter(x => !estraiGemelliCella(x).length && !parseEan(x)).length >= v.length * 0.6;
   };
+  // Dopo i campi del titolo (EAN, titolo, autore, editore, prezzo…), ogni altra colonna con EAN
+  // seguita da una colonna di titolo è un gemello, anche senza la parola "gemello" nell'intestazione
+  // (es. "ISBN13 | Titolo | … | EAN | TITOLO | EAN | TITOLO" o "ean gem | titolo gem")
+  const pieni = (i) => dati.map(r => r?.[i]).filter(x => x !== "" && x !== null && x !== undefined).length;
+  const extraEan = headers.map((_, i) => i).filter(i => {
+    if (used.has(i) || i === map.ean || /ebook|epub|digital/.test(normHeader(headers[i]))) return false;
+    const n = conEan(i);
+    return n > 0 && (RX.ean.test(normHeader(headers[i])) || n >= pieni(i) * 0.5);
+  });
+  const extraTit = [];
+  extraEan.forEach(i => {
+    const j = [i + 1, i - 1].find(k => k >= 0 && k < ncol && !used.has(k) && !extraEan.includes(k) && !extraTit.includes(k)
+      && (RX.titolo.test(normHeader(headers[k])) || (k === i + 1 && testuale(k))));
+    if (j !== undefined) extraTit.push(j);
+  });
+  [...extraEan.map(i => ({ i, isEan: true })), ...extraTit.map(i => ({ i, isEan: false }))].forEach(g => { gemCols.push(g); used.add(g.i); });
+  gemCols.sort((a, b) => a.i - b.i);
   if (gemCols.length === 1) {
     // colonna unica: EAN, titolo o entrambi nella stessa cella → parser misto
     map.gemelli_testo = gemCols[0].i;
