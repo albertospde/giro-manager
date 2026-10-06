@@ -45,6 +45,40 @@ async function sbRest(path, token, opts = {}) {
 
 const normEditoreKey = n => (n || "").trim().toLowerCase();
 
+// Testo incollato da Excel → righe/colonne. Una cella con un a capo arriva tra
+// virgolette ("...") e va tenuta intera; se invece l'a capo arriva senza
+// virgolette (copia da altre fonti), la riga che non inizia con un EAN è la
+// continuazione della precedente e viene riattaccata.
+const pareEan = v => /^\d{12,13}$/.test(String(v ?? "").replace(/[\s-]/g, ""));
+function parseTestoIncollato(text, sep) {
+  const rows = [];
+  let row = [], cell = "", inQ = false;
+  for (let i = 0; i < text.length; i++) {
+    const ch = text[i];
+    if (inQ) {
+      if (ch === '"' && text[i + 1] === '"') { cell += '"'; i++; }
+      else if (ch === '"') inQ = false;
+      else cell += ch;
+    } else if (ch === '"' && cell.trim() === "") { inQ = true; cell = ""; }
+    else if (ch === sep) { row.push(cell); cell = ""; }
+    else if (ch === "\n" || ch === "\r") {
+      if (ch === "\r" && text[i + 1] === "\n") i++;
+      row.push(cell); rows.push(row); row = []; cell = "";
+    } else cell += ch;
+  }
+  row.push(cell); rows.push(row);
+  const pulite = rows.map(r => r.map(c => c.replace(/\s+/g, " ").trim()));
+  const out = [];
+  pulite.forEach((r, i) => {
+    const prev = out[out.length - 1];
+    if (i > 0 && prev && pareEan(prev[0]) && !pareEan(r[0]) && r.some(c => c)) {
+      prev[prev.length - 1] = `${prev[prev.length - 1]} ${r[0]}`.trim();
+      prev.push(...r.slice(1));
+    } else out.push(r);
+  });
+  return out;
+}
+
 // Editori in ingresso nel perimetro PDE non ancora visibili su RPN, e gli
 // EAN inseriti manualmente per loro. Le tabelle (editori_new_entry,
 // titoli_manuali) sono le stesse lette da BookUp per raccogliere le
@@ -330,7 +364,7 @@ export default function ModuloEditoriNewEntry({ token, onDataChange }) {
         matrix = window.XLSX.utils.sheet_to_json(ws, { header: 1, raw: false, defval: "" });
       } else if (bulkText.trim()) {
         const sep = bulkText.includes("\t") ? "\t" : ",";
-        matrix = bulkText.trim().split("\n").map(line => line.split(sep).map(c => c.trim()));
+        matrix = parseTestoIncollato(bulkText.trim(), sep);
       } else {
         setError("Incolla del testo o scegli un file prima di analizzare.");
         return;
