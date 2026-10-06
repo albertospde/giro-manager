@@ -137,7 +137,8 @@ export default function ModuloImport({ token, onImportDone }) {
             let val = row[parseInt(colIdx)] ?? "";
             if (field === "prezzo") val = parseFloat(String(val).replace(",", ".")) || null;
             if (field === "obiettivo_assegnato") val = parseInt(val) || 0;
-            if (field === "top_100") val = String(val).trim().toUpperCase() === "SI";
+            // cella vuota = dato assente (al re-import resta il Top 100 già salvato)
+            if (field === "top_100") val = String(val).trim() === "" ? "" : String(val).trim().toUpperCase() === "SI";
             const CAMPI_TESTO = ["titolo", "autore", "editore_nome", "uscita", "promozione", "note", "titolo_gemello_1", "titolo_gemello_2", "titolo_gemello_3"];
             if (CAMPI_TESTO.includes(field) && typeof val === "string" && val !== "") val = val.trim().toUpperCase();
             obj[field] = val === "" ? null : val;

@@ -471,7 +471,8 @@ function estraiRighe(aoa, headerRow, map) {
       sezione,
       prezzo: parsePrezzo(get(row, "prezzo")),
       uscita: parseUscita(get(row, "uscita")),
-      top_100: map.top_100 >= 0 ? parseTop(get(row, "top_100")) : null,
+      // cella vuota = dato assente (al re-import resta il Top 100 già salvato)
+      top_100: map.top_100 >= 0 && String(get(row, "top_100") ?? "").trim() !== "" ? parseTop(get(row, "top_100")) : null,
       obiettivo, tiratura,
       obiettivoFonte: obiettivo ? "O" : tiratura ? "T" : null,
       note: cleanText(get(row, "note")),
@@ -778,16 +779,23 @@ export default function ModuloImportEditore({ token, onImportDone }) {
         const giro_id = extra ? null : giriMap[`${giroNum}|${giroAnno}|${r.anag.cedola}`];
         const ex = (extra ? esistenti[r.ean] : esistenti[`${giro_id}|${r.ean}`]) || {};
         if (ex.id) aggiornati++;
-        const g = r.gemelli;
-        const haGemelli = g.length > 0;
+        // dato nel file → scrive; dato assente → resta quello già salvato (gemelli slot per slot,
+        // titolo del gemello conservato solo se l'EAN non cambia)
+        const gem = (k) => {
+          const x = r.gemelli[k - 1];
+          if (!x) return { ean: ex[`ean_gemello_${k}`] ?? null, titolo: ex[`titolo_gemello_${k}`] ?? null };
+          const ean = x.ean ?? ex[`ean_gemello_${k}`] ?? null;
+          return { ean, titolo: x.titolo ?? (ean === ex[`ean_gemello_${k}`] ? ex[`titolo_gemello_${k}`] ?? null : null) };
+        };
+        const [g1, g2, g3] = [gem(1), gem(2), gem(3)];
         const noteTir = r.tiratura && r.obiettivoFonte !== "T" ? `TIRATURA ${r.tiratura}` : null;
         const note = [r.note, noteTir].filter(Boolean).join(" · ") || null;
         return {
           _id: ex.id ?? null,
           giro_id, giro_label: extra ? "EXTRA" : `${giroNum} ${giroAnno}`, n_cedola: r.n_cedola,
-          ean: r.ean, titolo: r.titolo, autore: r.autore ?? ex.autore ?? null,
-          editore_nome: r.editore_nome, codice_editore: r.anag.codice_editore ?? null,
-          ranking_editore: r.anag.ranking ?? null, account_editore: r.anag.account_editore ?? null,
+          ean: r.ean, titolo: r.titolo ?? ex.titolo ?? null, autore: r.autore ?? ex.autore ?? null,
+          editore_nome: r.editore_nome, codice_editore: r.anag.codice_editore ?? ex.codice_editore ?? null,
+          ranking_editore: r.anag.ranking ?? ex.ranking_editore ?? null, account_editore: r.anag.account_editore ?? ex.account_editore ?? null,
           promozione: ex.promozione ?? r.anag.promozione ?? null,
           prezzo: r.prezzo ?? ex.prezzo ?? null, uscita: r.uscita ?? ex.uscita ?? null,
           formato: ex.formato ?? "Cover", eta: ex.eta ?? null, il_triangolo: ex.il_triangolo ?? null,
@@ -796,12 +804,9 @@ export default function ModuloImportEditore({ token, onImportDone }) {
           obiettivo_assegnato: r.obiettivo ?? r.tiratura ?? ex.obiettivo_assegnato ?? 0,
           top_100: r.top_100 ?? ex.top_100 ?? false,
           note: note ?? ex.note ?? null,
-          ean_gemello_1: haGemelli ? g[0]?.ean ?? null : ex.ean_gemello_1 ?? null,
-          titolo_gemello_1: haGemelli ? g[0]?.titolo ?? null : ex.titolo_gemello_1 ?? null,
-          ean_gemello_2: haGemelli ? g[1]?.ean ?? null : ex.ean_gemello_2 ?? null,
-          titolo_gemello_2: haGemelli ? g[1]?.titolo ?? null : ex.titolo_gemello_2 ?? null,
-          ean_gemello_3: haGemelli ? g[2]?.ean ?? null : ex.ean_gemello_3 ?? null,
-          titolo_gemello_3: haGemelli ? g[2]?.titolo ?? null : ex.titolo_gemello_3 ?? null,
+          ean_gemello_1: g1.ean, titolo_gemello_1: g1.titolo,
+          ean_gemello_2: g2.ean, titolo_gemello_2: g2.titolo,
+          ean_gemello_3: g3.ean, titolo_gemello_3: g3.titolo,
         };
       });
       if (!extra) {
