@@ -223,6 +223,33 @@ const MACROGRUPPI = [
   { id: "ONLINE", label: "Online", canali: ["AMAZON", "IBS", "ALTRI_ONLINE"] },
 ];
 
+// Obiettivo di un titolo ripartito sui canali coi pesi di spalmatura (editore + formato).
+// Le quote sono normalizzate sul totale dei pesi e arrotondate col metodo dei resti più grandi,
+// così la somma dei canali è sempre esattamente l'obiettivo del titolo.
+// Ritorna { CODICE: copie } oppure null se l'editore non ha pesi per quel formato.
+const spalmaturaCache = new WeakMap();
+const indiceSpalmatura = (spalmatura) => {
+  let idx = spalmaturaCache.get(spalmatura);
+  if (!idx) {
+    idx = {};
+    spalmatura.forEach(s => { const k = `${s.editore_nome}|${s.formato}`; (idx[k] = idx[k] || []).push(s); });
+    spalmaturaCache.set(spalmatura, idx);
+  }
+  return idx;
+};
+const objPerCanale = (t, spalmatura) => {
+  const pesi = (indiceSpalmatura(spalmatura)[`${t.editore_nome}|${t.formato || "Cover"}`] || []).filter(s => Number(s.percentuale) > 0);
+  if (!pesi.length) return null;
+  const obj = t.obiettivo_assegnato || 0;
+  const totPct = pesi.reduce((s, p) => s + Number(p.percentuale), 0);
+  const quote = pesi.map(p => { const esatto = obj * Number(p.percentuale) / totPct; return { cod: p.canale_codice, n: Math.floor(esatto), resto: esatto - Math.floor(esatto) }; });
+  let mancano = obj - quote.reduce((s, q) => s + q.n, 0);
+  [...quote].sort((a, b) => b.resto - a.resto).forEach(q => { if (mancano > 0) { q.n++; mancano--; } });
+  const out = {};
+  quote.forEach(q => { out[q.cod] = (out[q.cod] || 0) + q.n; });
+  return out;
+};
+
 // Label di visualizzazione canali (MOD 2: AURORA → "Diretti da Tipografia")
 const CANALE_DISPLAY_NAMES = {
   AURORA: "Diretti da Tipografia",
@@ -486,13 +513,9 @@ function ModuloDashboard({ titoli, prenotato, canali, spalmatura, ruolo }) {
   // Obiettivo per canale (via spalmatura) integrato nella sezione unica
   const obiPerCanale = useMemo(() => {
     const map = {};
-    canali.forEach(c => {
-      let assegnato = 0;
-      titoliGiro.forEach(t => {
-        const spRow = spalmatura.find(s => s.editore_nome === t.editore_nome && s.formato === (t.formato || 'Cover') && s.canale_codice === c.codice);
-        if (spRow && t.obiettivo_assegnato) assegnato += Math.round(t.obiettivo_assegnato * spRow.percentuale / 100);
-      });
-      map[c.codice] = { assegnato };
+    canali.forEach(c => { map[c.codice] = { assegnato: 0 }; });
+    titoliGiro.forEach(t => {
+      Object.entries(objPerCanale(t, spalmatura) || {}).forEach(([cod, n]) => { if (map[cod]) map[cod].assegnato += n; });
     });
     return map;
   }, [titoliGiro, canali, spalmatura]);
@@ -986,7 +1009,7 @@ function TendinaGiroCedola({ items, eanIndex, statoMap, onToggleChiuso, selected
   );
 }
 
-function ModuloCedola({ titoli, giriList, onUpdateTitolo, onDeleteTitolo, spalmatura, prenotato, ruolo, token, onTitoliChange, userAccount, statoChiusure, onToggleChiusura }) {
+function ModuloCedola({ titoli, giriList, onUpdateTitolo, onDeleteTitolo, spalmatura, canali = [], prenotato, ruolo, token, onTitoliChange, userAccount, statoChiusure, onToggleChiusura }) {
   const [giroLabelSel, setGiroLabelSel] = useState([]);
   const [extraSel, setExtraSel] = useState([]);
   const [giroSel, setGiroSel] = useState([]);
@@ -1232,11 +1255,7 @@ function ModuloCedola({ titoli, giriList, onUpdateTitolo, onDeleteTitolo, spalma
 
   const editingTitolo = titoli.find(t => t.id === editingId);
 
-  const getObjCanale = (titolo, canale_codice) => {
-    const spRow = spalmatura.find(s => s.editore_nome === titolo.editore_nome && s.formato === (titolo.formato || 'Cover') && s.canale_codice === canale_codice);
-    if (!spRow || !titolo.obiettivo_assegnato) return 0;
-    return Math.round(titolo.obiettivo_assegnato * spRow.percentuale / 100);
-  };
+  const getObjCanale = (titolo, canale_codice) => objPerCanale(titolo, spalmatura)?.[canale_codice] || 0;
 
   // Costruisce un foglio nello stesso formato del template ufficiale di import:
   // riga 1 = titolo (merge), riga 2 = legenda (merge), riga 3 = intestazioni, dati da riga 4.
@@ -1289,14 +1308,26 @@ function ModuloCedola({ titoli, giriList, onUpdateTitolo, onDeleteTitolo, spalma
 
   const exportDirezionale = () => {
     const XLSX = window.XLSX;
-    const canaliDir = [{ codice: 'FELTRINELLI', label: 'Feltrinelli' },{ codice: 'GIUNTI', label: 'Giunti' },{ codice: 'MONDADORI', label: 'Mondadori' },{ codice: 'UBIK', label: 'Ubik' },{ codice: 'INDIPENDENTI_ALTRE_CATENE', label: 'Indip. & Altre Catene' },{ codice: 'AMAZON', label: 'Amazon' },{ codice: 'IBS', label: 'IBS' },{ codice: 'ALTRI_ONLINE', label: 'Altri Online' },{ codice: 'FASTBOOK', label: 'Fastbook' },{ codice: 'GROSSISTI', label: 'Grossisti' },{ codice: 'CENTROLIBRI', label: 'Centrolibri' },{ codice: 'GDO', label: 'GDO' }];
+    // Colonne = tutti i canali che hanno un peso in spalmatura (ordine per macrogruppo, poi gli altri),
+    // così la somma dei canali torna sempre con l'OBJ TOTALE
+    const codiciSp = new Set(spalmatura.filter(s => Number(s.percentuale) > 0).map(s => s.canale_codice));
+    const ordine = MACROGRUPPI.flatMap(mg => mg.canali);
+    const nomeCanale = cod => getCanaleDisplayName(canali.find(c => c.codice === cod) || { codice: cod, nome: cod });
+    const canaliDir = [...ordine.filter(c => codiciSp.has(c)), ...[...codiciSp].filter(c => !ordine.includes(c)).sort()]
+      .map(codice => ({ codice, label: nomeCanale(codice) }));
     const giroLabelStr = giroLabelSel.length === 0 ? "TUTTI" : giroLabelSel.join(", ");
     const { rankEditoreMap, rankTitoloMap } = computeRanking(filtered);
     const headersCedola = ["N° CEDOLA","RANK.EDITORE","RANK.TITOLO","EAN","TITOLO","AUTORE","COD.EDITORE","EDITORE","TOP 100","PREZZO","OBJ TOTALE","NOTE","EAN GEM 1","TITOLO GEM 1","EAN GEM 2","TITOLO GEM 2","EAN GEM 3","TITOLO GEM 3"];
     const rowsCedola = filtered.map(t => [t.n_cedola, rankEditoreMap.get(t.id), rankTitoloMap.get(t.id), t.ean, t.titolo, t.autore, t.codice_editore, t.editore_nome, t.top_100 ? "SI" : "", t.prezzo, t.obiettivo_assegnato || 0, t.note_comunicazione || t.note, t.ean_gemello_1, t.titolo_gemello_1, t.ean_gemello_2, t.titolo_gemello_2, t.ean_gemello_3, t.titolo_gemello_3]);
     const wsCedola = buildTemplateSheet(XLSX, "CEDOLA DIREZIONALE — GIRO " + giroLabelStr, "Esportazione dati cedola per la direzione", headersCedola, rowsCedola);
-    const headersObj = ["N° CEDOLA","EAN","TITOLO","AUTORE","COD.EDITORE","EDITORE","PREZZO","OBJ TOTALE",...canaliDir.map(c => c.label)];
-    const rowsObj = filtered.map(t => [t.n_cedola, t.ean, t.titolo, t.autore, t.codice_editore, t.editore_nome, t.prezzo, t.obiettivo_assegnato || 0, ...canaliDir.map(c => getObjCanale(t, c.codice))]);
+    const headersObj = ["N° CEDOLA","EAN","TITOLO","AUTORE","COD.EDITORE","EDITORE","PREZZO","OBJ TOTALE",...canaliDir.map(c => c.label),"SOMMA CANALI","CONTROLLO"];
+    const rowsObj = filtered.map(t => {
+      const perCanale = objPerCanale(t, spalmatura);
+      const valori = canaliDir.map(c => perCanale?.[c.codice] || 0);
+      const somma = valori.reduce((s, v) => s + v, 0);
+      const controllo = (t.obiettivo_assegnato || 0) > 0 && !perCanale ? `MANCANO PESI SPALMATURA (${t.editore_nome} · ${t.formato || "Cover"})` : "";
+      return [t.n_cedola, t.ean, t.titolo, t.autore, t.codice_editore, t.editore_nome, t.prezzo, t.obiettivo_assegnato || 0, ...valori, somma, controllo];
+    });
     const wsObj = buildTemplateSheet(XLSX, "OBIETTIVI PER CANALE — GIRO " + giroLabelStr, "Ripartizione obiettivi per canale di vendita", headersObj, rowsObj);
     const wb = XLSX.utils.book_new(); XLSX.utils.book_append_sheet(wb, wsCedola, "CEDOLA"); XLSX.utils.book_append_sheet(wb, wsObj, "OBIETTIVI");
     XLSX.writeFile(wb, `CEDOLA_DIREZIONALE_${giroLabelSel.length === 0 ? "TUTTI" : giroLabelSel.join("-")}.xlsx`);
@@ -1874,11 +1905,7 @@ function ModuloFineGiro({ titoli, prenotato, canali, token, ruolo, spalmatura, u
   }, [clienteSel, prenotatoCliente, canali]);
 
   // Helper: calcola obiettivo per canale di un singolo titolo via spalmatura
-  const getObjCanalePerTitolo = useCallback((t, canale_codice) => {
-    const spRow = spalmatura.find(s => s.editore_nome === t.editore_nome && s.formato === (t.formato || 'Cover') && s.canale_codice === canale_codice);
-    if (!spRow || !t.obiettivo_assegnato) return 0;
-    return Math.round(t.obiettivo_assegnato * spRow.percentuale / 100);
-  }, [spalmatura]);
+  const getObjCanalePerTitolo = useCallback((t, canale_codice) => objPerCanale(t, spalmatura)?.[canale_codice] || 0, [spalmatura]);
 
   const righe = useMemo(() => titoliSel.map(t => {
     // Calcola obiettivo per canale per questo titolo
@@ -1944,18 +1971,12 @@ function ModuloFineGiro({ titoli, prenotato, canali, token, ruolo, spalmatura, u
 
   // MOD 4: Calcolo obiettivi per canale nello scarico (Fine Giro)
   const obiPerCanaleFinGiro = useMemo(() => {
-    const map = {};
-    canali.forEach(c => {
-      let assegnato = 0;
-      righeFiltrate.forEach(({ titolo: t }) => {
-        const spRow = spalmatura.find(s => s.editore_nome === t.editore_nome && s.formato === (t.formato || 'Cover') && s.canale_codice === c.codice);
-        if (spRow && t.obiettivo_assegnato) {
-          assegnato += Math.round(t.obiettivo_assegnato * spRow.percentuale / 100);
-        }
-      });
-      const raggiunto = prenotatoPerCanale[c.codice] || 0;
-      map[c.codice] = { assegnato, raggiunto };
+    const assegnati = {};
+    righeFiltrate.forEach(({ titolo: t }) => {
+      Object.entries(objPerCanale(t, spalmatura) || {}).forEach(([cod, n]) => { assegnati[cod] = (assegnati[cod] || 0) + n; });
     });
+    const map = {};
+    canali.forEach(c => { map[c.codice] = { assegnato: assegnati[c.codice] || 0, raggiunto: prenotatoPerCanale[c.codice] || 0 }; });
     return map;
   }, [righeFiltrate, canali, spalmatura, prenotatoPerCanale]);
 
@@ -5013,7 +5034,7 @@ export default function App() {
           {activeModule === "dashboard" && <ModuloDashboard titoli={titoli} prenotato={prenotato} canali={canali} spalmatura={spalmatura} ruolo={ruolo} />}
           {activeModule === "calendariogiri" && <Modulocalendariogiri token={session.token} ruolo={ruolo} />}
           {/* FIX 5: Passato token a ModuloCedola */}
-          {activeModule === "cedola" && <ModuloCedola titoli={titoli} giriList={giriDB} onUpdateTitolo={t => { updateTitolo(t); setTitoli(prev => prev.some(x => x.id === t.id) ? prev.map(x => x.id === t.id ? t : x) : [...prev, t]); }} onDeleteTitolo={deleteTitolo} spalmatura={spalmatura} prenotato={prenotato} ruolo={ruolo} token={session.token} onTitoliChange={refreshDati} userAccount={userAccount} statoChiusure={statoChiusure} onToggleChiusura={toggleChiusura} />}
+          {activeModule === "cedola" && <ModuloCedola titoli={titoli} giriList={giriDB} canali={canali} onUpdateTitolo={t => { updateTitolo(t); setTitoli(prev => prev.some(x => x.id === t.id) ? prev.map(x => x.id === t.id ? t : x) : [...prev, t]); }} onDeleteTitolo={deleteTitolo} spalmatura={spalmatura} prenotato={prenotato} ruolo={ruolo} token={session.token} onTitoliChange={refreshDati} userAccount={userAccount} statoChiusure={statoChiusure} onToggleChiusura={toggleChiusura} />}
           {activeModule === "prenotato" && <ModuloPrenotato token={session.token} titoli={titoli} onImportDone={() => sbFetch("prenotato?select=*&limit=100000", session.token).then(setPrenotato)} />}
           {/* MOD 4: Passato spalmatura a ModuloFineGiro */}
           {activeModule === "finegiro" && <ModuloFineGiro titoli={titoli} prenotato={prenotato} canali={canali} token={session.token} ruolo={ruolo} spalmatura={spalmatura} userAccount={userAccount} onPrenotatoUpdated={refreshDati} statoChiusure={statoChiusure} onToggleChiusura={toggleChiusura} />}
