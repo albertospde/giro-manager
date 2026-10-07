@@ -1,4 +1,5 @@
 import { useState, useEffect, useMemo, useCallback, useRef, Fragment } from "react";
+import { createClient } from "@supabase/supabase-js";
 import ModuloImport from "./ModuloImport.jsx";
 import ModuloSpalmatura from "./ModuloSpalmatura.jsx";
 import ModuloFatturato from "./ModuloFatturato.jsx";
@@ -1158,7 +1159,8 @@ function PannelloEditoriGiro({ titoli, giroLabel, token }) {
 }
 
 // ─── Avviso nuovi editori nei giri ─────────────────────────────────────────
-// All'accesso e poi ogni 5 minuti legge dal database gli editori presenti in ciascun giro
+// All'accesso, in tempo reale a ogni salvataggio di titoli (e comunque ogni 5 minuti) legge dal
+// database gli editori presenti in ciascun giro
 // (anno corrente e due successivi, cedole extra escluse) e li confronta con quelli già notificati
 // all'utente (utente_editori_visti). Le novità compaiono in un popup da chiudere, una volta sola:
 // lo snapshot si aggiorna appena il popup compare. Non conta chi ha inserito l'editore.
@@ -1204,13 +1206,28 @@ function AvvisoEditoriNuovi({ token, userId }) {
     } catch { /* riprova al prossimo giro */ } finally { inCorso.current = false; }
   }, [token, userId]);
 
+  // Tempo reale: il database manda un segnale vuoto ("giro-editori") a ogni salvataggio di titoli;
+  // si ricontrolla dopo 3s (un import fa più salvataggi di fila). Il controllo ogni 5 minuti
+  // resta come rete di sicurezza se la connessione in tempo reale cade.
+  const daRicontrollare = useRef(false);
   useEffect(() => {
     controlla();
     const id = setInterval(controlla, AVVISO_EDITORI_OGNI_MS);
-    return () => clearInterval(id);
+    let attesa = null;
+    const client = createClient(SUPABASE_URL, SUPABASE_KEY, { auth: { persistSession: false, autoRefreshToken: false } });
+    const canale = client.channel("giro-editori")
+      .on("broadcast", { event: "titoli_cambiati" }, () => {
+        clearTimeout(attesa);
+        attesa = setTimeout(() => { if (popupAperto.current) daRicontrollare.current = true; else controlla(); }, 3000);
+      })
+      .subscribe();
+    return () => { clearInterval(id); clearTimeout(attesa); client.removeChannel(canale); };
   }, [controlla]);
 
-  const chiudi = () => { popupAperto.current = false; setNovita(null); };
+  const chiudi = () => {
+    popupAperto.current = false; setNovita(null);
+    if (daRicontrollare.current) { daRicontrollare.current = false; setTimeout(controlla, 500); }
+  };
 
   if (!novita) return null;
   const totale = novita.reduce((s, x) => s + x.editori.length, 0);
