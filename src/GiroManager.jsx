@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo, useCallback, useRef } from "react";
+import { useState, useEffect, useMemo, useCallback, useRef, Fragment } from "react";
 import ModuloImport from "./ModuloImport.jsx";
 import ModuloSpalmatura from "./ModuloSpalmatura.jsx";
 import ModuloFatturato from "./ModuloFatturato.jsx";
@@ -1009,6 +1009,149 @@ function TendinaGiroCedola({ items, eanIndex, statoMap, onToggleChiuso, selected
   );
 }
 
+// ─── Checklist "Editori del giro" (Giri e cedole) ──────────────────────────
+// Tutti gli editori attivi dell'anagrafica (ranking_editori) in ordine di ranking: chi ha già
+// titoli nel giro selezionato viene depennato, chi manca resta in evidenza. Il tasto "Escludi"
+// toglie un editore dai mancanti per quel solo giro (tabella giro_editori_esclusi).
+const AMBRA = "#e0a84c";
+const normNomeEd = (s) => String(s ?? "").replace(/\s+/g, " ").trim().toUpperCase();
+function PannelloEditoriGiro({ titoli, giroLabel, token }) {
+  const [aperto, setAperto] = useState(() => { try { return localStorage.getItem("editoriGiro_aperto") !== "0"; } catch { return true; } });
+  const [anagrafica, setAnagrafica] = useState([]);
+  const [esclusi, setEsclusi] = useState(new Set());
+  const [vista, setVista] = useState("tutti");
+  const [cerca, setCerca] = useState("");
+  const [errore, setErrore] = useState("");
+  const [inCorso, setInCorso] = useState(null);
+  const hdr = { apikey: SUPABASE_KEY, Authorization: `Bearer ${token}` };
+
+  const toggleAperto = () => setAperto(a => { try { localStorage.setItem("editoriGiro_aperto", a ? "0" : "1"); } catch {} return !a; });
+
+  useEffect(() => {
+    sbFetch("ranking_editori?select=editore_nome,codice_editore,ranking,cedola,account_editore,stato_rpn,attivo", token)
+      .then(r => setAnagrafica(Array.isArray(r) ? r : [])).catch(e => setErrore(e.message));
+  }, [token]);
+  useEffect(() => {
+    setEsclusi(new Set());
+    if (!giroLabel) return;
+    sbFetch(`giro_editori_esclusi?select=editore_nome&giro_label=eq.${encodeURIComponent(giroLabel)}`, token)
+      .then(r => setEsclusi(new Set((Array.isArray(r) ? r : []).map(x => x.editore_nome)))).catch(e => setErrore(e.message));
+  }, [token, giroLabel]);
+
+  const { righe, extra, conteggi } = useMemo(() => {
+    const titoliGiro = giroLabel ? titoli.filter(t => t.giro_label === giroLabel) : [];
+    const perNome = {}, perCodice = {};
+    titoliGiro.forEach(t => {
+      const n = normNomeEd(t.editore_nome); if (n) perNome[n] = (perNome[n] || 0) + 1;
+      const c = String(t.codice_editore ?? "").trim(); if (c) perCodice[c] = (perCodice[c] || 0) + 1;
+    });
+    const nomiAnag = new Set();
+    const righe = anagrafica
+      .filter(a => a.attivo !== false && a.editore_nome)
+      .sort((a, b) => (a.ranking ?? 9999) - (b.ranking ?? 9999) || a.editore_nome.localeCompare(b.editore_nome))
+      .map(a => {
+        const n = normNomeEd(a.editore_nome); nomiAnag.add(n);
+        const nTitoli = perNome[n] || (a.codice_editore ? perCodice[String(a.codice_editore).trim()] : 0) || 0;
+        const stato = nTitoli > 0 ? "presente" : esclusi.has(a.editore_nome) ? "escluso" : "mancante";
+        return { ...a, nTitoli, stato };
+      });
+    const codiciAnag = new Set(anagrafica.map(a => String(a.codice_editore ?? "").trim()).filter(Boolean));
+    const extra = [...new Set(titoliGiro.filter(t => !nomiAnag.has(normNomeEd(t.editore_nome)) && !codiciAnag.has(String(t.codice_editore ?? "").trim())).map(t => t.editore_nome).filter(Boolean))].sort();
+    const conteggi = { tutti: righe.length, presente: 0, mancante: 0, escluso: 0 };
+    righe.forEach(r => { conteggi[r.stato]++; });
+    return { righe, extra, conteggi };
+  }, [titoli, giroLabel, anagrafica, esclusi]);
+
+  const visibili = righe.filter(r => (vista === "tutti" || r.stato === vista) && (!cerca || r.editore_nome.toLowerCase().includes(cerca.toLowerCase())));
+
+  const cambiaEsclusione = async (nome, escludi) => {
+    setInCorso(nome); setErrore("");
+    try {
+      const r = escludi
+        ? await fetch(`${SUPABASE_URL}/rest/v1/giro_editori_esclusi`, { method: "POST", headers: { ...hdr, "Content-Type": "application/json", Prefer: "resolution=ignore-duplicates,return=minimal" }, body: JSON.stringify({ giro_label: giroLabel, editore_nome: nome }) })
+        : await fetch(`${SUPABASE_URL}/rest/v1/giro_editori_esclusi?giro_label=eq.${encodeURIComponent(giroLabel)}&editore_nome=eq.${encodeURIComponent(nome)}`, { method: "DELETE", headers: hdr });
+      if (!r.ok) throw new Error((await r.json().catch(() => ({}))).message || `Errore ${r.status}`);
+      setEsclusi(prev => { const s = new Set(prev); escludi ? s.add(nome) : s.delete(nome); return s; });
+    } catch (e) { setErrore(e.message); } finally { setInCorso(null); }
+  };
+
+  const cella = { padding: "5px 10px", borderBottom: `1px solid ${T.border}55`, fontSize: "12px", display: "flex", alignItems: "center", minWidth: 0 };
+  const colonne = "56px minmax(220px, 2fr) 60px minmax(120px, 1fr) 70px 110px 110px";
+  const filtri = [["tutti", "Tutti", T.text], ["mancante", "Mancanti", AMBRA], ["presente", "Presenti", T.green], ["escluso", "Esclusi", T.textMid]];
+
+  return (
+    <div style={{ borderBottom: `1px solid ${T.border}`, background: T.surface, flexShrink: 0 }}>
+      <div onClick={toggleAperto} style={{ padding: "8px 20px", display: "flex", alignItems: "center", gap: 12, cursor: "pointer", userSelect: "none" }}>
+        <span style={{ color: T.textMid, fontSize: "11px", width: 10 }}>{aperto ? "▾" : "▸"}</span>
+        <span style={{ color: T.accent, fontWeight: 700, fontSize: "12px", letterSpacing: "0.06em" }}>EDITORI DEL GIRO</span>
+        {giroLabel ? (
+          <span style={{ color: T.textMid, fontSize: "12px" }}>
+            Giro {giroLabel} · <span style={{ color: T.green }}>{conteggi.presente} presenti</span> · <span style={{ color: conteggi.mancante ? AMBRA : T.green, fontWeight: 700 }}>{conteggi.mancante} mancanti</span>
+            {conteggi.escluso > 0 && <> · {conteggi.escluso} esclusi</>} · su {conteggi.tutti} in anagrafica
+          </span>
+        ) : <span style={{ color: T.textMid, fontSize: "12px" }}>seleziona un solo giro per vedere quali editori mancano</span>}
+      </div>
+      {aperto && giroLabel && (
+        <div style={{ padding: "0 20px 12px" }}>
+          <div style={{ display: "flex", gap: 8, alignItems: "center", marginBottom: 8, flexWrap: "wrap" }}>
+            {filtri.map(([k, label, col]) => (
+              <button key={k} onClick={() => setVista(k)} style={{ ...css.btn(vista === k ? "accent" : "default"), padding: "4px 10px", ...(vista !== k ? { color: col } : {}) }}>
+                {label} ({k === "tutti" ? conteggi.tutti : conteggi[k]})
+              </button>
+            ))}
+            <input style={{ ...css.input, width: 200 }} placeholder="Cerca editore…" value={cerca} onChange={e => setCerca(e.target.value)} />
+            {errore && <span style={{ color: T.red, fontSize: "11px" }}>{errore}</span>}
+          </div>
+          <div style={{ maxHeight: "38vh", overflowY: "auto", border: `1px solid ${T.border}`, borderRadius: 4 }}>
+            <div style={{ display: "grid", gridTemplateColumns: colonne }}>
+              {["Rank", "Editore", "Cat.", "Account", "Titoli", "Stato", ""].map((h, i) => (
+                <div key={i} style={{ ...cella, position: "sticky", top: 0, zIndex: 1, background: T.surface, color: T.textMid, fontSize: "10px", letterSpacing: "0.08em", textTransform: "uppercase", borderBottom: `1px solid ${T.border}` }}>{h}</div>
+              ))}
+              {visibili.map(r => {
+                const presente = r.stato === "presente", escluso = r.stato === "escluso", manca = r.stato === "mancante";
+                const sfondo = manca ? AMBRA + "1f" : "transparent";
+                const testo = presente || escluso ? T.textMid : T.text;
+                const c = { ...cella, background: sfondo, color: testo };
+                return (
+                  <Fragment key={r.editore_nome}>
+                    <div style={{ ...c, fontVariantNumeric: "tabular-nums" }}>{r.ranking ?? "—"}</div>
+                    <div style={{ ...c, fontWeight: manca ? 700 : 400, textDecoration: presente ? "line-through" : "none", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }} title={r.editore_nome}>
+                      {r.editore_nome}{r.stato_rpn === "in_arrivo" && <span style={{ ...css.tag(T.purple), marginLeft: 8 }}>in arrivo</span>}
+                    </div>
+                    <div style={c}>{r.cedola || "—"}</div>
+                    <div style={{ ...c, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{r.account_editore || "—"}</div>
+                    <div style={{ ...c, fontVariantNumeric: "tabular-nums" }}>{r.nTitoli || ""}</div>
+                    <div style={c}>
+                      {presente && <span style={{ color: T.green, fontWeight: 700 }}>✓ presente</span>}
+                      {manca && <span style={{ color: AMBRA, fontWeight: 700 }}>● manca</span>}
+                      {escluso && <span style={{ color: T.textMid }}>⊘ escluso</span>}
+                    </div>
+                    <div style={c}>
+                      {!presente && (
+                        <button disabled={inCorso === r.editore_nome} onClick={() => cambiaEsclusione(r.editore_nome, !escluso)}
+                          style={{ ...css.btn(), padding: "2px 8px", fontSize: "11px", color: escluso ? T.green : T.textMid }}
+                          title={escluso ? "Rimetti tra gli editori attesi in questo giro" : "Questo editore non partecipa a questo giro"}>
+                          {escluso ? "↺ Includi" : "⊘ Escludi"}
+                        </button>
+                      )}
+                    </div>
+                  </Fragment>
+                );
+              })}
+            </div>
+            {!visibili.length && <div style={{ padding: 12, color: T.textMid, fontSize: "12px" }}>Nessun editore in questa vista.</div>}
+          </div>
+          {extra.length > 0 && (
+            <div style={{ marginTop: 8, color: AMBRA, fontSize: "11px" }}>
+              Nel giro ma non in anagrafica editori: {extra.join(" · ")}
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
 function ModuloCedola({ titoli, giriList, onUpdateTitolo, onDeleteTitolo, spalmatura, canali = [], prenotato, ruolo, token, onTitoliChange, userAccount, statoChiusure, onToggleChiusura }) {
   const [giroLabelSel, setGiroLabelSel] = useState([]);
   const [extraSel, setExtraSel] = useState([]);
@@ -1552,6 +1695,9 @@ function ModuloCedola({ titoli, giriList, onUpdateTitolo, onDeleteTitolo, spalma
         {ruolo !== "agente" && <button style={{ ...css.btn(), borderColor: T.blue, color: T.blue }} onClick={exportTemplateRicaricabile} title="Genera un file nello stesso formato del template di import, ricaricabile direttamente">↓ Template ricaricabile</button>}
         <a href="https://lafeltrinelli.sharepoint.com/:f:/s/PDE/IgD7OJj1nZrhTKrDAVfuqOc3AQQaTrH4gMuXZT7Ob6Fbm2w?e=mEDMdm" target="_blank" rel="noopener noreferrer" style={{ ...css.btn(), borderColor: "#9c6fcf", color: "#9c6fcf", textDecoration: "none" }}>📄 PDF & Materiali</a>
       </div>
+      {ruolo !== "agente" && extraSel.length === 0 && (
+        <PannelloEditoriGiro titoli={titoli} giroLabel={giroLabelSel.length === 1 ? giroLabelSel[0] : null} token={token} />
+      )}
       <div style={{ flex: 1, overflowY: "auto" }}>
         <table style={css.table}>
           <thead>
