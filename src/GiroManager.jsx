@@ -279,11 +279,9 @@ function LoginScreen({ onLogin }) {
     <div style={{ ...css.app, display: "flex", alignItems: "center", justifyContent: "center", height: "100vh" }}>
       <div style={{ background: T.surface, border: `1px solid ${T.border}`, borderRadius: 6, padding: 40, width: 340 }}>
         <div style={{ textAlign: "center", marginBottom: 32 }}>
-          <div style={{ display: "inline-block", background: "#fff", borderRadius: 12, padding: "10px 16px", marginBottom: 16 }}>
-            <img src="https://raw.githubusercontent.com/albertospde/giro-manager/main/.github/logo_pde.png" style={{ height: 48, display: "block" }} alt="PDE" />
+          <div style={{ display: "inline-block", background: "#fff", borderRadius: 12, padding: "14px 18px" }}>
+            <img src={`${import.meta.env.BASE_URL}logo/giro-manager-logo-960.png`} style={{ width: 300, display: "block" }} alt="Giro Manager" />
           </div>
-          <div style={{ color: T.accent, fontSize: "24px", fontWeight: "700", letterSpacing: "0.1em" }}>GIRO</div>
-          <div style={{ color: T.textMid, fontSize: "11px", letterSpacing: "0.15em", marginTop: 4 }}>MANAGER</div>
         </div>
         <div style={{ marginBottom: 16 }}>
           <label style={{ color: T.textMid, fontSize: "10px", letterSpacing: "0.08em", textTransform: "uppercase", display: "block", marginBottom: 6 }}>Email</label>
@@ -5329,10 +5327,9 @@ export default function App() {
     <div style={{ ...css.app, display: "flex", height: "100vh", overflow: "hidden" }}>
       <div style={css.sidebar}>
         <div style={{ padding: "20px 16px 16px", borderBottom: `1px solid ${T.border}`, flexShrink: 0 }}>
-          <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 4 }}>
-            <img src="https://raw.githubusercontent.com/albertospde/giro-manager/main/.github/logo_pde.png" style={{ height: 36, borderRadius: 6 }} alt="PDE" />
+          <div style={{ background: "#fff", borderRadius: 6, padding: "9px 8px" }}>
+            <img src={`${import.meta.env.BASE_URL}logo/giro-manager-logo-480.png`} style={{ width: "100%", display: "block" }} alt="Giro Manager" />
           </div>
-          <div style={{ color: T.accent, fontSize: "13px", fontWeight: "700", letterSpacing: "0.06em" }}>GIRO MANAGER</div>
         </div>
         <nav style={{ flex: 1, minHeight: 0, overflowY: "auto", padding: "8px 0", display: "flex", flexDirection: "column" }}>
           <div style={{ flex: 1 }}>
