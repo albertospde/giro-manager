@@ -1090,6 +1090,11 @@ function PannelloEditoriGiro({ titoli, giroLabel, token }) {
             {conteggi.escluso > 0 && <> · {conteggi.escluso} esclusi</>} · su {conteggi.tutti} in anagrafica
           </span>
         ) : <span style={{ color: T.textMid, fontSize: "12px" }}>seleziona un solo giro per vedere quali editori mancano</span>}
+        {giroLabel && (
+          <button onClick={e => { e.stopPropagation(); toggleAperto(); }} style={{ ...css.btn(aperto ? "default" : "accent"), marginLeft: "auto", padding: "4px 12px" }}>
+            {aperto ? "▲ Chiudi elenco" : "▼ Apri elenco"}
+          </button>
+        )}
       </div>
       {aperto && giroLabel && (
         <div style={{ padding: "0 20px 12px" }}>
