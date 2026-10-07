@@ -202,7 +202,7 @@ const T = tema({
 
 const css = {
   app: { background: T.bg, color: T.text, minHeight: "100vh", fontFamily: "'Inter', 'Segoe UI', Arial, sans-serif", fontSize: "13px" },
-  sidebar: { width: 200, background: T.surface, borderRight: `1px solid ${T.border}`, display: "flex", flexDirection: "column", flexShrink: 0 },
+  sidebar: { width: 200, background: T.surface, borderRight: `1px solid ${T.border}`, display: "flex", flexDirection: "column", flexShrink: 0, minHeight: 0, overflow: "hidden" },
   main: { flex: 1, overflow: "hidden", display: "flex", flexDirection: "column" },
   header: { borderBottom: `1px solid ${T.border}`, padding: "12px 20px", display: "flex", alignItems: "center", gap: 12, background: T.surface },
   btn: (v = "default") => ({ padding: "6px 14px", border: `1px solid ${v === "accent" ? T.accent : T.border}`, background: v === "accent" ? T.accent : "transparent", color: v === "accent" ? "#000" : T.text, cursor: "pointer", fontSize: "12px", fontFamily: "inherit", borderRadius: 3, fontWeight: v === "accent" ? "700" : "400", letterSpacing: "0.04em", transition: "all 0.15s" }),
@@ -5326,15 +5326,15 @@ export default function App() {
   const moduliImport = ruolo !== "agente" ? MODULES_IMPORT : [];
 
   return (
-    <div style={{ ...css.app, display: "flex", height: "100vh" }}>
+    <div style={{ ...css.app, display: "flex", height: "100vh", overflow: "hidden" }}>
       <div style={css.sidebar}>
-        <div style={{ padding: "20px 16px 16px", borderBottom: `1px solid ${T.border}` }}>
+        <div style={{ padding: "20px 16px 16px", borderBottom: `1px solid ${T.border}`, flexShrink: 0 }}>
           <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 4 }}>
             <img src="https://raw.githubusercontent.com/albertospde/giro-manager/main/.github/logo_pde.png" style={{ height: 36, borderRadius: 6 }} alt="PDE" />
           </div>
           <div style={{ color: T.accent, fontSize: "13px", fontWeight: "700", letterSpacing: "0.06em" }}>GIRO MANAGER</div>
         </div>
-        <nav style={{ flex: 1, padding: "8px 0", display: "flex", flexDirection: "column" }}>
+        <nav style={{ flex: 1, minHeight: 0, overflowY: "auto", padding: "8px 0", display: "flex", flexDirection: "column" }}>
           <div style={{ flex: 1 }}>
             {moduliVis.map(m => (
               <button key={m.id} style={{ width: "100%", textAlign: "left", padding: "10px 16px", border: "none", background: activeModule === m.id ? T.accent + "18" : "transparent", color: activeModule === m.id ? T.accent : T.textMid, cursor: "pointer", fontFamily: "inherit", fontSize: "12px", borderLeft: `2px solid ${activeModule === m.id ? T.accent : "transparent"}`, display: "flex", alignItems: "center", gap: 10, letterSpacing: "0.04em" }}
@@ -5357,7 +5357,7 @@ export default function App() {
             </div>
           )}
         </nav>
-        <div style={{ padding: "12px 16px", borderTop: `1px solid ${T.border}` }}>
+        <div style={{ padding: "12px 16px", borderTop: `1px solid ${T.border}`, flexShrink: 0 }}>
           <div style={{ color: T.textDim, fontSize: "10px", marginBottom: 2 }}>{session.user?.email}</div>
           <div style={{ color: T.textDim, fontSize: "10px", marginBottom: 6, textTransform: "uppercase", letterSpacing: "0.06em" }}>{ruolo}</div>
           <button style={{ ...css.btn(), fontSize: "11px", padding: "4px 10px", width: "100%" }} onClick={handleLogout}>Esci</button>
