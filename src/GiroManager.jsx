@@ -1157,52 +1157,68 @@ function PannelloEditoriGiro({ titoli, giroLabel, token }) {
   );
 }
 
-// ─── Avviso all'accesso: editori aggiunti ai giri ──────────────────────────
-// Confronta gli editori presenti oggi in ciascun giro (anno corrente in poi, cedole extra escluse)
-// con quelli già notificati all'utente (utente_editori_visti). Le novità si mostrano una volta sola:
-// lo snapshot si aggiorna appena l'avviso compare. Al primo accesso si registra senza avvisare.
+// ─── Avviso nuovi editori nei giri ─────────────────────────────────────────
+// All'accesso e poi ogni 5 minuti legge dal database gli editori presenti in ciascun giro
+// (anno corrente e due successivi, cedole extra escluse) e li confronta con quelli già notificati
+// all'utente (utente_editori_visti). Le novità compaiono in un popup da chiudere, una volta sola:
+// lo snapshot si aggiorna appena il popup compare. Non conta chi ha inserito l'editore.
+// Al primo accesso in assoluto si registra la situazione senza avvisare.
 const giroOrdine = (g) => { const [n, a] = String(g).split(" "); return Number(a || 0) * 100 + Number(n || 0); };
-function AvvisoEditoriNuovi({ titoli, token, userId }) {
+const AVVISO_EDITORI_OGNI_MS = 5 * 60 * 1000;
+function AvvisoEditoriNuovi({ token, userId }) {
   const [novita, setNovita] = useState(null);
-  const controllato = useRef(false);
+  const popupAperto = useRef(false);
+  const inCorso = useRef(false);
 
-  useEffect(() => {
-    if (controllato.current || !userId || !Array.isArray(titoli) || !titoli.length) return;
-    controllato.current = true;
-    const annoMin = new Date().getFullYear();
-    const attuale = {}, rank = {};
-    titoli.forEach(t => {
-      const g = t.giro_label, e = t.editore_nome?.trim();
-      if (!g || g === "EXTRA" || !e || Number(String(g).split(" ")[1]) < annoMin) return;
-      (attuale[g] = attuale[g] || new Set()).add(e);
-      rank[e] = Math.min(rank[e] ?? 9999, t.ranking_editore ?? 9999);
-    });
-    const snapshot = Object.fromEntries(Object.entries(attuale).map(([g, s]) => [g, [...s].sort()]));
-    const hdr = { apikey: SUPABASE_KEY, Authorization: `Bearer ${token}`, "Content-Type": "application/json" };
-    const salva = () => fetch(`${SUPABASE_URL}/rest/v1/utente_editori_visti`, {
-      method: "POST", headers: { ...hdr, Prefer: "resolution=merge-duplicates,return=minimal" },
-      body: JSON.stringify({ user_id: userId, snapshot, updated_at: new Date().toISOString() }),
-    }).catch(() => {});
-    sbFetch(`utente_editori_visti?select=snapshot&user_id=eq.${userId}`, token).then(rows => {
+  const controlla = useCallback(async () => {
+    if (!userId || popupAperto.current || inCorso.current) return;
+    inCorso.current = true;
+    try {
+      const anno = new Date().getFullYear();
+      const anni = [anno, anno + 1, anno + 2].map(a => `giro_label.like.*%20${a}`).join(",");
+      const righe = await sbFetch(`titoli?select=giro_label,editore_nome,ranking_editore&or=(${anni})`, token);
+      if (!Array.isArray(righe) || !righe.length) return;
+      const attuale = {}, rank = {};
+      righe.forEach(t => {
+        const g = t.giro_label, e = t.editore_nome?.trim();
+        if (!g || g === "EXTRA" || !e) return;
+        (attuale[g] = attuale[g] || new Set()).add(e);
+        rank[e] = Math.min(rank[e] ?? 9999, t.ranking_editore ?? 9999);
+      });
+      const snapshot = Object.fromEntries(Object.keys(attuale).sort().map(g => [g, [...attuale[g]].sort()]));
+      const salva = () => fetch(`${SUPABASE_URL}/rest/v1/utente_editori_visti`, {
+        method: "POST",
+        headers: { apikey: SUPABASE_KEY, Authorization: `Bearer ${token}`, "Content-Type": "application/json", Prefer: "resolution=merge-duplicates,return=minimal" },
+        body: JSON.stringify({ user_id: userId, snapshot, updated_at: new Date().toISOString() }),
+      }).catch(() => {});
+      const rows = await sbFetch(`utente_editori_visti?select=snapshot&user_id=eq.${userId}`, token);
       if (!Array.isArray(rows)) return;
-      if (!rows.length) { salva(); return; } // primo accesso: nessun avviso
+      if (!rows.length) { await salva(); return; } // primo accesso: nessun avviso
       const visti = rows[0].snapshot || {};
       const nuovi = Object.keys(attuale).sort((a, b) => giroOrdine(a) - giroOrdine(b))
         .map(g => ({ giro: g, editori: [...attuale[g]].filter(e => !(visti[g] || []).includes(e)).sort((a, b) => rank[a] - rank[b] || a.localeCompare(b)) }))
         .filter(x => x.editori.length);
-      const cambiato = JSON.stringify(visti) !== JSON.stringify(snapshot);
-      if (nuovi.length) setNovita(nuovi);
-      if (cambiato) salva();
-    }).catch(() => {});
-  }, [titoli, token, userId]);
+      if (nuovi.length) { popupAperto.current = true; setNovita(nuovi); }
+      const canon = (o) => JSON.stringify(Object.keys(o).sort().map(k => [k, [...(o[k] || [])].sort()]));
+      if (canon(visti) !== canon(snapshot)) await salva();
+    } catch { /* riprova al prossimo giro */ } finally { inCorso.current = false; }
+  }, [token, userId]);
+
+  useEffect(() => {
+    controlla();
+    const id = setInterval(controlla, AVVISO_EDITORI_OGNI_MS);
+    return () => clearInterval(id);
+  }, [controlla]);
+
+  const chiudi = () => { popupAperto.current = false; setNovita(null); };
 
   if (!novita) return null;
   const totale = novita.reduce((s, x) => s + x.editori.length, 0);
   return (
-    <div style={{ position: "fixed", inset: 0, background: "#000a", zIndex: 300, display: "flex", alignItems: "center", justifyContent: "center" }} onClick={() => setNovita(null)}>
+    <div style={{ position: "fixed", inset: 0, background: "#000a", zIndex: 300, display: "flex", alignItems: "center", justifyContent: "center" }} onClick={chiudi}>
       <div style={{ background: T.surface, border: `1px solid ${T.borderHi}`, borderRadius: 6, padding: 24, width: 520, maxWidth: "92vw", maxHeight: "80vh", display: "flex", flexDirection: "column" }} onClick={e => e.stopPropagation()}>
         <div style={{ color: T.accent, fontWeight: 700, fontSize: "13px", letterSpacing: "0.06em", marginBottom: 4 }}>🆕 NUOVI EDITORI NEI GIRI</div>
-        <div style={{ color: T.textMid, fontSize: "12px", marginBottom: 14 }}>Dal tuo ultimo accesso {totale === 1 ? "è stato aggiunto 1 editore" : `sono stati aggiunti ${totale} editori`}:</div>
+        <div style={{ color: T.textMid, fontSize: "12px", marginBottom: 14 }}>Dall'ultimo avviso {totale === 1 ? "è stato aggiunto 1 editore" : `sono stati aggiunti ${totale} editori`}:</div>
         <div style={{ overflowY: "auto", flex: 1 }}>
           {novita.map(({ giro, editori }) => (
             <div key={giro} style={{ marginBottom: 14 }}>
@@ -1214,7 +1230,7 @@ function AvvisoEditoriNuovi({ titoli, token, userId }) {
           ))}
         </div>
         <div style={{ display: "flex", justifyContent: "flex-end", marginTop: 12 }}>
-          <button style={css.btn("accent")} onClick={() => setNovita(null)}>Ho capito</button>
+          <button style={css.btn("accent")} onClick={chiudi}>Ho capito</button>
         </div>
       </div>
     </div>
@@ -5244,7 +5260,7 @@ export default function App() {
           </div>
         </div>
         {cambioPassword && <CambiaPassword email={session.user?.email} token={session.token} onClose={() => setCambioPassword(false)} />}
-        <AvvisoEditoriNuovi titoli={titoli} token={session.token} userId={session.user?.id} />
+        <AvvisoEditoriNuovi token={session.token} userId={session.user?.id} />
 
         <div style={{ flex: 1, overflow: "hidden", display: "flex", flexDirection: "column" }}>
           {/* MOD 3: Passato spalmatura alla Dashboard */}
