@@ -278,9 +278,9 @@ function LoginScreen({ onLogin }) {
   return (
     <div style={{ ...css.app, display: "flex", alignItems: "center", justifyContent: "center", height: "100vh" }}>
       <div style={{ background: T.surface, border: `1px solid ${T.border}`, borderRadius: 6, padding: 40, width: 340 }}>
-        <div style={{ textAlign: "center", marginBottom: 32 }}>
-          <div style={{ display: "inline-block", background: "#fff", borderRadius: 12, padding: "14px 18px" }}>
-            <img src={`${import.meta.env.BASE_URL}logo/giro-manager-logo-960.png`} style={{ width: 300, display: "block" }} alt="Giro Manager" />
+        <div style={{ marginBottom: 32 }}>
+          <div style={{ background: "#fff", borderRadius: 8, padding: "12px 12px", boxSizing: "border-box", width: "100%" }}>
+            <img src={`${import.meta.env.BASE_URL}logo/giro-manager-logo-960.png`} style={{ width: "100%", display: "block" }} alt="Giro Manager" />
           </div>
         </div>
         <div style={{ marginBottom: 16 }}>
