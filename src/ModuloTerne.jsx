@@ -15,6 +15,7 @@ const FN_BASE = `${SUPABASE_URL}/functions/v1/rpn-terne-sync`;
 const HEADERS_ATTESE = ["codice agente", "codice editore", "codice libreria"];
 const CHUNK_CARICA = 10000;
 const CHUNK_INSERISCI = 20000;
+const CHUNK_RIMUOVI = 25000; // intervallo di id per blocco (< 1s ciascuno)
 
 const T = tema({
   bg: "#1a2140", surface: "#212d54", border: "#2e3d6b", borderHi: "#3d4f82",
@@ -129,10 +130,11 @@ export default function ModuloTerne({ token }) {
       }
 
       // 4. rimuove quelle non più presenti su RPN
-      setFase({ testo: "Rimuovo le terne non più presenti su RPN…", pct: 88 });
-      for (let guard = 0; guard < 100; guard++) {
-        const n = await rpc("terne_sync_rimuovi", token, { p_sessione: sessione, p_limite: 20000 });
-        if (!n) break;
+      //    a blocchi di id: il confronto unico su tutte le terne superava il timeout di 8s
+      const att = await rpc("terne_sync_range_attuali", token);
+      for (let da = att.min; att.max != null && da <= att.max; da += CHUNK_RIMUOVI) {
+        await rpc("terne_sync_rimuovi_blocco", token, { p_sessione: sessione, p_da: da, p_a: da + CHUNK_RIMUOVI - 1 });
+        setFase({ testo: "Rimuovo le terne non più presenti su RPN…", pct: 86 + Math.round(((da - att.min) / Math.max(1, att.max - att.min)) * 11) });
       }
 
       setFase({ testo: "Chiudo…", pct: 98 });
