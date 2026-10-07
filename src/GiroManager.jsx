@@ -459,6 +459,96 @@ function EditModal({ titolo, siblings = [], onSave, onClose, onDelete, token }) 
   );
 }
 
+// ─── Grafici dashboard ──────────────────────────────────────────────────────
+// Colori dei gruppi di canali: palette categoriale validata (daltonismo e contrasto) sullo sfondo
+// delle card in tema scuro (#212d54) e chiaro (#ffffff); ordine fisso, il colore segue il gruppo.
+const VIZ = {
+  serie1: cv("#3987e5", "#2a78d6"),
+  traccia: cv("#3d4f82", "#d3d9e6"),
+};
+const VIZ_GRUPPI = {
+  RETE: cv("#3987e5", "#2a78d6"),
+  CATENE: cv("#d95926", "#eb6834"),
+  GROSSISTI: cv("#199e70", "#1baf7a"),
+  ONLINE: cv("#c98500", "#eda100"),
+};
+const compatto = (n) => {
+  const v = Number(n) || 0;
+  if (Math.abs(v) >= 1e6) return `${(v / 1e6).toLocaleString("it-IT", { maximumFractionDigits: 1 })} Mln`;
+  if (Math.abs(v) >= 1e3) return `${(v / 1e3).toLocaleString("it-IT", { maximumFractionDigits: 0 })} mila`;
+  return v.toLocaleString("it-IT");
+};
+function RiquadroKpi({ etichetta, valore, nota }) {
+  return (
+    <div style={{ background: T.surface, border: `1px solid ${T.border}`, borderRadius: 8, padding: "18px 20px", minWidth: 0 }}>
+      <div style={{ color: T.textMid, fontSize: "11px", marginBottom: 10 }}>{etichetta}</div>
+      <div style={{ color: T.text, fontSize: "28px", fontWeight: 700, lineHeight: 1 }}>{valore}</div>
+      {nota && <div style={{ color: T.textMid, fontSize: "11px", marginTop: 8 }}>{nota}</div>}
+    </div>
+  );
+}
+// Anello di avanzamento: traccia = obiettivo, arco = prenotato (oltre il 100% l'anello resta pieno)
+function AnelloAvanzamento({ pct, size = 112, spessore = 12 }) {
+  const r = (size - spessore) / 2, circ = 2 * Math.PI * r;
+  const quota = Math.max(0, Math.min(1, (pct || 0) / 100));
+  return (
+    <svg width={size} height={size} viewBox={`0 0 ${size} ${size}`} style={{ flexShrink: 0 }} role="img" aria-label={`Avanzamento ${pct}%`}>
+      <circle cx={size / 2} cy={size / 2} r={r} fill="none" stroke={VIZ.traccia} strokeWidth={spessore} />
+      {quota > 0 && <circle cx={size / 2} cy={size / 2} r={r} fill="none" stroke={VIZ.serie1} strokeWidth={spessore} strokeLinecap="round"
+        strokeDasharray={`${circ * quota} ${circ}`} transform={`rotate(-90 ${size / 2} ${size / 2})`} />}
+    </svg>
+  );
+}
+// Riga "bullet": traccia chiara + tacca = obiettivo, barra piena = prenotato (scala comune al grafico)
+const fmtN = (n) => (n || 0).toLocaleString("it-IT");
+const pctDi = (a, b) => (b > 0 ? Math.round(a / b * 100) : null);
+function RigaBullet({ etichetta, pren, obj, scala, colore, tipTitolo, larghezzaEtichetta = 150, onTip }) {
+  const [sopra, setSopra] = useState(false);
+  const pct = pctDi(pren, obj);
+  const wObj = obj > 0 ? Math.min(100, (obj / scala) * 100) : 0;
+  const wPren = Math.min(100, (pren / scala) * 100);
+  return (
+    <div onMouseMove={e => onTip(e, tipTitolo || etichetta, [["Prenotato", fmtN(pren)], ["Obiettivo", obj > 0 ? fmtN(obj) : "—"], ["Avanzamento", pct != null ? `${pct}%` : "—"]])}
+      onMouseEnter={() => setSopra(true)} onMouseLeave={e => { setSopra(false); onTip(e, null); }}
+      style={{ display: "grid", gridTemplateColumns: `${larghezzaEtichetta}px 1fr 150px 44px`, alignItems: "center", gap: 12, padding: "6px 4px", borderRadius: 4, background: sopra ? T.border + "55" : "transparent" }}>
+      <div style={{ color: T.text, fontSize: "12px", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }} title={etichetta}>{etichetta}</div>
+      <div style={{ position: "relative", height: 14 }}>
+        {wObj > 0 && <div style={{ position: "absolute", left: 0, top: 3, height: 8, width: `${wObj}%`, background: VIZ.traccia, borderRadius: "0 4px 4px 0" }} />}
+        <div style={{ position: "absolute", left: 0, top: 0, height: 14, width: `${wPren}%`, minWidth: pren > 0 ? 2 : 0, background: colore, borderRadius: "0 4px 4px 0" }} />
+        {wObj > 0 && <div style={{ position: "absolute", left: `calc(${wObj}% - 1px)`, top: -2, height: 18, width: 2, background: T.textMid, borderRadius: 1 }} />}
+      </div>
+      <div style={{ textAlign: "right", fontSize: "12px", fontVariantNumeric: "tabular-nums", whiteSpace: "nowrap" }}>
+        <span style={{ color: T.text, fontWeight: 600 }}>{pren > 0 ? fmtN(pren) : "—"}</span>
+        <span style={{ color: T.textMid }}> / {obj > 0 ? fmtN(obj) : "—"}</span>
+      </div>
+      <div style={{ textAlign: "right", fontSize: "12px", fontWeight: 600, color: T.text, fontVariantNumeric: "tabular-nums" }}>{pct != null ? `${pct}%` : ""}</div>
+    </div>
+  );
+}
+// Ciambella di composizione: fette separate da 2px di sfondo, passaggio del mouse per il dettaglio
+function Ciambella({ fette, totale, onHover, size = 168, spessore = 26 }) {
+  const r = (size - spessore) / 2, c = size / 2, circ = 2 * Math.PI * r;
+  const gap = totale > 0 && fette.filter(f => f.valore > 0).length > 1 ? 2 : 0;
+  let inizio = 0;
+  return (
+    <svg width={size} height={size} viewBox={`0 0 ${size} ${size}`} style={{ flexShrink: 0 }} role="img" aria-label="Prenotato per gruppo di canali">
+      <circle cx={c} cy={c} r={r} fill="none" stroke={VIZ.traccia} strokeWidth={spessore} />
+      {totale > 0 && fette.map(f => {
+        const lung = (f.valore / totale) * circ;
+        const el = f.valore > 0 && (
+          <circle key={f.id} cx={c} cy={c} r={r} fill="none" stroke={f.colore} strokeWidth={spessore}
+            strokeDasharray={`${Math.max(0, lung - gap)} ${circ}`} strokeDashoffset={-inizio} transform={`rotate(-90 ${c} ${c})`}
+            style={{ cursor: "default" }} onMouseMove={e => onHover(e, f)} onMouseLeave={e => onHover(e, null)} />
+        );
+        inizio += lung;
+        return el;
+      })}
+      <text x={c} y={c - 4} textAnchor="middle" style={{ fill: T.text, fontSize: "18px", fontWeight: 700 }}>{compatto(totale)}</text>
+      <text x={c} y={c + 14} textAnchor="middle" style={{ fill: T.textMid, fontSize: "11px" }}>copie prenotate</text>
+    </svg>
+  );
+}
+
 function ModuloDashboard({ titoli, prenotato, canali, spalmatura, ruolo }) {
   const anniDisp = useMemo(() => {
     const s = new Set();
@@ -509,7 +599,6 @@ function ModuloDashboard({ titoli, prenotato, canali, spalmatura, ruolo }) {
 
   const macrogruppiVis = ruolo === "agente" ? MACROGRUPPI.filter(mg => mg.id === "RETE" || mg.id === "GROSSISTI") : MACROGRUPPI;
   const totMacro = useMemo(() => { const map = {}; macrogruppiVis.forEach(mg => { map[mg.id] = mg.canali.reduce((s, cod) => s + (prenotatoPerCanale[cod] || 0), 0); }); return map; }, [prenotatoPerCanale, macrogruppiVis]);
-  const maxMacro = Math.max(...Object.values(totMacro), 1);
 
   // Obiettivo per canale (via spalmatura) integrato nella sezione unica
   const obiPerCanale = useMemo(() => {
@@ -521,110 +610,119 @@ function ModuloDashboard({ titoli, prenotato, canali, spalmatura, ruolo }) {
     return map;
   }, [titoliGiro, canali, spalmatura]);
 
+  // ─── Grafici ───────────────────────────────────────────────────────────────
+  const [tip, setTip] = useState(null); // { x, y, titolo, righe: [[etichetta, valore]] }
+  const onTip = useCallback((e, titolo, righe) => setTip(titolo ? { x: e.clientX, y: e.clientY, titolo, righe } : null), []);
+
+  const maxObjCedola = Math.max(1, ...cedole.map(c => Math.max(c.totObj, c.totRag)));
+  const gruppi = macrogruppiVis.map(mg => {
+    const righe = mg.canali.map(cod => {
+      const c = canali.find(x => x.codice === cod);
+      return c ? { codice: cod, nome: getCanaleDisplayName(c), pren: prenotatoPerCanale[cod] || 0, obj: obiPerCanale[cod]?.assegnato || 0 } : null;
+    }).filter(Boolean);
+    const pren = righe.reduce((s, r) => s + r.pren, 0), obj = righe.reduce((s, r) => s + r.obj, 0);
+    return { ...mg, colore: VIZ_GRUPPI[mg.id] || VIZ_GRUPPI.RETE, righe, pren, obj, scala: Math.max(1, ...righe.map(r => Math.max(r.obj, r.pren))) };
+  });
+  const totPrenGruppi = gruppi.reduce((s, g) => s + g.pren, 0);
+
+  const card = { background: T.surface, border: `1px solid ${T.border}`, borderRadius: 8, padding: "18px 20px", minWidth: 0 };
+  const titoloCard = { color: T.text, fontSize: "13px", fontWeight: 600, marginBottom: 2 };
+  const sottoCard = { color: T.textMid, fontSize: "11px", marginBottom: 16 };
+
   return (
     <div style={{ flex: 1, overflowY: "auto", padding: 20 }}>
-      <div style={{ display: "flex", gap: 12, alignItems: "center", marginBottom: 20 }}>
+      <div style={{ display: "flex", gap: 12, alignItems: "center", marginBottom: 20, flexWrap: "wrap" }}>
         <SearchableMultiSelect values={filterAnno.map(String)} onChange={v => { setFilterAnno(v.map(Number)); setGiriSel([]); }} options={anniDisp.map(String)} renderOption={v => v} placeholder="Anno" width={120} />
         <SearchableMultiSelect values={giriSel} onChange={setGiriSel} options={giriLabel} renderOption={g => `Giro ${g}`} placeholder="Seleziona giro" width={180} />
-        <span style={{ color: T.textMid, fontSize: "12px" }}>{kpiGiro.count} titoli · € {kpiGiro.valObj.toLocaleString("it", { maximumFractionDigits: 0 })} valore obiettivo</span>
-      </div>
-      <div style={{ display: "flex", gap: 12, marginBottom: 24, flexWrap: "wrap" }}>
-        <KpiCard label="Titoli" value={kpiGiro.count} color={T.text} />
-        <KpiCard label="▲ Triangolo" value={kpiGiro.totTriangolo} color={T.purple} />
-        <KpiCard label="★ Top 100" value={kpiGiro.totTop100} color={T.accent} />
-        <KpiCard label="Prenotato" value={totPrenotatoGiro.toLocaleString("it")} color={T.green} sub="copie" />
-        <div style={{ background: T.surface, border: `1px solid ${T.border}`, borderRadius: 4, padding: "16px 20px", minWidth: 200 }}>
-          <div style={{ color: T.textMid, fontSize: "10px", letterSpacing: "0.1em", textTransform: "uppercase", marginBottom: 8 }}>Avanzamento obiettivo</div>
-          <div style={{ color: T.accent, fontSize: "24px", fontWeight: "700", lineHeight: 1, marginBottom: 8 }}>{kpiGiro.pct}%</div>
-          <div style={{ height: 6, background: T.borderHi, borderRadius: 3, overflow: "hidden" }}>
-            <div style={{ width: `${kpiGiro.pct}%`, height: "100%", background: kpiGiro.pct >= 80 ? T.green : kpiGiro.pct >= 50 ? T.accent : T.red }} />
-          </div>
-          <div style={{ color: T.textMid, fontSize: "11px", marginTop: 6 }}>{totPrenotatoGiro.toLocaleString("it")} / {kpiGiro.totObj.toLocaleString("it")}</div>
-        </div>
       </div>
 
-      {/* CEDOLE */}
-      <div style={{ marginBottom: 24 }}>
-        <div style={{ color: T.textMid, fontSize: "11px", letterSpacing: "0.1em", textTransform: "uppercase", marginBottom: 12 }}>CEDOLE</div>
-        <table style={{ width: "100%", borderCollapse: "collapse" }}>
-          <thead><tr>{["Cedola","Titoli","Obj Ass.","Prenotato","Avanz."].map(h => <th key={h} style={{ padding: "8px 12px", textAlign: "left", color: T.textMid, fontWeight: "400", fontSize: "11px", letterSpacing: "0.08em", textTransform: "uppercase", borderBottom: `1px solid ${T.border}`, background: T.surface }}>{h}</th>)}</tr></thead>
-          <tbody>
-            {cedole.map(({ label, count, totObj, totRag }, i) => {
-              const pct = totObj > 0 ? Math.round(totRag / totObj * 100) : 0;
-              return (
-                <tr key={label} style={{ background: i % 2 === 0 ? "transparent" : T.surface + "66" }}>
-                  <td style={{ padding: "8px 12px", color: T.accent, fontWeight: "600", fontSize: "12px" }}>{label}</td>
-                  <td style={{ padding: "8px 12px", fontSize: "12px" }}>{count}</td>
-                  <td style={{ padding: "8px 12px", fontSize: "12px" }}>{totObj.toLocaleString("it")}</td>
-                  <td style={{ padding: "8px 12px", fontSize: "12px", color: T.green }}>{totRag.toLocaleString("it")}</td>
-                  <td style={{ padding: "8px 12px" }}>
-                    <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                      <div style={{ width: 80, height: 4, background: T.borderHi, borderRadius: 2, overflow: "hidden" }}><div style={{ width: `${pct}%`, height: "100%", background: pct >= 80 ? T.green : pct >= 50 ? T.accent : T.red }} /></div>
-                      <span style={{ color: pct >= 80 ? T.green : pct >= 50 ? T.accent : T.red, fontSize: "11px", fontWeight: "700" }}>{pct}%</span>
-                    </div>
-                  </td>
-                </tr>
-              );
-            })}
-          </tbody>
-        </table>
-      </div>
-
-      {/* CANALI: prenotato + obiettivi integrati */}
-      <div>
-        <div style={{ color: T.textMid, fontSize: "11px", letterSpacing: "0.1em", textTransform: "uppercase", marginBottom: 12 }}>CANALI</div>
-        {macrogruppiVis.map(mg => {
-          const totMgPren = totMacro[mg.id] || 0;
-          const totMgAss = mg.canali.reduce((s, cod) => s + (obiPerCanale[cod]?.assegnato || 0), 0);
-          const pctMg = totMgAss > 0 ? Math.round(totMgPren / totMgAss * 100) : 0;
-          return (
-            <div key={mg.id} style={{ marginBottom: 20 }}>
-              {/* Header macrogruppo */}
-              <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 4, padding: "10px 16px", background: T.surface, border: `1px solid ${T.borderHi}`, borderRadius: 4 }}>
-                <div style={{ fontWeight: "700", color: T.accent, fontSize: "13px", minWidth: 170 }}>{mg.label}</div>
-                <div style={{ flex: 1, height: 8, background: T.borderHi, borderRadius: 2, overflow: "hidden" }}>
-                  <div style={{ width: `${(totMgPren / maxMacro) * 100}%`, height: "100%", background: T.accent }} />
-                </div>
-                <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
-                  <div style={{ textAlign: "right" }}>
-                    <span style={{ color: T.green, fontWeight: "700", fontSize: "14px" }}>{totMgPren.toLocaleString("it")}</span>
-                    {totMgAss > 0 && <span style={{ color: T.textDim, fontSize: "11px" }}> / {totMgAss.toLocaleString("it")}</span>}
-                  </div>
-                  {totMgAss > 0 && (
-                    <span style={{ color: pctMg >= 80 ? T.green : pctMg >= 50 ? T.accent : T.red, fontWeight: "700", fontSize: "12px", minWidth: 36, textAlign: "right" }}>{pctMg}%</span>
-                  )}
-                </div>
+      {giriSel.length === 0 ? (
+        <div style={{ ...card, color: T.textMid, fontSize: "13px" }}>Seleziona un giro per vedere l'andamento.</div>
+      ) : <>
+        {/* KPI: avanzamento in evidenza + riquadri */}
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(145px, 1fr))", gap: 12, marginBottom: 16 }}>
+          <div style={{ ...card, gridColumn: "span 2", display: "flex", alignItems: "center", gap: 22 }}>
+            <AnelloAvanzamento pct={kpiGiro.pct} />
+            <div style={{ minWidth: 0 }}>
+              <div style={{ color: T.textMid, fontSize: "11px", marginBottom: 6 }}>Avanzamento obiettivo · {giriSel.map(g => `Giro ${g}`).join(", ")}</div>
+              <div style={{ color: T.text, fontSize: "48px", fontWeight: 700, lineHeight: 1 }}>{kpiGiro.pct}%</div>
+              <div style={{ color: T.textMid, fontSize: "12px", marginTop: 8 }}>
+                <span style={{ color: T.text, fontWeight: 600 }}>{fmtN(totPrenotatoGiro)}</span> copie prenotate su {fmtN(kpiGiro.totObj)}
               </div>
-              {/* Righe canale */}
-              {mg.canali.map(codice => {
-                const c = canali.find(c => c.codice === codice); if (!c) return null;
-                const qta = prenotatoPerCanale[codice] || 0;
-                const obj = obiPerCanale[codice]?.assegnato || 0;
-                const pctC = obj > 0 ? Math.round(qta / obj * 100) : 0;
-                return (
-                  <div key={codice} style={{ display: "flex", alignItems: "center", gap: 12, padding: "5px 16px 5px 32px", borderBottom: `1px solid ${T.border}11` }}>
-                    <div style={{ width: 170, fontSize: "12px", color: T.textMid }}>{getCanaleDisplayName(c)}</div>
-                    <div style={{ flex: 1, height: 4, background: T.borderHi, borderRadius: 2, overflow: "hidden" }}>
-                      <div style={{ width: qta > 0 && totMgPren > 0 ? `${(qta / totMgPren) * 100}%` : "0%", height: "100%", background: T.blue }} />
-                    </div>
-                    <div style={{ width: 100, textAlign: "right", fontSize: "12px" }}>
-                      <span style={{ color: qta > 0 ? T.text : T.textDim, fontWeight: "600" }}>{qta > 0 ? qta.toLocaleString("it") : "—"}</span>
-                      {obj > 0 && <span style={{ color: T.textDim, fontSize: "10px" }}> / {obj.toLocaleString("it")}</span>}
-                    </div>
-                    <div style={{ width: 44, textAlign: "right" }}>
-                      {obj > 0 ? (
-                        <span style={{ color: pctC >= 80 ? T.green : pctC >= 50 ? T.accent : T.red, fontSize: "11px", fontWeight: "700" }}>{pctC}%</span>
-                      ) : (
-                        <span style={{ color: T.textMid, fontSize: "11px" }}>{totPrenotatoGiro > 0 && qta > 0 ? `${Math.round(qta / totPrenotatoGiro * 100)}%` : ""}</span>
-                      )}
-                    </div>
-                  </div>
-                );
-              })}
             </div>
-          );
-        })}
-      </div>
+          </div>
+          <RiquadroKpi etichetta="Titoli" valore={fmtN(kpiGiro.count)} />
+          <RiquadroKpi etichetta="Valore obiettivo" valore={`€ ${compatto(kpiGiro.valObj)}`} nota={`€ ${fmtN(Math.round(kpiGiro.valObj))}`} />
+          <RiquadroKpi etichetta="★ Top 100" valore={fmtN(kpiGiro.totTop100)} nota={kpiGiro.count ? `${Math.round(kpiGiro.totTop100 / kpiGiro.count * 100)}% dei titoli` : ""} />
+          <RiquadroKpi etichetta="▲ Triangolo" valore={fmtN(kpiGiro.totTriangolo)} />
+        </div>
+
+        {/* Cedole + composizione per gruppo di canali */}
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(440px, 1fr))", gap: 16, marginBottom: 16 }}>
+          <div style={card}>
+            <div style={titoloCard}>Avanzamento per cedola</div>
+            <div style={sottoCard}>Barra piena = prenotato · barra chiara e tacca = obiettivo</div>
+            {cedole.map(c => (
+              <RigaBullet key={c.label} etichetta={c.label} pren={c.totRag} obj={c.totObj} scala={maxObjCedola} colore={VIZ.serie1}
+                tipTitolo={`${c.label} · ${c.count} titoli`} larghezzaEtichetta={150} onTip={onTip} />
+            ))}
+          </div>
+
+          <div style={card}>
+            <div style={titoloCard}>Prenotato per gruppo di canali</div>
+            <div style={sottoCard}>Quota sul prenotato totale e avanzamento sull'obiettivo del gruppo</div>
+            <div style={{ display: "flex", alignItems: "center", gap: 24, flexWrap: "wrap" }}>
+              <Ciambella fette={gruppi.map(g => ({ id: g.id, valore: g.pren, colore: g.colore, etichetta: g.label }))} totale={totPrenGruppi}
+                onHover={(e, f) => onTip(e, f ? f.etichetta : null, f ? [["Prenotato", fmtN(f.valore)], ["Quota", `${pctDi(f.valore, totPrenGruppi) ?? 0}%`]] : null)} />
+              <div style={{ flex: 1, minWidth: 220 }}>
+                {gruppi.map(g => (
+                  <div key={g.id} style={{ display: "grid", gridTemplateColumns: "12px 1fr auto 44px", gap: 10, alignItems: "center", padding: "7px 0", borderBottom: `1px solid ${T.border}55` }}>
+                    <span style={{ width: 12, height: 12, borderRadius: 3, background: g.colore }} />
+                    <span style={{ color: T.text, fontSize: "12px" }}>{g.label}<span style={{ color: T.textMid }}> · {pctDi(g.pren, totPrenGruppi) ?? 0}%</span></span>
+                    <span style={{ fontSize: "12px", fontVariantNumeric: "tabular-nums", whiteSpace: "nowrap" }}><span style={{ color: T.text, fontWeight: 600 }}>{fmtN(g.pren)}</span><span style={{ color: T.textMid }}> / {g.obj ? fmtN(g.obj) : "—"}</span></span>
+                    <span style={{ color: T.text, fontSize: "12px", fontWeight: 600, textAlign: "right" }}>{g.obj ? `${pctDi(g.pren, g.obj)}%` : ""}</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          </div>
+        </div>
+
+        {/* Dettaglio canali, un pannello per gruppo */}
+        <div style={card}>
+          <div style={titoloCard}>Canali: prenotato su obiettivo</div>
+          <div style={sottoCard}>Ogni gruppo ha la sua scala · passa sopra una riga per il dettaglio</div>
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(520px, 1fr))", gap: "8px 40px" }}>
+            {gruppi.map(g => (
+              <div key={g.id} style={{ marginBottom: 10, minWidth: 0 }}>
+                <div style={{ display: "flex", alignItems: "center", gap: 8, padding: "6px 4px", borderBottom: `1px solid ${T.border}`, marginBottom: 4 }}>
+                  <span style={{ width: 10, height: 10, borderRadius: 3, background: g.colore }} />
+                  <span style={{ color: T.text, fontSize: "12px", fontWeight: 700 }}>{g.label}</span>
+                  <span style={{ marginLeft: "auto", fontSize: "12px", fontVariantNumeric: "tabular-nums" }}>
+                    <span style={{ color: T.text, fontWeight: 600 }}>{fmtN(g.pren)}</span><span style={{ color: T.textMid }}> / {g.obj ? fmtN(g.obj) : "—"}</span>
+                    {g.obj > 0 && <span style={{ color: T.text, fontWeight: 700, marginLeft: 10 }}>{pctDi(g.pren, g.obj)}%</span>}
+                  </span>
+                </div>
+                {g.righe.map(r => (
+                  <RigaBullet key={r.codice} etichetta={r.nome} pren={r.pren} obj={r.obj} scala={g.scala} colore={g.colore}
+                    tipTitolo={`${r.nome} · ${g.label}`} larghezzaEtichetta={140} onTip={onTip} />
+                ))}
+              </div>
+            ))}
+          </div>
+        </div>
+      </>}
+
+      {tip && (
+        <div style={{ position: "fixed", left: Math.min(tip.x + 14, window.innerWidth - 240), top: Math.min(tip.y + 14, window.innerHeight - 110), zIndex: 500, pointerEvents: "none", background: cv("#0f1530", "#ffffff"), border: `1px solid ${T.borderHi}`, borderRadius: 6, padding: "8px 12px", boxShadow: "0 6px 24px #0006", minWidth: 190 }}>
+          <div style={{ color: T.text, fontSize: "12px", fontWeight: 700, marginBottom: 6 }}>{tip.titolo}</div>
+          {tip.righe.map(([k, v]) => (
+            <div key={k} style={{ display: "flex", justifyContent: "space-between", gap: 16, fontSize: "12px", lineHeight: 1.6 }}>
+              <span style={{ color: T.textMid }}>{k}</span><span style={{ color: T.text, fontWeight: 600, fontVariantNumeric: "tabular-nums" }}>{v}</span>
+            </div>
+          ))}
+        </div>
+      )}
     </div>
   );
 }
