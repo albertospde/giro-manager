@@ -1016,7 +1016,7 @@ function TendinaGiroCedola({ items, eanIndex, statoMap, onToggleChiuso, selected
 const AMBRA = "#e0a84c";
 const normNomeEd = (s) => String(s ?? "").replace(/\s+/g, " ").trim().toUpperCase();
 function PannelloEditoriGiro({ titoli, giroLabel, token }) {
-  const [aperto, setAperto] = useState(() => { try { return localStorage.getItem("editoriGiro_aperto") !== "0"; } catch { return true; } });
+  const [aperto, setAperto] = useState(false); // all'apertura della pagina parte sempre chiuso
   const [anagrafica, setAnagrafica] = useState([]);
   const [esclusi, setEsclusi] = useState(new Set());
   const [vista, setVista] = useState("tutti");
@@ -1025,7 +1025,7 @@ function PannelloEditoriGiro({ titoli, giroLabel, token }) {
   const [inCorso, setInCorso] = useState(null);
   const hdr = { apikey: SUPABASE_KEY, Authorization: `Bearer ${token}` };
 
-  const toggleAperto = () => setAperto(a => { try { localStorage.setItem("editoriGiro_aperto", a ? "0" : "1"); } catch {} return !a; });
+  const toggleAperto = () => setAperto(a => !a);
 
   useEffect(() => {
     sbFetch("ranking_editori?select=editore_nome,codice_editore,ranking,cedola,account_editore,stato_rpn,attivo", token)
@@ -1153,6 +1153,70 @@ function PannelloEditoriGiro({ titoli, giroLabel, token }) {
           )}
         </div>
       )}
+    </div>
+  );
+}
+
+// ─── Avviso all'accesso: editori aggiunti ai giri ──────────────────────────
+// Confronta gli editori presenti oggi in ciascun giro (anno corrente in poi, cedole extra escluse)
+// con quelli già notificati all'utente (utente_editori_visti). Le novità si mostrano una volta sola:
+// lo snapshot si aggiorna appena l'avviso compare. Al primo accesso si registra senza avvisare.
+const giroOrdine = (g) => { const [n, a] = String(g).split(" "); return Number(a || 0) * 100 + Number(n || 0); };
+function AvvisoEditoriNuovi({ titoli, token, userId }) {
+  const [novita, setNovita] = useState(null);
+  const controllato = useRef(false);
+
+  useEffect(() => {
+    if (controllato.current || !userId || !Array.isArray(titoli) || !titoli.length) return;
+    controllato.current = true;
+    const annoMin = new Date().getFullYear();
+    const attuale = {}, rank = {};
+    titoli.forEach(t => {
+      const g = t.giro_label, e = t.editore_nome?.trim();
+      if (!g || g === "EXTRA" || !e || Number(String(g).split(" ")[1]) < annoMin) return;
+      (attuale[g] = attuale[g] || new Set()).add(e);
+      rank[e] = Math.min(rank[e] ?? 9999, t.ranking_editore ?? 9999);
+    });
+    const snapshot = Object.fromEntries(Object.entries(attuale).map(([g, s]) => [g, [...s].sort()]));
+    const hdr = { apikey: SUPABASE_KEY, Authorization: `Bearer ${token}`, "Content-Type": "application/json" };
+    const salva = () => fetch(`${SUPABASE_URL}/rest/v1/utente_editori_visti`, {
+      method: "POST", headers: { ...hdr, Prefer: "resolution=merge-duplicates,return=minimal" },
+      body: JSON.stringify({ user_id: userId, snapshot, updated_at: new Date().toISOString() }),
+    }).catch(() => {});
+    sbFetch(`utente_editori_visti?select=snapshot&user_id=eq.${userId}`, token).then(rows => {
+      if (!Array.isArray(rows)) return;
+      if (!rows.length) { salva(); return; } // primo accesso: nessun avviso
+      const visti = rows[0].snapshot || {};
+      const nuovi = Object.keys(attuale).sort((a, b) => giroOrdine(a) - giroOrdine(b))
+        .map(g => ({ giro: g, editori: [...attuale[g]].filter(e => !(visti[g] || []).includes(e)).sort((a, b) => rank[a] - rank[b] || a.localeCompare(b)) }))
+        .filter(x => x.editori.length);
+      const cambiato = JSON.stringify(visti) !== JSON.stringify(snapshot);
+      if (nuovi.length) setNovita(nuovi);
+      if (cambiato) salva();
+    }).catch(() => {});
+  }, [titoli, token, userId]);
+
+  if (!novita) return null;
+  const totale = novita.reduce((s, x) => s + x.editori.length, 0);
+  return (
+    <div style={{ position: "fixed", inset: 0, background: "#000a", zIndex: 300, display: "flex", alignItems: "center", justifyContent: "center" }} onClick={() => setNovita(null)}>
+      <div style={{ background: T.surface, border: `1px solid ${T.borderHi}`, borderRadius: 6, padding: 24, width: 520, maxWidth: "92vw", maxHeight: "80vh", display: "flex", flexDirection: "column" }} onClick={e => e.stopPropagation()}>
+        <div style={{ color: T.accent, fontWeight: 700, fontSize: "13px", letterSpacing: "0.06em", marginBottom: 4 }}>🆕 NUOVI EDITORI NEI GIRI</div>
+        <div style={{ color: T.textMid, fontSize: "12px", marginBottom: 14 }}>Dal tuo ultimo accesso {totale === 1 ? "è stato aggiunto 1 editore" : `sono stati aggiunti ${totale} editori`}:</div>
+        <div style={{ overflowY: "auto", flex: 1 }}>
+          {novita.map(({ giro, editori }) => (
+            <div key={giro} style={{ marginBottom: 14 }}>
+              <div style={{ color: T.text, fontWeight: 700, fontSize: "12px", marginBottom: 6 }}>Giro {giro} <span style={{ color: T.textMid, fontWeight: 400 }}>· {editori.length}</span></div>
+              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "4px 16px" }}>
+                {editori.map(e => <div key={e} style={{ color: T.green, fontSize: "12px" }}>+ {e}</div>)}
+              </div>
+            </div>
+          ))}
+        </div>
+        <div style={{ display: "flex", justifyContent: "flex-end", marginTop: 12 }}>
+          <button style={css.btn("accent")} onClick={() => setNovita(null)}>Ho capito</button>
+        </div>
+      </div>
     </div>
   );
 }
@@ -5180,6 +5244,8 @@ export default function App() {
           </div>
         </div>
         {cambioPassword && <CambiaPassword email={session.user?.email} token={session.token} onClose={() => setCambioPassword(false)} />}
+        <AvvisoEditoriNuovi titoli={titoli} token={session.token} userId={session.user?.id} />
+
         <div style={{ flex: 1, overflow: "hidden", display: "flex", flexDirection: "column" }}>
           {/* MOD 3: Passato spalmatura alla Dashboard */}
           {activeModule === "dashboard" && <ModuloDashboard titoli={titoli} prenotato={prenotato} canali={canali} spalmatura={spalmatura} ruolo={ruolo} />}
