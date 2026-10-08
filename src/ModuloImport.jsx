@@ -276,6 +276,7 @@ export default function ModuloImport({ token, onImportDone }) {
           <div style={{ display: "flex", gap: 8, marginBottom: 20 }}>
             <button style={css.btn(sorgente === "file" ? "accent" : "default")} onClick={() => setSorgente("file")}>📂 Carica file .xlsx</button>
             <button style={css.btn(sorgente === "editore" ? "accent" : "default")} onClick={() => setSorgente("editore")}>📑 File editore</button>
+            <button style={css.btn(sorgente === "manuale" ? "accent" : "default")} onClick={() => setSorgente("manuale")}>✍️ Inserimento manuale</button>
             <button style={css.btn(sorgente === "rpn" ? "accent" : "default")} onClick={() => setSorgente("rpn")}>🔄 Importa da RPN</button>
           </div>
 
@@ -296,6 +297,10 @@ export default function ModuloImport({ token, onImportDone }) {
 
           {sorgente === "editore" && (
             <ModuloImportEditore token={token} onImportDone={onImportDone} />
+          )}
+
+          {sorgente === "manuale" && (
+            <ModuloImportEditore key="manuale" token={token} onImportDone={onImportDone} manuale />
           )}
 
           {sorgente === "rpn" && (

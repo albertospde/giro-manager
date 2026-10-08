@@ -135,6 +135,25 @@ const CAMPI = [
   { key: "gemelli_testo", label: "Gemelli (testo libero)" },
 ];
 
+// Colonne dell'inserimento manuale: k = campo della riga, map = campo dell'import, w = larghezza
+const CAMPI_MANUALI = [
+  { k: "ean", label: "EAN", map: "ean", w: 130 },
+  { k: "titolo", label: "Titolo", map: "titolo", w: 220 },
+  { k: "autore", label: "Autore", map: "autore", w: 150 },
+  { k: "editore", label: "Editore", map: "editore", w: 170 },
+  { k: "prezzo", label: "Prezzo", map: "prezzo", w: 70 },
+  { k: "obiettivo", label: "Obiettivo", map: "obiettivo", w: 80 },
+  { k: "note", label: "Note", map: "note", w: 200 },
+  { k: "g1e", label: "EAN gemello 1", map: "gem_ean_1", w: 130, gem: 1 },
+  { k: "g1t", label: "Titolo gemello 1", map: "gem_tit_1", w: 170, gem: 1 },
+  { k: "g2e", label: "EAN gemello 2", map: "gem_ean_2", w: 130, gem: 2 },
+  { k: "g2t", label: "Titolo gemello 2", map: "gem_tit_2", w: 170, gem: 2 },
+  { k: "g3e", label: "EAN gemello 3", map: "gem_ean_3", w: 130, gem: 3 },
+  { k: "g3t", label: "Titolo gemello 3", map: "gem_tit_3", w: 170, gem: 3 },
+];
+const rigaManualeVuota = () => Object.fromEntries(CAMPI_MANUALI.map(c => [c.k, ""]));
+const NOME_MANUALE = "Inserimento manuale";
+
 // Riconoscimento intestazioni (su testo normalizzato minuscolo senza accenti)
 const RX = {
   gemello: /(gemell|\bgem\b|twin|abbinat|collegat|correlat|comparab|affin|titol[oi] (simil|di riferimento)|(ean|isbn) (simil|di riferimento))/,
@@ -550,7 +569,7 @@ async function fetchEsistenti(token, giroIds, eans) {
 }
 
 // ─── Componente ─────────────────────────────────────────────────────────────
-export default function ModuloImportEditore({ token, onImportDone }) {
+export default function ModuloImportEditore({ token, onImportDone, manuale = false }) {
   const [step, setStep] = useState("upload"); // upload | preview | result
   const [loading, setLoading] = useState(false);
   const [fileName, setFileName] = useState("");
@@ -698,6 +717,54 @@ export default function ModuloImportEditore({ token, onImportDone }) {
     return { data, hr, m };
   };
 
+  // Anagrafica, alias e prefissi EAN: servono sia al file sia all'inserimento manuale
+  const caricaAnagrafica = async () => {
+    const [anag, al, pref] = await Promise.all([
+      fetchJson(`${SUPABASE_URL}/rest/v1/ranking_editori?select=editore_nome,codice_editore,ranking,account_editore,promozione,cedola,attivo&attivo=is.true`, token),
+      fetchJson(`${SUPABASE_URL}/rest/v1/alias_editori?select=alias,editore_nome`, token).catch(() => []),
+      fetchJson(`${SUPABASE_URL}/rest/v1/rpc/prefissi_ean_editori`, token, { method: "POST", headers: { "Content-Type": "application/json" }, body: "{}" }).catch(() => []),
+    ]);
+    setAnagrafica(anag.map(a => ({ ...a, editore_nome: String(a.editore_nome ?? "").replace(/\s+/g, " ").trim().toUpperCase(), cedola: String(a.cedola ?? "").trim().toUpperCase() })));
+    const am = {}; (al || []).forEach(x => { am[x.alias] = x.editore_nome; }); setAlias(am);
+    setPrefixIdx(buildPrefixIndex(pref || []));
+    return anag;
+  };
+
+  // ─── Inserimento manuale: le righe diventano un foglio con colonne fisse e seguono lo stesso percorso del file ──
+  const [righeManuali, setRigheManuali] = useState(() => Array.from({ length: 5 }, rigaManualeVuota));
+  const [nomiEditori, setNomiEditori] = useState([]);
+  useEffect(() => {
+    if (!manuale) return;
+    fetchJson(`${SUPABASE_URL}/rest/v1/ranking_editori?select=editore_nome&attivo=is.true&order=editore_nome.asc`, token)
+      .then(r => setNomiEditori([...new Set((r || []).map(x => String(x.editore_nome ?? "").trim().toUpperCase()).filter(Boolean))]))
+      .catch(() => {});
+  }, [manuale, token]);
+  const confermaManuale = async () => {
+    const piene = righeManuali.filter(r => CAMPI_MANUALI.some(c => String(r[c.k] ?? "").trim()));
+    if (!piene.length) { alert("Inserisci almeno un titolo."); return; }
+    const senzaEan = piene.filter(r => !parseEan(r.ean));
+    if (senzaEan.length) { alert(`${senzaEan.length} ${senzaEan.length === 1 ? "riga ha" : "righe hanno"} l'EAN mancante o non valido: correggi prima di confermare.`); return; }
+    setLoading(true);
+    try {
+      await caricaAnagrafica();
+      const data = [CAMPI_MANUALI.map(c => c.label), ...piene.map(r => CAMPI_MANUALI.map(c => String(r[c.k] ?? "").trim()))];
+      const X = window.XLSX;
+      const workbook = X.utils.book_new();
+      X.utils.book_append_sheet(workbook, X.utils.aoa_to_sheet(data), "Manuale");
+      setWb(workbook);
+      setFileName(NOME_MANUALE);
+      // colonne note in partenza: niente riconoscimento automatico
+      const m = {}; CAMPI.forEach(c => { m[c.key] = -1; }); CAMPI_MANUALI.forEach((c, i) => { m[c.map] = i; });
+      setFoglio("Manuale"); setAoa(data); setHeaderRow(0); setHeaders(data[0]); setMap(m);
+      setStoricoEan(await fetchStoricoEan(token, piene.map(r => parseEan(r.ean))));
+      setEditoreDefault(""); setScelte({});
+      setStep("preview");
+    } catch (err) {
+      alert("Errore: " + err.message);
+    }
+    setLoading(false);
+  };
+
   // accetta sia l'evento dell'input file sia un File trascinato
   const handleFile = useCallback(async (e) => {
     const f = e instanceof File ? e : e?.target?.files?.[0];
@@ -706,14 +773,7 @@ export default function ModuloImportEditore({ token, onImportDone }) {
     if (!/\.(xlsx|xls|xlsm|csv)$/i.test(f.name)) { alert("Formato non supportato: usa .xlsx, .xls, .xlsm o .csv"); return; }
     setLoading(true);
     try {
-      const [anag, al, pref] = await Promise.all([
-        fetchJson(`${SUPABASE_URL}/rest/v1/ranking_editori?select=editore_nome,codice_editore,ranking,account_editore,promozione,cedola,attivo&attivo=is.true`, token),
-        fetchJson(`${SUPABASE_URL}/rest/v1/alias_editori?select=alias,editore_nome`, token).catch(() => []),
-        fetchJson(`${SUPABASE_URL}/rest/v1/rpc/prefissi_ean_editori`, token, { method: "POST", headers: { "Content-Type": "application/json" }, body: "{}" }).catch(() => []),
-      ]);
-      setAnagrafica(anag.map(a => ({ ...a, editore_nome: String(a.editore_nome ?? "").replace(/\s+/g, " ").trim().toUpperCase(), cedola: String(a.cedola ?? "").trim().toUpperCase() })));
-      const am = {}; (al || []).forEach(x => { am[x.alias] = x.editore_nome; }); setAlias(am);
-      setPrefixIdx(buildPrefixIndex(pref || []));
+      const anag = await caricaAnagrafica();
 
       const buf = await f.arrayBuffer();
       const workbook = window.XLSX.read(buf, { type: "array", cellDates: false });
@@ -839,9 +899,87 @@ export default function ModuloImportEditore({ token, onImportDone }) {
     setImporting(false);
   };
 
-  const reset = () => { setStep("upload"); setWb(null); setAoa([]); setScelte({}); setDone(null); setFileName(""); };
+  const reset = () => {
+    // dopo un import riuscito la griglia manuale riparte vuota; tornando indietro dall'anteprima resta com'era
+    if (step === "result" && manuale) setRigheManuali(Array.from({ length: 5 }, rigaManualeVuota));
+    setStep("upload"); setWb(null); setAoa([]); setScelte({}); setDone(null); setFileName("");
+  };
+
+  const setCella = (i, k, v) => setRigheManuali(rr => rr.map((r, j) => (j === i ? { ...r, [k]: v } : r)));
+  // incolla da Excel: più celle (tab / a capo) riempiono la griglia a partire dalla cella selezionata
+  const incolla = (e, i, col) => {
+    const testo = e.clipboardData.getData("text/plain");
+    if (!/[\t\n]/.test(testo.replace(/\r?\n$/, ""))) return;
+    e.preventDefault();
+    const blocco = testo.replace(/\r/g, "").replace(/\n$/, "").split("\n").map(l => l.split("\t"));
+    setRigheManuali(rr => {
+      const out = rr.map(r => ({ ...r }));
+      blocco.forEach((celle, di) => {
+        while (out.length <= i + di) out.push(rigaManualeVuota());
+        celle.forEach((v, dc) => { const c = CAMPI_MANUALI[col + dc]; if (c) out[i + di][c.k] = v.trim(); });
+      });
+      return out;
+    });
+  };
 
   // ─── UI ───────────────────────────────────────────────────────────────────
+  if (step === "upload" && manuale) {
+    const compilate = righeManuali.filter(r => CAMPI_MANUALI.some(c => String(r[c.k] ?? "").trim())).length;
+    const th = { ...css.th, position: "sticky", top: 0, zIndex: 1 };
+    return (
+      <div>
+        <div style={{ color: T.textMid, fontSize: "12px", marginBottom: 12, lineHeight: 1.6 }}>
+          Scrivi i titoli riga per riga (puoi anche <b style={{ color: T.text }}>incollare un blocco di celle da Excel</b> nella prima casella). Obbligatori: EAN e titolo.
+          Con <b style={{ color: T.text }}>Conferma</b> passi alla stessa schermata del file editore: abbinamento editori, giro o cedola extra e nome cedola.
+        </div>
+        <datalist id="editori-anagrafica">{nomiEditori.map(n => <option key={n} value={n} />)}</datalist>
+        <div style={{ overflowX: "auto", border: `1px solid ${T.border}`, borderRadius: 4, marginBottom: 12, maxHeight: "60vh" }}>
+          <table style={{ borderCollapse: "collapse", minWidth: "100%" }}>
+            <thead>
+              <tr>
+                <th style={{ ...th, width: 34 }}>#</th>
+                {CAMPI_MANUALI.map(c => <th key={c.k} style={{ ...th, minWidth: c.w, color: c.gem ? T.blue : T.textMid }}>{c.label}{["ean", "titolo"].includes(c.k) ? " *" : ""}</th>)}
+                <th style={{ ...th, width: 34 }}></th>
+              </tr>
+            </thead>
+            <tbody>
+              {righeManuali.map((r, i) => {
+                const eanKo = String(r.ean).trim() && !parseEan(r.ean);
+                return (
+                  <tr key={i}>
+                    <td style={{ ...css.td, color: T.textDim, textAlign: "right" }}>{i + 1}</td>
+                    {CAMPI_MANUALI.map((c, ci) => (
+                      <td key={c.k} style={{ ...css.td, padding: "3px 4px" }}>
+                        <input value={r[c.k]} onChange={e => setCella(i, c.k, e.target.value)} onPaste={e => incolla(e, i, ci)}
+                          list={c.k === "editore" ? "editori-anagrafica" : undefined}
+                          inputMode={["prezzo", "obiettivo"].includes(c.k) ? "decimal" : undefined}
+                          style={{ ...css.input, width: "100%", boxSizing: "border-box", padding: "4px 6px", ...(c.k === "ean" && eanKo ? { borderColor: T.red } : {}) }}
+                          title={c.k === "ean" && eanKo ? "EAN non valido" : ""} />
+                      </td>
+                    ))}
+                    <td style={{ ...css.td, padding: "3px 4px" }}>
+                      <button title="Elimina riga" onClick={() => setRigheManuali(rr => (rr.length > 1 ? rr.filter((_, j) => j !== i) : [rigaManualeVuota()]))}
+                        style={{ ...css.btn(), padding: "3px 8px", color: T.textMid }}>✕</button>
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+        <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+          <button style={css.btn()} onClick={() => setRigheManuali(rr => [...rr, rigaManualeVuota()])}>+ Riga</button>
+          <button style={css.btn()} onClick={() => setRigheManuali(rr => [...rr, ...Array.from({ length: 10 }, rigaManualeVuota)])}>+ 10 righe</button>
+          <button style={{ ...css.btn(), color: T.textMid }} onClick={() => { if (confirm("Svuotare tutta la griglia?")) setRigheManuali(Array.from({ length: 5 }, rigaManualeVuota)); }}>Svuota</button>
+          <span style={{ color: T.textMid, fontSize: "12px", marginLeft: 8 }}>{compilate} {compilate === 1 ? "riga compilata" : "righe compilate"}</span>
+          <button style={{ ...css.btn("accent"), marginLeft: "auto", opacity: loading || !compilate ? 0.5 : 1 }} disabled={loading || !compilate} onClick={confermaManuale}>
+            {loading ? "Analisi in corso..." : "Conferma →"}
+          </button>
+        </div>
+      </div>
+    );
+  }
+
   if (step === "upload") return (
     <div style={{ maxWidth: 560 }}>
       <div
@@ -894,7 +1032,7 @@ export default function ModuloImportEditore({ token, onImportDone }) {
         )}
         <div style={css.box(conErrori.length ? T.red : T.green)}><span style={{ color: T.textMid, fontSize: "11px" }}>Righe con errori: </span><span style={{ fontWeight: 700, color: conErrori.length ? T.red : T.green }}>{conErrori.length}</span></div>
         <div style={{ marginLeft: "auto", display: "flex", gap: 8 }}>
-          <button style={css.btn()} onClick={reset}>← Ricarica</button>
+          <button style={css.btn()} onClick={reset}>{fileName === NOME_MANUALE ? "← Torna a modificare" : "← Ricarica"}</button>
           <button style={{ ...css.btn("accent"), opacity: importing || !importabili.length || conErrori.length ? 0.5 : 1 }} onClick={handleImport} disabled={importing || !importabili.length || conErrori.length > 0}>
             {importing ? "Import in corso..." : `Importa ${importabili.length} titoli`}
           </button>
