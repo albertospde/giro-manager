@@ -924,42 +924,96 @@ export default function ModuloImportEditore({ token, onImportDone, manuale = fal
 
   // ─── UI ───────────────────────────────────────────────────────────────────
   if (step === "upload" && manuale) {
-    const compilate = righeManuali.filter(r => CAMPI_MANUALI.some(c => String(r[c.k] ?? "").trim())).length;
-    const th = { ...css.th, position: "sticky", top: 0, zIndex: 1 };
+    const piena = (r) => CAMPI_MANUALI.some(c => String(r[c.k] ?? "").trim());
+    const statoRiga = (r) => {
+      if (!piena(r)) return null;
+      if (!parseEan(r.ean)) return { ok: false, msg: String(r.ean).trim() ? "EAN non valido" : "EAN mancante" };
+      if (!String(r.titolo).trim()) return { ok: false, msg: "Titolo mancante" };
+      return { ok: true, msg: "Pronta" };
+    };
+    const stati = righeManuali.map(statoRiga);
+    const compilate = stati.filter(Boolean).length;
+    const pronte = stati.filter(s => s?.ok).length;
+    const daSistemare = compilate - pronte;
+    const LARG_NUM = 44;
+    const bordo = `1px solid ${T.border}`;
+    const thBase = { position: "sticky", background: T.surface, color: T.textMid, fontWeight: 500, fontSize: "11px", textAlign: "left", whiteSpace: "nowrap", borderBottom: bordo, borderRight: bordo, padding: "7px 10px", zIndex: 2 };
+    const fisso = (left) => ({ position: "sticky", left, zIndex: 3 });
+    const cellaInput = { width: "100%", boxSizing: "border-box", background: "transparent", border: "none", outline: "none", color: T.text, font: "inherit", fontSize: "12px", padding: "9px 10px", borderRadius: 0 };
+    const pulsante = (extra = {}) => ({ ...css.btn(), padding: "7px 14px", borderRadius: 6, ...extra });
     return (
-      <div>
-        <div style={{ color: T.textMid, fontSize: "12px", marginBottom: 12, lineHeight: 1.6 }}>
-          Scrivi i titoli riga per riga (puoi anche <b style={{ color: T.text }}>incollare un blocco di celle da Excel</b> nella prima casella). Obbligatori: EAN e titolo.
-          Con <b style={{ color: T.text }}>Conferma</b> passi alla stessa schermata del file editore: abbinamento editori, giro o cedola extra e nome cedola.
+      <div style={{ background: T.surface, border: bordo, borderRadius: 10, overflow: "hidden" }}>
+        <style>{`
+          .gm-cella:focus-within { box-shadow: inset 0 0 0 2px ${T.accent}; background: ${T.accent}12 !important; }
+          .gm-riga:hover > td { background: ${T.border}55; }
+          .gm-cella input::placeholder { color: ${T.textDim}; }
+          .gm-elimina { opacity: 0; transition: opacity .12s; }
+          .gm-riga:hover .gm-elimina { opacity: 1; }
+        `}</style>
+
+        {/* Intestazione */}
+        <div style={{ display: "flex", alignItems: "flex-start", gap: 16, padding: "18px 20px 14px", borderBottom: bordo }}>
+          <div style={{ fontSize: "22px", lineHeight: 1 }}>✍️</div>
+          <div style={{ flex: 1 }}>
+            <div style={{ color: T.text, fontSize: "14px", fontWeight: 700, marginBottom: 4 }}>Inserimento manuale</div>
+            <div style={{ color: T.textMid, fontSize: "12px", lineHeight: 1.6 }}>
+              Scrivi un titolo per riga, oppure copia un blocco di celle da Excel e incollalo nella prima casella. Obbligatori EAN e titolo.
+              Con <b style={{ color: T.text }}>Conferma</b> scegli giro o cedola extra e il nome della cedola, come per il file editore.
+            </div>
+          </div>
         </div>
+
+        {/* Griglia */}
         <datalist id="editori-anagrafica">{nomiEditori.map(n => <option key={n} value={n} />)}</datalist>
-        <div style={{ overflowX: "auto", border: `1px solid ${T.border}`, borderRadius: 4, marginBottom: 12, maxHeight: "60vh" }}>
-          <table style={{ borderCollapse: "collapse", minWidth: "100%" }}>
+        <div style={{ overflow: "auto", maxHeight: "58vh", scrollPaddingLeft: LARG_NUM + 8, scrollPaddingTop: 64 }}>
+          <table style={{ borderCollapse: "separate", borderSpacing: 0, minWidth: "100%" }}>
             <thead>
               <tr>
-                <th style={{ ...th, width: 34 }}>#</th>
-                {CAMPI_MANUALI.map(c => <th key={c.k} style={{ ...th, minWidth: c.w, color: c.gem ? T.blue : T.textMid }}>{c.label}{["ean", "titolo"].includes(c.k) ? " *" : ""}</th>)}
-                <th style={{ ...th, width: 34 }}></th>
+                <th rowSpan={2} style={{ ...thBase, ...fisso(0), top: 0, width: LARG_NUM, minWidth: LARG_NUM, textAlign: "center", zIndex: 4 }}>#</th>
+                <th colSpan={7} style={{ ...thBase, top: 0, color: T.text, fontWeight: 700, letterSpacing: "0.04em" }}>Titolo</th>
+                {[1, 2, 3].map(n => (
+                  <th key={n} colSpan={2} style={{ ...thBase, top: 0, color: T.blue, fontWeight: 700, letterSpacing: "0.04em", background: cv("#14203a", "#eef3ff") }}>Gemello {n}</th>
+                ))}
+                <th rowSpan={2} style={{ ...thBase, top: 0, width: 40, borderRight: "none" }}></th>
+              </tr>
+              <tr>
+                {CAMPI_MANUALI.map((c, ci) => (
+                  <th key={c.k} style={{ ...thBase, top: 31, minWidth: c.w, ...(c.gem ? { background: cv("#14203a", "#eef3ff") } : {}) }}>
+                    {c.gem ? (c.k.endsWith("e") ? "EAN" : "Titolo") : c.label}
+                    {["ean", "titolo"].includes(c.k) && <span style={{ color: T.accent }}> *</span>}
+                  </th>
+                ))}
               </tr>
             </thead>
             <tbody>
               {righeManuali.map((r, i) => {
-                const eanKo = String(r.ean).trim() && !parseEan(r.ean);
+                const st = stati[i];
+                const sfondoRiga = i % 2 ? cv("#131313", "#fafbfe") : T.bg;
                 return (
-                  <tr key={i}>
-                    <td style={{ ...css.td, color: T.textDim, textAlign: "right" }}>{i + 1}</td>
-                    {CAMPI_MANUALI.map((c, ci) => (
-                      <td key={c.k} style={{ ...css.td, padding: "3px 4px" }}>
-                        <input value={r[c.k]} onChange={e => setCella(i, c.k, e.target.value)} onPaste={e => incolla(e, i, ci)}
-                          list={c.k === "editore" ? "editori-anagrafica" : undefined}
-                          inputMode={["prezzo", "obiettivo"].includes(c.k) ? "decimal" : undefined}
-                          style={{ ...css.input, width: "100%", boxSizing: "border-box", padding: "4px 6px", ...(c.k === "ean" && eanKo ? { borderColor: T.red } : {}) }}
-                          title={c.k === "ean" && eanKo ? "EAN non valido" : ""} />
-                      </td>
-                    ))}
-                    <td style={{ ...css.td, padding: "3px 4px" }}>
-                      <button title="Elimina riga" onClick={() => setRigheManuali(rr => (rr.length > 1 ? rr.filter((_, j) => j !== i) : [rigaManualeVuota()]))}
-                        style={{ ...css.btn(), padding: "3px 8px", color: T.textMid }}>✕</button>
+                  <tr key={i} className="gm-riga">
+                    <td style={{ ...fisso(0), background: sfondoRiga, borderBottom: bordo, borderRight: bordo, textAlign: "center", fontSize: "11px", color: T.textDim, padding: "0 6px" }} title={st?.msg || "Riga vuota"}>
+                      <div style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 5 }}>
+                        <span style={{ width: 7, height: 7, borderRadius: "50%", background: !st ? "transparent" : st.ok ? T.green : T.red, border: st ? "none" : `1px solid ${T.borderHi}` }} />
+                        {i + 1}
+                      </div>
+                    </td>
+                    {CAMPI_MANUALI.map((c, ci) => {
+                      const errore = c.k === "ean" && st && !st.ok && st.msg.startsWith("EAN") || c.k === "titolo" && st && st.msg === "Titolo mancante";
+                      return (
+                        <td key={c.k} className="gm-cella" style={{ background: c.gem ? cv("#121a2e", "#f5f8ff") : sfondoRiga, borderBottom: bordo, borderRight: bordo, padding: 0, ...(errore ? { boxShadow: `inset 0 -2px 0 ${T.red}` } : {}) }}>
+                          <input value={r[c.k]} onChange={e => setCella(i, c.k, e.target.value)} onPaste={e => incolla(e, i, ci)}
+                            list={c.k === "editore" ? "editori-anagrafica" : undefined}
+                            inputMode={["prezzo", "obiettivo"].includes(c.k) ? "decimal" : undefined}
+                            placeholder={i === 0 ? ({ ean: "978…", prezzo: "0,00", obiettivo: "copie" }[c.k] || "") : ""}
+                            style={{ ...cellaInput, textAlign: ["prezzo", "obiettivo"].includes(c.k) ? "right" : "left", fontVariantNumeric: ["ean", "g1e", "g2e", "g3e", "prezzo", "obiettivo"].includes(c.k) ? "tabular-nums" : undefined }}
+                            title={errore ? st.msg : ""} />
+                        </td>
+                      );
+                    })}
+                    <td style={{ background: sfondoRiga, borderBottom: bordo, textAlign: "center", padding: 0 }}>
+                      <button className="gm-elimina" title="Elimina riga"
+                        onClick={() => setRigheManuali(rr => (rr.length > 1 ? rr.filter((_, j) => j !== i) : [rigaManualeVuota()]))}
+                        style={{ background: "transparent", border: "none", color: T.textMid, cursor: "pointer", fontSize: "14px", padding: "6px 10px" }}>✕</button>
                     </td>
                   </tr>
                 );
@@ -967,13 +1021,24 @@ export default function ModuloImportEditore({ token, onImportDone, manuale = fal
             </tbody>
           </table>
         </div>
-        <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
-          <button style={css.btn()} onClick={() => setRigheManuali(rr => [...rr, rigaManualeVuota()])}>+ Riga</button>
-          <button style={css.btn()} onClick={() => setRigheManuali(rr => [...rr, ...Array.from({ length: 10 }, rigaManualeVuota)])}>+ 10 righe</button>
-          <button style={{ ...css.btn(), color: T.textMid }} onClick={() => { if (confirm("Svuotare tutta la griglia?")) setRigheManuali(Array.from({ length: 5 }, rigaManualeVuota)); }}>Svuota</button>
-          <span style={{ color: T.textMid, fontSize: "12px", marginLeft: 8 }}>{compilate} {compilate === 1 ? "riga compilata" : "righe compilate"}</span>
-          <button style={{ ...css.btn("accent"), marginLeft: "auto", opacity: loading || !compilate ? 0.5 : 1 }} disabled={loading || !compilate} onClick={confermaManuale}>
-            {loading ? "Analisi in corso..." : "Conferma →"}
+        <button onClick={() => setRigheManuali(rr => [...rr, rigaManualeVuota()])}
+          style={{ display: "block", width: "100%", textAlign: "left", background: "transparent", border: "none", borderTop: bordo, color: T.accent, cursor: "pointer", font: "inherit", fontSize: "12px", padding: "10px 20px" }}>
+          + Aggiungi riga
+        </button>
+
+        {/* Barra in fondo */}
+        <div style={{ display: "flex", alignItems: "center", gap: 10, padding: "14px 20px", borderTop: bordo, background: T.bg, flexWrap: "wrap" }}>
+          <button style={pulsante()} onClick={() => setRigheManuali(rr => [...rr, ...Array.from({ length: 10 }, rigaManualeVuota)])}>+ 10 righe</button>
+          <button style={pulsante({ color: T.textMid })} onClick={() => { if (confirm("Svuotare tutta la griglia?")) setRigheManuali(Array.from({ length: 5 }, rigaManualeVuota)); }}>Svuota</button>
+          <div style={{ display: "flex", gap: 14, marginLeft: 12, fontSize: "12px" }}>
+            <span style={{ color: T.textMid }}><b style={{ color: T.text }}>{compilate}</b> {compilate === 1 ? "titolo" : "titoli"}</span>
+            {pronte > 0 && <span style={{ color: T.green }}>● {pronte} {pronte === 1 ? "pronto" : "pronti"}</span>}
+            {daSistemare > 0 && <span style={{ color: T.red }}>● {daSistemare} da sistemare</span>}
+          </div>
+          <button onClick={confermaManuale} disabled={loading || !compilate || daSistemare > 0}
+            style={{ ...css.btn("accent"), marginLeft: "auto", padding: "9px 22px", borderRadius: 6, fontSize: "13px", opacity: loading || !compilate || daSistemare > 0 ? 0.45 : 1, cursor: loading || !compilate || daSistemare > 0 ? "default" : "pointer" }}
+            title={daSistemare > 0 ? "Sistema le righe segnate in rosso" : ""}>
+            {loading ? "Analisi in corso…" : `Conferma ${pronte || ""} →`}
           </button>
         </div>
       </div>
