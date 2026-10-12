@@ -209,6 +209,20 @@ export default function ModuloPubblicaRpn({ token, titoli }) {
     setBusy("");
   };
 
+  // Excel dei titoli non ancora in anagrafica RPN: perCedola = [[n_cedola, mancanti[]], ...]
+  const scaricaMancanti = (perCedola, nomeFile) => {
+    const righe = perCedola.flatMap(([n, m]) => (Array.isArray(m) ? m : []).map(t => [n, t.ean, t.titolo ?? "", t.editore ?? ""]));
+    if (!righe.length) { window.alert("Nessun titolo mancante su RPN."); return; }
+    const XLSX = window.XLSX;
+    const ws = XLSX.utils.aoa_to_sheet([["Cedola", "EAN", "Titolo", "Editore"], ...righe]);
+    ws["!cols"] = [{ wch: 24 }, { wch: 15 }, { wch: 50 }, { wch: 30 }];
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, "Non presenti su RPN");
+    XLSX.writeFile(wb, `${nomeFile}.xlsx`);
+  };
+  const mancantiGiro = cedole.map(([n]) => [n, syncRows[n]?.mancanti]);
+  const totMancantiGiro = mancantiGiro.reduce((s, [, m]) => s + (Array.isArray(m) ? m.length : 0), 0);
+
   // Pubblica in sequenza tutte le cedole del giro selezionato (non chiuse)
   const pubblicaGiro = async () => {
     const lista = cedole.map(([n]) => n).filter(n => syncRows[n]?.rpn_stato !== "CHI");
@@ -295,6 +309,11 @@ export default function ModuloPubblicaRpn({ token, titoli }) {
               ))}
             </div>
           )}
+          {totMancantiGiro > 0 && (!batch || batch.fatto === batch.tot) && (
+            <button style={{ ...css.btn("default"), marginTop: 12 }} onClick={() => scaricaMancanti(mancantiGiro, `Non presenti su RPN - ${giroSel === "EXTRA" ? "cedole extra" : `giro ${giroSel}`}`)}>
+              📥 Scarica titoli non presenti su RPN ({totMancantiGiro})
+            </button>
+          )}
         </div>
 
         {/* Dettaglio cedola */}
@@ -362,6 +381,11 @@ export default function ModuloPubblicaRpn({ token, titoli }) {
               <ListaTitoli titolo="Da agganciare" righe={p.da_aggiungere} colore={T.accent} />
               <ListaTitoli titolo="Da togliere da RPN" righe={p.da_rimuovere} colore={T.red} aperta />
               <ListaTitoli titolo="Non ancora in anagrafica RPN (ritentati ogni notte)" righe={p.mancanti} colore={T.amber} />
+              {p.mancanti.length > 0 && (
+                <button style={{ ...css.btn("default"), marginTop: 8 }} onClick={() => scaricaMancanti([[p.n_cedola, p.mancanti]], `Non presenti su RPN - ${p.n_cedola}`)}>
+                  📥 Scarica titoli non presenti su RPN ({p.mancanti.length})
+                </button>
+              )}
             </>
           )}
         </div>
