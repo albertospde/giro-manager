@@ -828,7 +828,7 @@ function Modulocalendariogiri({ token, ruolo }) {
       });
       const data = await r.json();
       if (r.ok && data?.[0]) { setRighe(prev => prev.map(x => x.id === form.id ? data[0] : x)); showToast("Riga aggiornata"); resetForm(); }
-      else showToast("Errore salvataggio", "err");
+      else showToast(data?.code === "23505" ? `Il giro ${payload.giro} ${payload.anno} esiste già` : "Errore salvataggio", "err");
     } else {
       const r = await fetch(`${SUPABASE_URL}/rest/v1/calendario_giri`, {
         method: "POST",
@@ -837,7 +837,7 @@ function Modulocalendariogiri({ token, ruolo }) {
       });
       const data = await r.json();
       if (r.ok && data?.[0]) { setRighe(prev => [...prev, data[0]]); showToast("Giro aggiunto"); resetForm(); }
-      else showToast("Errore creazione riga", "err");
+      else showToast(data?.code === "23505" ? `Il giro ${payload.giro} ${payload.anno} esiste già: modifica la riga esistente` : "Errore creazione riga", "err");
     }
     setSaving(false);
   };

@@ -46,6 +46,21 @@ async function rpc(fn, token, args = {}) {
   return body;
 }
 
+// Esegue fn(da, a) su un intervallo di id; se il DB va in timeout (limite 8s), divide
+// l'intervallo a metà e riprova. Sicuro perché inserisci/rimuovi sono idempotenti e
+// una chiamata in timeout viene annullata per intero (contatori compresi).
+const BLOCCO_MIN = 500;
+async function aBlocchi(fn, da, a) {
+  try {
+    await fn(da, a);
+  } catch (e) {
+    if (!/statement timeout/i.test(e.message) || a - da + 1 <= BLOCCO_MIN) throw e;
+    const m = da + Math.floor((a - da) / 2);
+    await aBlocchi(fn, da, m);
+    await aBlocchi(fn, m + 1, a);
+  }
+}
+
 // Legge l'xlsx e restituisce le righe [agente, editore, libreria] (senza intestazione), validando le colonne.
 function leggiTerne(arrayBuffer) {
   const XLSX = window.XLSX;
@@ -125,7 +140,7 @@ export default function ModuloTerne({ token }) {
       // 3. inserisce le nuove (prima di rimuovere, così nessun agente perde visibilità a metà)
       const range = await rpc("terne_sync_range", token, { p_sessione: sessione });
       for (let da = range.min; da <= range.max; da += CHUNK_INSERISCI) {
-        await rpc("terne_sync_inserisci", token, { p_sessione: sessione, p_da: da, p_a: da + CHUNK_INSERISCI - 1 });
+        await aBlocchi((d, a) => rpc("terne_sync_inserisci", token, { p_sessione: sessione, p_da: d, p_a: a }), da, da + CHUNK_INSERISCI - 1);
         setFase({ testo: "Aggiungo le terne nuove…", pct: 65 + Math.round(((da - range.min) / Math.max(1, range.max - range.min)) * 20) });
       }
 
@@ -133,7 +148,7 @@ export default function ModuloTerne({ token }) {
       //    a blocchi di id: il confronto unico su tutte le terne superava il timeout di 8s
       const att = await rpc("terne_sync_range_attuali", token);
       for (let da = att.min; att.max != null && da <= att.max; da += CHUNK_RIMUOVI) {
-        await rpc("terne_sync_rimuovi_blocco", token, { p_sessione: sessione, p_da: da, p_a: da + CHUNK_RIMUOVI - 1 });
+        await aBlocchi((d, a) => rpc("terne_sync_rimuovi_blocco", token, { p_sessione: sessione, p_da: d, p_a: a }), da, da + CHUNK_RIMUOVI - 1);
         setFase({ testo: "Rimuovo le terne non più presenti su RPN…", pct: 86 + Math.round(((da - att.min) / Math.max(1, att.max - att.min)) * 11) });
       }
 

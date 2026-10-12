@@ -108,6 +108,21 @@ export default function ModuloPubblicaRpn({ token, titoli }) {
   useEffect(() => { if (!giroSel && giri.length) setGiroSel(giri[0]); }, [giri, giroSel]);
   const cedole = useMemo(() => Object.entries(cedolePerGiro[giroSel] || {}).sort((a, b) => a[0].localeCompare(b[0])), [cedolePerGiro, giroSel]);
 
+  // Date di "Pubblica tutto il giro": uguali per giro e cedole create insieme.
+  // Proposte dal Calendario giri, modificabili; usate solo per giro/cedole che RPN non ha ancora.
+  const [dateGiro, setDateGiro] = useState({ data_inizio: "", data_fine: "" });
+  useEffect(() => {
+    setDateGiro({ data_inizio: "", data_fine: "" });
+    const [numero, anno] = (giroSel || "").split(" ").map(Number);
+    if (!numero || !anno) return;
+    let annullato = false;
+    fetch(`${SUPABASE_URL}/rest/v1/calendario_giri?select=inizio_giro,fine_giro&giro=eq.${numero}&anno=eq.${anno}&inizio_giro=not.is.null&limit=1`, { headers: { apikey: SUPABASE_KEY, Authorization: `Bearer ${token}` } })
+      .then(r => (r.ok ? r.json() : []))
+      .then(rows => { if (!annullato && rows[0]) setDateGiro({ data_inizio: rows[0].inizio_giro || "", data_fine: rows[0].fine_giro || "" }); })
+      .catch(() => {});
+    return () => { annullato = true; };
+  }, [giroSel, token]);
+
   // Obiettivi: dopo ogni creazione/aggiornamento della cedola si caricano su RPN in automatico
   // con l'obiettivo assegnato in GiroManager (stesso file del pulsante "Carica obiettivi" della home
   // di RPN: Cedola | Ean | Obiettivo copie). Edge function rpn-obiettivi, account RPN dell'utente.
@@ -198,12 +213,18 @@ export default function ModuloPubblicaRpn({ token, titoli }) {
   const pubblicaGiro = async () => {
     const lista = cedole.map(([n]) => n).filter(n => syncRows[n]?.rpn_stato !== "CHI");
     if (!lista.length) return;
-    if (!window.confirm(`Pubblico/aggiorno su RPN ${lista.length} cedole del giro ${giroSel}:\n${lista.join("\n")}\n\nVerranno creati giro e cedole mancanti, agganciati/riordinati i titoli e tolti quelli non più in GiroManager. Procedo?`)) return;
+    const { data_inizio, data_fine } = dateGiro;
+    const daCreare = lista.filter(n => !syncRows[n]?.rpn_cedola_id);
+    if (daCreare.length && (!data_inizio || !data_fine)) { window.alert("Imposta data inizio e data fine del giro: servono per creare giro e cedole su RPN."); return; }
+    if (data_inizio && data_fine && data_fine < data_inizio) { window.alert("La data fine è precedente alla data inizio."); return; }
+    const itData = (s) => s.split("-").reverse().join("/");
+    const righeDate = data_inizio && data_fine ? `\nDate per giro e cedole nuove: dal ${itData(data_inizio)} al ${itData(data_fine)}\n` : "";
+    if (!window.confirm(`Pubblico/aggiorno su RPN ${lista.length} cedole del giro ${giroSel}:\n${lista.join("\n")}\n${righeDate}\nVerranno creati giro e cedole mancanti, agganciati/riordinati i titoli e tolti quelli non più in GiroManager. Procedo?`)) return;
     const out = [];
     setBatch({ fatto: 0, tot: lista.length, out });
     for (const n of lista) {
       try {
-        const r = await chiama("apply", token, { n_cedola: n });
+        const r = await chiama("apply", token, { n_cedola: n, data_inizio, data_fine });
         out.push({ n, ok: true, esito: r.esito, mancanti: r.stato.mancanti.length, obj: await caricaObiettivi(n) });
       } catch (e) { out.push({ n, ok: false, errore: e.message }); }
       setBatch({ fatto: out.length, tot: lista.length, out: [...out] });
@@ -236,6 +257,13 @@ export default function ModuloPubblicaRpn({ token, titoli }) {
             </label>
             {giroSel && giroSel !== "EXTRA" && <button style={{ ...css.btn("accent", !!batch && batch.fatto < batch.tot), marginLeft: "auto" }} disabled={!!batch && batch.fatto < batch.tot} onClick={pubblicaGiro}>Pubblica tutto il giro</button>}
           </div>
+          {giroSel && giroSel !== "EXTRA" && (
+            <div style={{ display: "flex", gap: 14, alignItems: "center", flexWrap: "wrap", marginBottom: 12 }}>
+              <label style={{ color: T.textMid, fontSize: "12px" }}>Data inizio&nbsp;<input type="date" style={css.input} value={dateGiro.data_inizio} onChange={e => setDateGiro(d => ({ ...d, data_inizio: e.target.value }))} /></label>
+              <label style={{ color: T.textMid, fontSize: "12px" }}>Data fine&nbsp;<input type="date" style={css.input} value={dateGiro.data_fine} onChange={e => setDateGiro(d => ({ ...d, data_fine: e.target.value }))} /></label>
+              <span style={{ color: T.textDim, fontSize: "11px" }}>Uguali per il giro e le cedole create insieme · proposte dal Calendario giri</span>
+            </div>
+          )}
           <table style={{ width: "100%", borderCollapse: "collapse" }}>
             <thead><tr>{["Cedola", "Titoli GM", "Su RPN", "Mancanti", "Ultimo sync", ""].map(h => <th key={h} style={css.th}>{h}</th>)}</tr></thead>
             <tbody>
