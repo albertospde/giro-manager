@@ -2001,14 +2001,15 @@ function ModuloFineGiro({ titoli, prenotato, canali, token, ruolo, spalmatura, u
     titoli.forEach(t => { if (t.giro_label && t.giro_label !== "EXTRA") { const yr = Number(t.giro_label.split(" ")[1]); if (yr >= 2020) s.add(yr); } });
     return [...s].sort((a, b) => b - a);
   }, [titoli]);
-  const [filterAnnoFineGiro, setFilterAnnoFineGiro] = useState([new Date().getFullYear()]);
+  // Anno corrente + successivo: il Giro 1 dell'anno dopo parte già in autunno (es. Giro 1 2027 da ottobre 2026)
+  const [filterAnnoFineGiro, setFilterAnnoFineGiro] = useState([new Date().getFullYear(), new Date().getFullYear() + 1]);
 
   const giriLabel = useMemo(() => [...new Set(titoli.filter(t => t.giro_label !== "EXTRA").map(t => t.giro_label).filter(Boolean))]
     .filter(g => filterAnnoFineGiro.length === 0 || filterAnnoFineGiro.includes(Number(g.split(" ")[1])))
     .sort((a, b) => {
     const [na, ya] = a.split(" "); const [nb, yb] = b.split(" ");
     return Number(yb || 0) - Number(ya || 0) || Number(nb || 0) - Number(na || 0);
-  }), [titoli]);
+  }), [titoli, filterAnnoFineGiro]);
 
   // Anno dedicato alla colonna Extragiri (indipendente dall'anno dei Giri Vendita)
   const anniDispExtraFineGiro = useMemo(() => {
