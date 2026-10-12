@@ -2107,6 +2107,16 @@ function ModuloFineGiro({ titoli, prenotato, canali, token, ruolo, spalmatura, u
       const parsed = parseEaggrega(arrayBuffer, titoliTargetRpn);
       setRpnSync({ status: "preview", error: null, preview: parsed });
     } catch (err) {
+      // Cedola extra non presente su RPN ma con titoli di editori nuovi entranti (Nuovi editori):
+      // non è un errore, il prenotato arriva dalle prenotazioni manuali salvate su Supabase
+      // (già sommate nel Fine Giro dai trigger), quindi da RPN non c'è niente da scaricare.
+      if (rpnCedolaTarget && /non trovat/i.test(err.message) && /su RPN/i.test(err.message)) {
+        const man = await sbFetch(`titoli_manuali?select=id&n_cedola=eq.${encodeURIComponent(rpnCedolaTarget)}&limit=1`, token).catch(() => []);
+        if (Array.isArray(man) && man.length) {
+          setRpnSync({ status: "idle", error: null, preview: null, info: `"${rpnCedolaTarget}" non è su RPN: contiene titoli di editori nuovi entranti. Il prenotato arriva dalle prenotazioni raccolte e salvate su Supabase ed è già incluso nel Fine Giro, da RPN non c'è niente da scaricare. Attenzione: BookUp mostra questi titoli agli agenti solo se la cedola esiste su RPN (anche vuota): se non l'hai ancora fatto, creala da "Crea cedola su RPN".` });
+          return;
+        }
+      }
       setRpnSync({ status: "idle", error: err.message, preview: null });
     }
   }, [rpnGiroTarget, rpnCedolaTarget, token, titoliTargetRpn]);
@@ -2551,6 +2561,11 @@ function ModuloFineGiro({ titoli, prenotato, canali, token, ruolo, spalmatura, u
       {rpnSync.error && (
         <div style={{ padding: "10px 20px", borderBottom: `1px solid ${T.border}`, background: T.red + "18", color: T.red, fontSize: "12px" }}>
           {rpnSync.error}
+        </div>
+      )}
+      {rpnSync.info && (
+        <div style={{ padding: "10px 20px", borderBottom: `1px solid ${T.border}`, background: T.accent + "18", color: T.text, fontSize: "12px" }}>
+          ℹ {rpnSync.info}
         </div>
       )}
 
