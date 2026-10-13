@@ -13,7 +13,7 @@ const TEMPLATE_HEADERS = ["Posizione", "Codice cliente", "Nome Cliente", "Gruppo
 const T = tema({
   bg: "#1a2140", surface: "#212d54", border: "#2e3d6b", borderHi: "#3d4f82",
   text: "#f0f2f8", textMid: "#8b9cc8", textDim: "#4a5a8a",
-  accent: "#7b9fe8", green: "#4caf7d", red: "#e05c5c",
+  accent: "#7b9fe8", green: "#4caf7d", red: "#e05c5c", amber: "#e0a84c",
 });
 const css = {
   btn: (v = "default") => ({ padding: "6px 14px", border: `1px solid ${v === "accent" ? T.accent : T.border}`, background: v === "accent" ? T.accent : "transparent", color: v === "accent" ? "#000" : T.text, cursor: "pointer", fontSize: "12px", fontFamily: "inherit", borderRadius: 3, fontWeight: v === "accent" ? "700" : "400", letterSpacing: "0.04em" }),
@@ -77,6 +77,119 @@ function parseTestoIncollato(text, sep) {
     } else out.push(r);
   });
   return out;
+}
+
+const rpcCall = (fn, token, args = {}) => sbRest(`rpc/${fn}`, token, { method: "POST", body: JSON.stringify(args) });
+
+// Agenti che vedono un editore new entry in BookUp (Giri Vendita, Excel,
+// Materiali PDF) e possono prenotarne i titoli per i propri clienti.
+// Tabella editori_new_entry_agenti, letta da bookup_miei_editori; vale finché
+// l'editore è attivo qui — dopo "✅ Entrato su RPN" contano le terne RPN.
+function AgentiNewEntry({ token, editori }) {
+  const attivi = editori.filter(e => e.attivo);
+  const [agenti, setAgenti] = useState(null);
+  const [scelte, setScelte] = useState({});   // salvate: { codice_editore: [agenti] }
+  const [sel, setSel] = useState("");
+  const [spunte, setSpunte] = useState(new Set());
+  const [cerca, setCerca] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [msg, setMsg] = useState(null); // { ok, testo }
+
+  const carica = useCallback(async () => {
+    const s = await rpcCall("ne_agenti_stato", token);
+    setAgenti(s.agenti || []);
+    setScelte(s.scelte || {});
+    return s.scelte || {};
+  }, [token]);
+  useEffect(() => { carica().catch(e => setMsg({ ok: false, testo: e.message })); }, [carica]);
+
+  const scegliEditore = (codice) => {
+    setSel(codice); setMsg(null); setCerca("");
+    setSpunte(new Set(scelte[codice] || []));
+  };
+
+  const edSel = attivi.find(e => e.codice_editore === sel);
+  const salvate = new Set(scelte[sel] || []);
+  const modificato = spunte.size !== salvate.size || [...spunte].some(a => !salvate.has(a));
+  const q = cerca.trim().toLowerCase();
+  const visibili = (agenti || []).filter(a => !q || `${a.codice} ${a.nome || ""} ${a.rpn || ""}`.toLowerCase().includes(q));
+
+  const toggle = (codice) => {
+    const n = new Set(spunte);
+    if (n.has(codice)) n.delete(codice); else n.add(codice);
+    setSpunte(n);
+  };
+  const tuttiVisibili = (on) => {
+    const n = new Set(spunte);
+    visibili.forEach(a => { if (on) n.add(a.codice); else n.delete(a.codice); });
+    setSpunte(n);
+  };
+
+  const salva = async () => {
+    setBusy(true); setMsg(null);
+    try {
+      const n = await rpcCall("ne_agenti_salva", token, { p_codice_editore: sel, p_agenti: [...spunte] });
+      const s = await carica();
+      setSpunte(new Set(s[sel] || []));
+      setMsg({ ok: true, testo: `Salvato: ${n} agenti vedono "${edSel.nome_editore}" in BookUp (vale dal prossimo accesso o aggiornamento della pagina).` });
+    } catch (e) { setMsg({ ok: false, testo: e.message }); }
+    finally { setBusy(false); }
+  };
+
+  const nomeAgente = (codice) => {
+    const a = (agenti || []).find(x => x.codice === codice);
+    return a && a.nome ? a.nome : codice;
+  };
+
+  return (
+    <div style={{ marginTop: 28, borderTop: `1px solid ${T.border}`, paddingTop: 18, maxWidth: 900 }}>
+      <h3 style={{ fontSize: "13px", color: T.text, marginBottom: 4 }}>👥 Agenti che vedono l'editore in BookUp</h3>
+      <p style={{ color: T.textDim, fontSize: "11px", marginBottom: 12 }}>
+        Gli agenti spuntati vedono l'editore in BookUp come se fosse nelle loro terne: titoli in Giri Vendita ed Excel, Materiali PDF, e possono prenotarne i titoli per i propri clienti.
+        Vale finché l'editore è attivo qui; dopo "✅ Entrato su RPN" contano le terne vere di RPN.
+      </p>
+      {msg && <div style={{ color: msg.ok ? T.green : T.red, fontSize: "12px", marginBottom: 12, background: (msg.ok ? T.green : T.red) + "18", border: `1px solid ${(msg.ok ? T.green : T.red)}44`, borderRadius: 4, padding: "8px 12px" }}>{msg.ok ? "✓ " : "⚠ "}{msg.testo}</div>}
+
+      <div style={{ marginBottom: 14 }}>
+        <label style={css.label}>Editore new entry</label>
+        <select style={{ ...css.input, width: 320 }} value={sel} onChange={e => scegliEditore(e.target.value)} disabled={!agenti}>
+          <option value="">{agenti ? "— scegli —" : "Caricamento…"}</option>
+          {attivi.map(ed => <option key={ed.codice_editore} value={ed.codice_editore}>{ed.nome_editore} ({ed.codice_editore}) — {(scelte[ed.codice_editore] || []).length} agenti</option>)}
+        </select>
+      </div>
+
+      {edSel && agenti && <>
+        <div style={{ display: "flex", gap: 8, alignItems: "center", marginBottom: 8, flexWrap: "wrap" }}>
+          <input style={{ ...css.input, width: 220 }} value={cerca} onChange={e => setCerca(e.target.value)} placeholder="Cerca agente o codice…" />
+          <button style={{ ...css.btn(), fontSize: "11px", padding: "3px 8px" }} onClick={() => tuttiVisibili(true)}>Seleziona {q ? "visibili" : "tutti"}</button>
+          <button style={{ ...css.btn(), fontSize: "11px", padding: "3px 8px" }} onClick={() => tuttiVisibili(false)}>Deseleziona {q ? "visibili" : "tutti"}</button>
+          <span style={{ color: T.textMid, fontSize: "12px", marginLeft: "auto" }}>{spunte.size} selezionati</span>
+        </div>
+        <div style={{ maxHeight: 360, overflowY: "auto", border: `1px solid ${T.border}`, borderRadius: 4, marginBottom: 12 }}>
+          <table style={css.table}>
+            <thead><tr><th style={{ ...css.th, width: 30 }}></th><th style={css.th}>Agente</th><th style={css.th}>Codice</th><th style={css.th}>Utenza RPN</th><th style={{ ...css.th, textAlign: "right" }}>Clienti</th></tr></thead>
+            <tbody>
+              {visibili.map(a => (
+                <tr key={a.codice} onClick={() => toggle(a.codice)} style={{ cursor: "pointer", background: spunte.has(a.codice) ? T.accent + "18" : "transparent" }}>
+                  <td style={css.td}><input type="checkbox" checked={spunte.has(a.codice)} readOnly /></td>
+                  <td style={{ ...css.td, color: T.text }}>{a.nome || <span style={{ color: T.textDim }}>—</span>}{a.ruolo === "Responsabile" && <span style={{ color: T.textMid, fontSize: "10px" }}> · responsabile</span>}</td>
+                  <td style={{ ...css.td, color: T.textMid }}>{a.codice}</td>
+                  <td style={{ ...css.td, color: T.textMid }}>{a.rpn}</td>
+                  <td style={{ ...css.td, textAlign: "right", color: a.clienti ? T.text : T.amber }} title={a.clienti ? "" : "Nessun cliente nelle terne RPN: vedrà l'editore ma non potrà prenotare"}>{a.clienti}</td>
+                </tr>
+              ))}
+              {visibili.length === 0 && <tr><td style={css.td} colSpan={5}><span style={{ color: T.textDim }}>Nessun agente trovato.</span></td></tr>}
+            </tbody>
+          </table>
+        </div>
+        <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
+          <button style={css.btn("accent")} disabled={busy || !modificato} onClick={salva}>{busy ? "…" : "💾 Salva"}</button>
+          <button style={css.btn()} disabled={busy || !modificato} onClick={() => setSpunte(new Set(salvate))}>Annulla modifiche</button>
+          {!modificato && salvate.size > 0 && <span style={{ color: T.textMid, fontSize: "11px" }}>Oggi lo vedono: {[...salvate].map(nomeAgente).join(", ")}</span>}
+        </div>
+      </>}
+    </div>
+  );
 }
 
 // Editori in ingresso nel perimetro PDE non ancora visibili su RPN, e gli
@@ -604,6 +717,7 @@ export default function ModuloEditoriNewEntry({ token, onDataChange }) {
 
         </div>
       )}
+      {!loading && <AgentiNewEntry token={token} editori={editori} />}
     </div>
   );
 }
