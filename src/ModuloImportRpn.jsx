@@ -253,6 +253,26 @@ async function importCedola(token, item, anagraficaMap) {
     return out;
   }).filter(Boolean);
 
+  // RPN conosce solo l'editore "padre" (es. BECCO GIALLO, non BECCO GIALLO KIDS): la categoria
+  // dell'anagrafica può mandare il titolo in una cedola diversa da quella in cui è già.
+  // Se l'EAN è già in un'altra cedola dello stesso giro, resta lì e non si duplica.
+  if (item.tipo === "giro" && giroNumero != null) {
+    const giroLabel = `${giroNumero} ${giroAnno}`;
+    const res = await fetch(
+      `${SUPABASE_URL}/rest/v1/titoli?select=ean,n_cedola&giro_label=eq.${encodeURIComponent(giroLabel)}`,
+      { headers: { apikey: SUPABASE_KEY, Authorization: `Bearer ${token}` } }
+    );
+    const giaNelGiro = {};
+    (res.ok ? await res.json() : []).forEach(t => { if (t.ean) giaNelGiro[t.ean] = t.n_cedola; });
+    for (let i = righe.length - 1; i >= 0; i--) {
+      const r = righe[i], dove = giaNelGiro[r.ean];
+      if (dove && dove !== r.n_cedola) {
+        errori.push(`ℹ ean ${r.ean} (${r.titolo ?? ""}) è già nella cedola ${dove}: non duplicato in ${r.n_cedola}`);
+        righe.splice(i, 1);
+      }
+    }
+  }
+
   if (!righe.length) return { creati: 0, aggiornati: 0, ignorati: grezzi.length, errori };
 
   if (item.tipo === "giro" && giroCombos.size) {
