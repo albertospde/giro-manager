@@ -17,6 +17,8 @@ const SUPABASE_URL = "https://tdflwenlylhctxssatax.supabase.co";
 const SUPABASE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InRkZmx3ZW5seWxoY3R4c3NhdGF4Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzYzMzgyNzYsImV4cCI6MjA5MTkxNDI3Nn0.l35qEL7LOvyYuI1McQlVqj4vbyTqmlevcmqWbTGYi2Q";
 
 const normEditoreKey = n => (n || "").trim().toLowerCase();
+// Mese d'uscita del titolo come arriva dai file editore ("OTTOBRE", " ottobre ", "2024"…), ripulito per tabelle ed export
+const meseUscita = t => (t.uscita || "").trim().toUpperCase();
 
 const ACCOUNT_BY_COD = {
   "103": "CALAVETTA",
@@ -1641,7 +1643,7 @@ function ModuloCedola({ titoli, giriList, onUpdateTitolo, onDeleteTitolo, spalma
     const XLSX = window.XLSX;
     const { rankEditoreMap, rankTitoloMap } = computeRanking(filtered);
     const headers = ["N° CEDOLA","RANK.EDITORE","RANK.TITOLO","EAN","TITOLO","AUTORE","COD.EDITORE","EDITORE","TOP 100","PREZZO","USCITA","NOTE","EAN GEM 1","TITOLO GEM 1","EAN GEM 2","TITOLO GEM 2","EAN GEM 3","TITOLO GEM 3","OBJ INDIPENDENTI & ALTRE CATENE"];
-    const rows = filtered.map(t => [t.n_cedola, rankEditoreMap.get(t.id), rankTitoloMap.get(t.id), t.ean, t.titolo, t.autore, t.codice_editore, t.editore_nome, t.top_100 ? "SI" : "", t.prezzo, t.uscita, t.note_comunicazione || t.note, t.ean_gemello_1, t.titolo_gemello_1, t.ean_gemello_2, t.titolo_gemello_2, t.ean_gemello_3, t.titolo_gemello_3, getObjCanale(t, 'INDIPENDENTI_ALTRE_CATENE')]);
+    const rows = filtered.map(t => [t.n_cedola, rankEditoreMap.get(t.id), rankTitoloMap.get(t.id), t.ean, t.titolo, t.autore, t.codice_editore, t.editore_nome, t.top_100 ? "SI" : "", t.prezzo, meseUscita(t), t.note_comunicazione || t.note, t.ean_gemello_1, t.titolo_gemello_1, t.ean_gemello_2, t.titolo_gemello_2, t.ean_gemello_3, t.titolo_gemello_3, getObjCanale(t, 'INDIPENDENTI_ALTRE_CATENE')]);
     const ws = buildTemplateSheet(XLSX, "CEDOLA AGENTI — GIRO " + (giroLabelSel.length === 0 ? "TUTTI" : giroLabelSel.join(", ")), "Esportazione dati cedola per la rete agenti", headers, rows);
     const wb = XLSX.utils.book_new(); XLSX.utils.book_append_sheet(wb, ws, "CEDOLA AGENTI");
     XLSX.writeFile(wb, `CEDOLA_AGENTI_${giroLabelSel.length === 0 ? "TUTTI" : giroLabelSel.join("-")}.xlsx`);
@@ -1658,16 +1660,16 @@ function ModuloCedola({ titoli, giriList, onUpdateTitolo, onDeleteTitolo, spalma
       .map(codice => ({ codice, label: nomeCanale(codice) }));
     const giroLabelStr = giroLabelSel.length === 0 ? "TUTTI" : giroLabelSel.join(", ");
     const { rankEditoreMap, rankTitoloMap } = computeRanking(filtered);
-    const headersCedola = ["N° CEDOLA","RANK.EDITORE","RANK.TITOLO","EAN","TITOLO","AUTORE","COD.EDITORE","EDITORE","TOP 100","PREZZO","OBJ TOTALE","NOTE","EAN GEM 1","TITOLO GEM 1","EAN GEM 2","TITOLO GEM 2","EAN GEM 3","TITOLO GEM 3"];
-    const rowsCedola = filtered.map(t => [t.n_cedola, rankEditoreMap.get(t.id), rankTitoloMap.get(t.id), t.ean, t.titolo, t.autore, t.codice_editore, t.editore_nome, t.top_100 ? "SI" : "", t.prezzo, t.obiettivo_assegnato || 0, t.note_comunicazione || t.note, t.ean_gemello_1, t.titolo_gemello_1, t.ean_gemello_2, t.titolo_gemello_2, t.ean_gemello_3, t.titolo_gemello_3]);
+    const headersCedola = ["N° CEDOLA","RANK.EDITORE","RANK.TITOLO","EAN","TITOLO","AUTORE","COD.EDITORE","EDITORE","TOP 100","PREZZO","USCITA","OBJ TOTALE","NOTE","EAN GEM 1","TITOLO GEM 1","EAN GEM 2","TITOLO GEM 2","EAN GEM 3","TITOLO GEM 3"];
+    const rowsCedola = filtered.map(t => [t.n_cedola, rankEditoreMap.get(t.id), rankTitoloMap.get(t.id), t.ean, t.titolo, t.autore, t.codice_editore, t.editore_nome, t.top_100 ? "SI" : "", t.prezzo, meseUscita(t), t.obiettivo_assegnato || 0, t.note_comunicazione || t.note, t.ean_gemello_1, t.titolo_gemello_1, t.ean_gemello_2, t.titolo_gemello_2, t.ean_gemello_3, t.titolo_gemello_3]);
     const wsCedola = buildTemplateSheet(XLSX, "CEDOLA DIREZIONALE — GIRO " + giroLabelStr, "Esportazione dati cedola per la direzione", headersCedola, rowsCedola);
-    const headersObj = ["N° CEDOLA","EAN","TITOLO","AUTORE","COD.EDITORE","EDITORE","PREZZO","OBJ TOTALE",...canaliDir.map(c => c.label),"SOMMA CANALI","CONTROLLO"];
+    const headersObj = ["N° CEDOLA","EAN","TITOLO","AUTORE","COD.EDITORE","EDITORE","PREZZO","USCITA","OBJ TOTALE",...canaliDir.map(c => c.label),"SOMMA CANALI","CONTROLLO"];
     const rowsObj = filtered.map(t => {
       const perCanale = objPerCanale(t, spalmatura);
       const valori = canaliDir.map(c => perCanale?.[c.codice] || 0);
       const somma = valori.reduce((s, v) => s + v, 0);
       const controllo = (t.obiettivo_assegnato || 0) > 0 && !perCanale ? `MANCANO PESI SPALMATURA (${t.editore_nome} · ${t.formato || "Cover"})` : "";
-      return [t.n_cedola, t.ean, t.titolo, t.autore, t.codice_editore, t.editore_nome, t.prezzo, t.obiettivo_assegnato || 0, ...valori, somma, controllo];
+      return [t.n_cedola, t.ean, t.titolo, t.autore, t.codice_editore, t.editore_nome, t.prezzo, meseUscita(t), t.obiettivo_assegnato || 0, ...valori, somma, controllo];
     });
     const wsObj = buildTemplateSheet(XLSX, "OBIETTIVI PER CANALE — GIRO " + giroLabelStr, "Ripartizione obiettivi per canale di vendita", headersObj, rowsObj);
     const wb = XLSX.utils.book_new(); XLSX.utils.book_append_sheet(wb, wsCedola, "CEDOLA"); XLSX.utils.book_append_sheet(wb, wsObj, "OBIETTIVI");
@@ -1681,7 +1683,7 @@ function ModuloCedola({ titoli, giriList, onUpdateTitolo, onDeleteTitolo, spalma
     const headers = ["GIRO","EAN","TITOLO","AUTORE","EDITORE","PREZZO","USCITA","OBIETTIVO","TOP 100","PROMOZIONE","NOTE","EAN GEMELLO 1","TITOLO GEMELLO 1","EAN GEMELLO 2","TITOLO GEMELLO 2","EAN GEMELLO 3","TITOLO GEMELLO 3"];
     const rows = filtered.map(t => [
       t.giro_label === "EXTRA" ? "" : t.giro_label,
-      t.ean, t.titolo, t.autore, t.editore_nome, t.prezzo, t.uscita,
+      t.ean, t.titolo, t.autore, t.editore_nome, t.prezzo, meseUscita(t),
       t.obiettivo_assegnato || "", t.top_100 ? "SI" : "", t.promozione || "", t.note_comunicazione || t.note || "",
       t.ean_gemello_1, t.titolo_gemello_1, t.ean_gemello_2, t.titolo_gemello_2, t.ean_gemello_3, t.titolo_gemello_3,
     ]);
@@ -1905,6 +1907,7 @@ function ModuloCedola({ titoli, giriList, onUpdateTitolo, onDeleteTitolo, spalma
               <th style={css.th}>EAN</th><th style={css.th}>Titolo</th><th style={css.th}>Autore</th><th style={css.th}>Cod.Ed.</th>
               <th style={css.th} onClick={() => setSortKey("editore")}>Editore{sortKey === "editore" ? " ↓" : ""}</th>
               <th style={css.th} onClick={() => setSortKey("prezzo")}>€{sortKey === "prezzo" ? " ↓" : ""}</th>
+              <th style={css.th}>Uscita</th>
               <th style={css.th}>Obj</th><th style={css.th}>Top 100</th><th style={css.th}>Gemelli</th><th style={css.th}>Note</th><th style={css.th}></th>
             </tr>
           </thead>
@@ -1919,6 +1922,7 @@ function ModuloCedola({ titoli, giriList, onUpdateTitolo, onDeleteTitolo, spalma
                 <td style={{ ...css.td, color: T.textMid, fontSize: "11px" }}>{t.codice_editore}</td>
                 <td style={{ ...css.td, color: T.accent, fontWeight: "600", whiteSpace: "nowrap" }}>{t.editore_nome}</td>
                 <td style={{ ...css.td, whiteSpace: "nowrap" }}>€ {t.prezzo?.toFixed(2)}</td>
+                <td style={{ ...css.td, color: T.textMid, fontSize: "11px", whiteSpace: "nowrap" }}>{meseUscita(t) || "—"}</td>
                 <td style={{ ...css.td, whiteSpace: "nowrap", minWidth: 130 }}>
                   {(() => {
                     const pren = prenotato.filter(p => p.titolo_id === t.id).reduce((s,p) => s+p.quantita, 0);
@@ -2341,10 +2345,10 @@ function ModuloFineGiro({ titoli, prenotato, canali, token, ruolo, spalmatura, u
     const XLSX = window.XLSX;
     const colCanali = canaliTabella;
     const dirStampHeaders = ruolo !== "agente" ? ["Dir.Stamp./Fuori lancio"] : [];
-    const headers = ["N° CEDOLA","EAN","TITOLO","AUTORE","COD.EDITORE","EDITORE","PREZZO","OBJ ASS.","PRENOTATO","AVANZ %",...colCanali.map(c => getCanaleDisplayName(c)),...dirStampHeaders];
+    const headers = ["N° CEDOLA","EAN","TITOLO","AUTORE","COD.EDITORE","EDITORE","PREZZO","USCITA","OBJ ASS.","PRENOTATO","AVANZ %",...colCanali.map(c => getCanaleDisplayName(c)),...dirStampHeaders];
     const rows = righeFiltrate.map(({ titolo: t, totPren, byCanale, dirStampatore }) => {
       const pct = t.obiettivo_assegnato > 0 ? Math.round(totPren / t.obiettivo_assegnato * 100) : 0;
-      const base = [t.n_cedola, t.ean, t.titolo, t.autore, t.codice_editore, t.editore_nome, t.prezzo, t.obiettivo_assegnato, totPren, `${pct}%`, ...colCanali.map(c => byCanale[c.codice] ?? 0)];
+      const base = [t.n_cedola, t.ean, t.titolo, t.autore, t.codice_editore, t.editore_nome, t.prezzo, meseUscita(t), t.obiettivo_assegnato, totPren, `${pct}%`, ...colCanali.map(c => byCanale[c.codice] ?? 0)];
       if (ruolo !== "agente") base.push(dirStampatore || 0);
       return base;
     });
@@ -2690,7 +2694,7 @@ function ModuloFineGiro({ titoli, prenotato, canali, token, ruolo, spalmatura, u
             <tr>
               <th style={css.th}>Cedola</th><th style={css.th}>EAN</th><th style={css.th}>Titolo</th>
               <th style={css.th}>Autore</th><th style={css.th}>Cod.Ed.</th><th style={css.th}>Editore</th>
-              <th style={css.th}>€</th><th style={css.th}>Obj</th><th style={{ ...css.th, cursor: "pointer" }} onClick={() => { setSortPren(s => s === "desc" ? "asc" : s === "asc" ? null : "desc"); setSortCanale(null); }}>Pren.{sortPren === "desc" ? " ↓" : sortPren === "asc" ? " ↑" : ""}</th><th style={css.th}>%</th>
+              <th style={css.th}>€</th><th style={css.th}>Uscita</th><th style={css.th}>Obj</th><th style={{ ...css.th, cursor: "pointer" }} onClick={() => { setSortPren(s => s === "desc" ? "asc" : s === "asc" ? null : "desc"); setSortCanale(null); }}>Pren.{sortPren === "desc" ? " ↓" : sortPren === "asc" ? " ↑" : ""}</th><th style={css.th}>%</th>
               {canaliTabella.map(c => <th key={c.id} style={{ ...css.th, whiteSpace: "normal", maxWidth: 70, lineHeight: 1.2, cursor: "pointer" }} onClick={() => { setSortCanale(prev => prev?.codice === c.codice ? (prev.dir === "desc" ? { codice: c.codice, dir: "asc" } : null) : { codice: c.codice, dir: "desc" }); setSortPren(null); }}>{getCanaleDisplayName(c)}{sortCanale?.codice === c.codice ? (sortCanale.dir === "desc" ? " ↓" : " ↑") : ""}</th>)}
               {ruolo !== "agente" && <th style={{ ...css.th, color: T.accent }}>Dir.Stamp./Fuori lancio ✎</th>}
             </tr>
@@ -2708,6 +2712,7 @@ function ModuloFineGiro({ titoli, prenotato, canali, token, ruolo, spalmatura, u
                   <td style={{ ...css.td, color: T.textMid, fontSize: "11px" }}>{t.codice_editore}</td>
                   <td style={{ ...css.td, color: T.accent, fontWeight: "600", whiteSpace: "nowrap" }}>{t.editore_nome}</td>
                   <td style={{ ...css.td, whiteSpace: "nowrap" }}>€ {t.prezzo?.toFixed(2)}</td>
+                  <td style={{ ...css.td, color: T.textMid, fontSize: "11px", whiteSpace: "nowrap" }}>{meseUscita(t) || "—"}</td>
                   <td style={css.td}>{t.obiettivo_assegnato?.toLocaleString("it")}</td>
                   <td style={{ ...css.td, color: T.green, fontWeight: "600" }}>{totPren > 0 ? totPren.toLocaleString("it") : "—"}</td>
                   <td style={css.td}><span style={{ color: pct >= 80 ? T.green : pct >= 50 ? T.accent : T.red, fontWeight: "700" }}>{pct}%</span></td>
