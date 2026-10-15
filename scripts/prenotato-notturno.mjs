@@ -34,6 +34,21 @@ async function job(azione, dati = {}) {
   return j;
 }
 
+// Blocchi piccoli: i giri grandi (es. Giro 5, ~155.000 righe clienti) andavano in statement timeout con 2000
+const BLOCCO = 500;
+
+// Un salvataggio andato in timeout viene ritentato fino a 3 volte (l'upsert è idempotente)
+async function salvaConRiprova(dati) {
+  for (let tentativo = 1; ; tentativo++) {
+    try { return await job("salva", dati); }
+    catch (e) {
+      const msg = e instanceof Error ? e.message : String(e);
+      if (tentativo >= 3 || !/timeout|50[234]/i.test(msg)) throw e;
+      await new Promise(r => setTimeout(r, 5000 * tentativo));
+    }
+  }
+}
+
 function oraItaliana() {
   return Number(new Intl.DateTimeFormat("it-IT", { timeZone: "Europe/Rome", hour: "2-digit", hourCycle: "h23" }).format(new Date()));
 }
@@ -62,8 +77,8 @@ async function aggiorna(target, canaleId) {
         num_ordine_cliente: r.num_ordine_cliente ?? null,
       }));
 
-    for (let i = 0; i < prenotato.length; i += 2000) await job("salva", { tipo, chiave, prenotato: prenotato.slice(i, i + 2000) });
-    for (let i = 0; i < clienti.length; i += 2000) await job("salva", { tipo, chiave, clienti: clienti.slice(i, i + 2000) });
+    for (let i = 0; i < prenotato.length; i += BLOCCO) await salvaConRiprova({ tipo, chiave, prenotato: prenotato.slice(i, i + BLOCCO) });
+    for (let i = 0; i < clienti.length; i += BLOCCO) await salvaConRiprova({ tipo, chiave, clienti: clienti.slice(i, i + BLOCCO) });
 
     const esito = {
       righe_file: righe.length, qta_file: totaleAggregato, qta_abbinata: totaleFound,
