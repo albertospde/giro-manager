@@ -43,7 +43,13 @@ async function leggi(path, token) {
 async function chiamaFunzione(azione, token) {
   const r = await fetch(FN_URL, { method: "POST", headers: headers(token, { "Content-Type": "application/json" }), body: JSON.stringify({ azione }) });
   const body = await r.json().catch(() => null);
-  if (!r.ok) throw new Error(body?.error || body?.message || `Errore ${r.status}`);
+  if (!r.ok) {
+    // 546/504: il runtime ha fermato la funzione (limite di CPU o di tempo) a metà di un file
+    const interrotto = !body?.error && (r.status === 546 || r.status === 504);
+    const err = new Error(body?.error || body?.message || (interrotto ? "Il download di un file è stato interrotto perché troppo pesante." : `Errore ${r.status}`));
+    err.interrotto = interrotto;
+    throw err;
+  }
   return body;
 }
 
@@ -68,7 +74,7 @@ export default function ModuloSftp({ token }) {
       ]);
       if (!cfg?.length) throw new Error("Pagina riservata agli amministratori PDE.");
       const c = cfg[0];
-      setForm((prev) => prev || { host: c.host, porta: c.porta, utente: c.utente, cartella_remota: c.cartella_remota, giorni_indietro: c.giorni_indietro, automatico: c.automatico });
+      setForm((prev) => prev || { host: c.host, porta: c.porta, utente: c.utente, cartella_remota: c.cartella_remota, giorni_indietro: c.giorni_indietro, automatico: c.automatico, filtro_nome: c.filtro_nome ?? "" });
       setPasswordSalvata(!!c.password_secret_id);
       setImpronta(c.impronta_server);
       setFile(f);
@@ -90,7 +96,7 @@ export default function ModuloSftp({ token }) {
         method: "POST", headers: headers(token, { "Content-Type": "application/json" }),
         body: JSON.stringify({
           p_host: form.host, p_porta: Number(form.porta) || 22, p_utente: form.utente, p_password: password || null,
-          p_cartella_remota: form.cartella_remota, p_giorni_indietro: Number(form.giorni_indietro) || 7, p_automatico: form.automatico,
+          p_cartella_remota: form.cartella_remota, p_giorni_indietro: Number(form.giorni_indietro) || 7, p_automatico: form.automatico, p_filtro_nome: form.filtro_nome,
         }),
       });
       if (!r.ok) { const b = await r.json().catch(() => null); throw new Error(b?.message || `Errore ${r.status}`); }
@@ -116,19 +122,30 @@ export default function ModuloSftp({ token }) {
     setBusy(null);
   };
 
+  // La funzione scarica un file per chiamata: si richiama finché ne restano.
+  // Un'interruzione (file troppo pesante) si riprova: dopo 2 la funzione salta quel file da sola.
   const scarica = async () => {
     setBusy("scarica"); setEsito(null);
-    try {
-      const r = await chiamaFunzione("scarica", token);
-      setEsito({
-        ok: true,
-        testo: r.scaricati.length
-          ? `Scaricati ${r.scaricati.length} file: ${r.scaricati.map((s) => s.nome).join(", ")}${r.rimandati ? ` (altri ${r.rimandati} al prossimo giro)` : ""}`
-          : "Nessun file nuovo da scaricare.",
-      });
-    } catch (err) {
-      setEsito({ ok: false, testo: err.message });
+    const fatti = [];
+    let saltati = [], interruzioni = 0, errore = null;
+    for (let giro = 0; giro < 60; giro++) {
+      try {
+        const r = await chiamaFunzione("scarica", token);
+        fatti.push(...r.scaricati.map((s) => s.nome));
+        saltati = r.saltati || [];
+        interruzioni = 0;
+        if (!r.scaricati.length || !r.rimanenti) break;
+        setEsito({ ok: true, testo: `Scaricati ${fatti.length}, ne restano ${r.rimanenti}…` });
+      } catch (err) {
+        if (err.interrotto && ++interruzioni <= 2) continue;
+        errore = err.message;
+        break;
+      }
     }
+    const nota = saltati.length ? ` Saltati perché troppo pesanti: ${saltati.join(", ")}.` : "";
+    setEsito(errore
+      ? { ok: false, testo: fatti.length ? `Scaricati ${fatti.length} file, poi: ${errore}` : errore }
+      : { ok: true, testo: fatti.length ? `Scaricati ${fatti.length} file: ${fatti.join(", ")}.${nota}` : `Nessun file nuovo da scaricare.${nota}` });
     await carica();
     setBusy(null);
   };
@@ -170,6 +187,7 @@ export default function ModuloSftp({ token }) {
           </label>
           <label style={css.label}>Cartella sul server<input style={css.input} value={form.cartella_remota} onChange={set("cartella_remota")} /></label>
           <label style={css.label}>Considera file degli ultimi (giorni)<input style={css.input} type="number" min="1" value={form.giorni_indietro} onChange={set("giorni_indietro")} /></label>
+          <label style={css.label}>Scarica solo i file che iniziano con<input style={css.input} value={form.filtro_nome} onChange={set("filtro_nome")} placeholder="es. PPSV (vuoto = tutti)" /></label>
         </div>
         <label style={{ display: "flex", alignItems: "center", gap: 8, color: T.text, fontSize: 12, marginTop: 14 }}>
           <input type="checkbox" checked={form.automatico} onChange={set("automatico")} />
@@ -197,7 +215,7 @@ export default function ModuloSftp({ token }) {
             <table style={{ width: "100%", borderCollapse: "collapse" }}>
               <thead><tr><th style={css.th}>Nome</th><th style={{ ...css.th, textAlign: "right" }}>Dimensione</th><th style={css.th}>Modificato</th></tr></thead>
               <tbody>{elencoRemoto.file.map((f) => (
-                <tr key={f.nome}><td style={css.td}>{f.nome}</td><td style={{ ...css.td, textAlign: "right" }}>{fmtDim(f.dimensione)}</td><td style={css.td}>{fmtData(f.modificato)}</td></tr>
+                <tr key={f.nome} style={{ opacity: f.filtro ? 1 : 0.45 }}><td style={css.td}>{f.nome}{f.filtro ? "" : " · escluso dal filtro"}</td><td style={{ ...css.td, textAlign: "right" }}>{fmtDim(f.dimensione)}</td><td style={css.td}>{fmtData(f.modificato)}</td></tr>
               ))}</tbody>
             </table>
           </div>
