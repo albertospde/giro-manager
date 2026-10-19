@@ -10,6 +10,7 @@ import ModuloEditoriNewEntry from "./ModuloEditoriNewEntry.jsx";
 import ModuloTerne from "./ModuloTerne.jsx";
 import ModuloPubblicaRpn from "./ModuloPubblicaRpn.jsx";
 import ModuloRankingEditori from "./ModuloRankingEditori.jsx";
+import ModuloSftp from "./ModuloSftp.jsx";
 import { fetchPrenotatoRpn, fetchPrenotatoRpnCedola, parseEaggrega, importAggregato } from "./rpnPrenotatoSync.js";
 import { tema, cv, impostaTema, temaAttivo } from "./tema.js";
 
@@ -5162,6 +5163,7 @@ const MODULES_IMPORT = [
   { id: "rankingeditori", label: "Ranking Editori", icon: "🏷" },
   { id: "newentry", label: "Nuovi editori", icon: "🆕" },
   { id: "terne", label: "Aggiorna Terne", icon: "👥" },
+  { id: "sftp", label: "SFTP Messaggerie", icon: "🔐" },
 ];
 
 const style = document.createElement('style');
@@ -5415,6 +5417,7 @@ export default function App() {
           {activeModule === "terne" && <ModuloTerne token={session.token} />}
           {activeModule === "pubblicarpn" && <ModuloPubblicaRpn token={session.token} titoli={titoli} />}
           {activeModule === "rankingeditori" && <ModuloRankingEditori token={session.token} titoli={titoli} onDataChange={refreshDati} />}
+          {activeModule === "sftp" && <ModuloSftp token={session.token} />}
         </div>
       </div>
     </div>
