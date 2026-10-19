@@ -63,7 +63,7 @@ export default function ModuloSftp({ token }) {
     try {
       const [cfg, f, e] = await Promise.all([
         leggi("sftp_config?id=eq.1&select=*", token),
-        leggi("sftp_file?select=*&order=scaricato_il.desc&limit=50", token),
+        leggi("sftp_file?select=*&cancellato_il=is.null&order=scaricato_il.desc&limit=50", token),
         leggi("sftp_esecuzioni?select=*&order=quando.desc&limit=20", token),
       ]);
       if (!cfg?.length) throw new Error("Pagina riservata agli amministratori PDE.");
