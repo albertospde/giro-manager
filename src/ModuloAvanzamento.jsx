@@ -23,6 +23,16 @@ const css = {
   td: { padding: "8px 12px", borderBottom: `1px solid ${T.border}22`, verticalAlign: "middle" },
 };
 
+// Stessi gruppi di canali del Fine Giro (MACROGRUPPI in GiroManager.jsx): tenerli allineati
+const MACROGRUPPI = [
+  { id: "RETE", label: "Rete", canali: ["LIBRACCIO", "LIB_RELIGIOSE", "LIB_COOP", "INDIPENDENTI_ALTRE_CATENE"] },
+  { id: "CATENE", label: "Catene Centralizzate", canali: ["FELTRINELLI", "MONDADORI", "UBIK", "GIUNTI"] },
+  { id: "GROSSISTI", label: "Grossisti", canali: ["FASTBOOK", "CENTROLIBRI", "GROSSISTI", "AURORA"] },
+  { id: "ONLINE", label: "Online", canali: ["AMAZON", "IBS", "ALTRI_ONLINE"] },
+];
+const CANALE_DISPLAY_NAMES = { AURORA: "Diretti da Tipografia" };
+const nomeCanale = (c) => CANALE_DISPLAY_NAMES[c.codice] || c.nome;
+
 const MESI_IT = { gennaio:0, febbraio:1, marzo:2, aprile:3, maggio:4, giugno:5, luglio:6, agosto:7, settembre:8, ottobre:9, novembre:10, dicembre:11 };
 const MESI_IT_ABBR = { gen:0, feb:1, mar:2, apr:3, mag:4, giu:5, lug:6, ago:7, set:8, ott:9, nov:10, dic:11 };
 
@@ -144,7 +154,7 @@ function parseCopie(str) {
   return parseInt(s) || 0;
 }
 
-export default function ModuloAvanzamento({ titoli, prenotato, canali, token, ruolo, userAccount }) {
+export default function ModuloAvanzamento({ titoli, prenotato, canali = [], token, ruolo, userAccount, userEmail }) {
   const [novitaDB, setNovitaDB] = useState([]);
   const [loading, setLoading] = useState(true);
   const [uploading, setUploading] = useState(false);
@@ -171,6 +181,16 @@ export default function ModuloAvanzamento({ titoli, prenotato, canali, token, ru
   const [showProiezione, setShowProiezione] = useState(false);
   // Report persistente EAN esclusi dall'ultimo upload catalogo (non presenti in nessun Giro)
   const [nonNeiGiriReport, setNonNeiGiriReport] = useState(null);
+  // Titoli esclusi dai KPI dell'anno (es. uscita slittata al 2027): EAN salvati in novita_esclusioni
+  const [esclusi, setEsclusi] = useState(new Set());
+  // Sezione gruppi di canali: gruppi aperti sul dettaglio canali (chiusi = solo totale gruppo)
+  const [gruppiAperti, setGruppiAperti] = useState(() => {
+    try { return new Set(JSON.parse(localStorage.getItem("avanz_gruppi_aperti") || "[]")); } catch { return new Set(); }
+  });
+  useEffect(() => {
+    try { localStorage.setItem("avanz_gruppi_aperti", JSON.stringify([...gruppiAperti])); } catch { /* storage non disponibile */ }
+  }, [gruppiAperti]);
+  const toggleGruppo = (id) => setGruppiAperti(prev => { const s = new Set(prev); s.has(id) ? s.delete(id) : s.add(id); return s; });
 
   const toggleSort = (key) => {
     if (sortKey === key) setSortDir(d => d === "asc" ? "desc" : "asc");
@@ -189,6 +209,28 @@ export default function ModuloAvanzamento({ titoli, prenotato, canali, token, ru
   }, [token]);
 
   useEffect(() => { loadNovita(); }, [loadNovita]);
+
+  useEffect(() => {
+    if (!token) return;
+    sbFetch("novita_esclusioni?select=ean", token).then(d => { if (Array.isArray(d)) setEsclusi(new Set(d.map(r => r.ean))); }).catch(() => {});
+  }, [token]);
+
+  const toggleEscluso = async (ean) => {
+    const escludi = !esclusi.has(ean);
+    const r = escludi
+      ? await fetch(`${SUPABASE_URL}/rest/v1/novita_esclusioni`, {
+          method: "POST",
+          headers: { "apikey": SUPABASE_KEY, "Authorization": `Bearer ${token}`, "Content-Type": "application/json", "Prefer": "resolution=ignore-duplicates,return=minimal" },
+          body: JSON.stringify([{ ean, escluso_da: userEmail || null }]),
+        })
+      : await fetch(`${SUPABASE_URL}/rest/v1/novita_esclusioni?ean=eq.${encodeURIComponent(ean)}`, {
+          method: "DELETE",
+          headers: { "apikey": SUPABASE_KEY, "Authorization": `Bearer ${token}`, "Prefer": "return=minimal" },
+        });
+    if (!r.ok) { showToast("Errore salvataggio esclusione", "err"); return; }
+    setEsclusi(prev => { const s = new Set(prev); escludi ? s.add(ean) : s.delete(ean); return s; });
+    showToast(escludi ? "Titolo escluso dai conteggi dell'anno" : "Titolo di nuovo nei conteggi");
+  };
 
   const annoRif = filterAnno || new Date().getFullYear();
   const annoPrev = annoRif - 1;
@@ -368,10 +410,20 @@ export default function ModuloAvanzamento({ titoli, prenotato, canali, token, ru
 
   const novitaArricchite = useMemo(() => {
     const prenByEan = {};
+    const prenCanaleByEan = {};
+    const titoliById = {};
+    titoli.forEach(t => { titoliById[t.id] = t; });
+    const codiceById = {};
+    canali.forEach(c => { codiceById[c.id] = c.codice; });
     prenotato.forEach(p => {
-      const t = titoli.find(t => t.id === p.titolo_id);
+      const t = titoliById[p.titolo_id];
       if (!t || !t.ean) return;
       prenByEan[t.ean] = (prenByEan[t.ean] || 0) + p.quantita;
+      const cod = codiceById[p.canale_id];
+      if (cod) {
+        const m = prenCanaleByEan[t.ean] || (prenCanaleByEan[t.ean] = {});
+        m[cod] = (m[cod] || 0) + (p.quantita || 0);
+      }
     });
     const objByEan = {};
     titoli.forEach(t => {
@@ -396,6 +448,8 @@ export default function ModuloAvanzamento({ titoli, prenotato, canali, token, ru
         nome_cedola: t.n_cedola || "—",
         giro_label: t.giro_label || "",
         prenotato_giri: prenByEan[t.ean] || 0,
+        pren_canale: prenCanaleByEan[t.ean] || {},
+        escluso: esclusi.has(t.ean),
         obiettivo_giri: objByEan[t.ean] || 0,
         num_lancio: nov?.num_lancio || null,
         copie_lanciate: nov?.copie_lanciate || 0,
@@ -409,7 +463,7 @@ export default function ModuloAvanzamento({ titoli, prenotato, canali, token, ru
         codice_editore: t.codice_editore || null,
       };
     });
-  }, [novitaDB, prenotato, titoli]);
+  }, [novitaDB, prenotato, titoli, canali, esclusi]);
 
   const anniDisponibili = useMemo(() => {
     const s = new Set();
@@ -567,9 +621,12 @@ export default function ModuloAvanzamento({ titoli, prenotato, canali, token, ru
   const kpi = useMemo(() => {
     // KPI calcolati sui titoli dell'anno proiezione selezionato (filterAnno)
     // La tabella sotto mostra tutti, ma i KPI riflettono solo l'anno corrente/selezionato
-    const novitaAnno = filterAnno
+    // I titoli col flag "escluso" (es. slittati all'anno dopo) restano in tabella ma non
+    // contano in nessun KPI né nella proiezione dell'anno
+    const novitaAnno = (filterAnno
       ? novitaFiltrate.filter(n => getAnnoRecord(n) === filterAnno)
-      : novitaFiltrate;
+      : novitaFiltrate).filter(n => !n.escluso);
+    const numEsclusi = novitaFiltrate.filter(n => n.escluso && (!filterAnno || getAnnoRecord(n) === filterAnno)).length;
 
     // FIX: "sbloccato in rifornimento" = titolo senza un numero di lancio formale, in
     // uno stato di vendita diverso da "0 di prossima pubblicazione" (un titolo non ancora
@@ -619,13 +676,29 @@ export default function ModuloAvanzamento({ titoli, prenotato, canali, token, ru
     const proiezione = valoreLancio + valoreSbloccato + pipeline;
     const haFatturatoPrec = totaleAnnoPrev > 0;
     return {
-      totTitoli, nonTrasmessi, valPrenotato, valPrenotatoNetto,
+      totTitoli, numEsclusi, nonTrasmessi, valPrenotato, valPrenotatoNetto,
       numLanciati, valoreLancio, numSbloccati, valoreSbloccato,
       totTrasmessi, pctAvanzamento, pctAvanzamentoNovita, totNovitaGestite,
       copieNonLanciate, valNonLanciato, numNonLanciati: nonLanciati.length,
       ytdCorrente, totaleAnnoPrev, ytdPrev, trend, pipeline, proiezione, haFatturatoPrec, meseCorrente,
     };
   }, [novitaFiltrate, filterAnno, annoCorrentePerMese, annoPrecPerMese]);
+
+  // Sezione gruppi di canali (come nel Fine Giro): per gruppo i canali presenti in anagrafica,
+  // con i totali di colonna sui titoli filtrati non esclusi
+  const gruppiTabella = useMemo(() => {
+    const vis = ruolo === "agente" ? MACROGRUPPI.filter(mg => mg.id === "RETE" || mg.id === "GROSSISTI") : MACROGRUPPI;
+    const inConto = novitaFiltrate.filter(n => !n.escluso);
+    return vis.map(mg => {
+      const canaliG = mg.canali.map(cod => canali.find(c => c.codice === cod)).filter(Boolean);
+      const totCanale = {};
+      canaliG.forEach(c => { totCanale[c.codice] = inConto.reduce((s, n) => s + (n.pren_canale[c.codice] || 0), 0); });
+      const tot = Object.values(totCanale).reduce((s, v) => s + v, 0);
+      return { ...mg, canaliG, totCanale, tot };
+    });
+  }, [novitaFiltrate, canali, ruolo]);
+  const totLanciatoTab = useMemo(() => novitaFiltrate.reduce((s, n) => n.escluso ? s : s + (n.copie_lanciate || 0), 0), [novitaFiltrate]);
+  const tuttiGruppiAperti = gruppiTabella.length > 0 && gruppiTabella.every(g => gruppiAperti.has(g.id));
 
   // ─────────────────────────────────────────────────────────────────
   // UPLOAD CSV — FIX mapping colonne con mese e anno separati
@@ -939,13 +1012,15 @@ export default function ModuloAvanzamento({ titoli, prenotato, canali, token, ru
 
   const exportExcel = () => {
     const XLSX = window.XLSX;
-    const headers = ["CEDOLA","EAN","TITOLO","AUTORE","EDITORE","PREZZO","PRENOTATO TOTALE","N. LANCIO","COPIE LANCIATE","VALORE LANCIO","DATA MESSA IN VENDITA","SV","RE"];
+    const headers = ["ESCLUSO","CEDOLA","EAN","TITOLO","AUTORE","EDITORE","PREZZO","PRENOTATO TOTALE","N. LANCIO","COPIE LANCIATE","VALORE LANCIO","DATA MESSA IN VENDITA","SV","RE",
+      ...gruppiTabella.map(g => `PREN. ${g.label.toUpperCase()}`)];
     const rows = novitaFiltrate.map(n => {
       const isRif = !n.num_lancio && n.stato_vendita && n.stato_vendita !== "0";
       return [
-        n.nome_cedola, n.ean, n.titolo, n.autore, n.editore, n.prezzo,
+        n.escluso ? "SI" : "", n.nome_cedola, n.ean, n.titolo, n.autore, n.editore, n.prezzo,
         n.prenotato_giri, isRif ? "SBL/RIFO" : (n.num_lancio || ""), isRif ? "" : n.copie_lanciate,
-        isRif ? "" : n.valore_lancio, fmtDate(n.data_messa_in_vendita), n.stato_vendita || "", n.risposta_editore || ""
+        isRif ? "" : n.valore_lancio, fmtDate(n.data_messa_in_vendita), n.stato_vendita || "", n.risposta_editore || "",
+        ...gruppiTabella.map(g => g.canaliG.reduce((s, c) => s + (n.pren_canale[c.codice] || 0), 0)),
       ];
     });
     const ws = XLSX.utils.aoa_to_sheet([headers, ...rows]);
@@ -1025,7 +1100,7 @@ export default function ModuloAvanzamento({ titoli, prenotato, canali, token, ru
           </div>
         )}
         <div style={{ display: "flex", gap: 12, flexWrap: "wrap" }}>
-          <KpiCard label={`Titoli novità ${filterAnno || ""}`} value={kpi.totTitoli.toLocaleString("it")} color={T.text} sub={`${kpi.nonTrasmessi} da lanciare/sbloccare`} />
+          <KpiCard label={`Titoli novità ${filterAnno || ""}`} value={kpi.totTitoli.toLocaleString("it")} color={T.text} sub={`${kpi.nonTrasmessi} da lanciare/sbloccare${kpi.numEsclusi > 0 ? ` · ${kpi.numEsclusi} esclusi` : ""}`} />
           <KpiCard label={`Titoli novità lanciati ${filterAnno || ""}`} value={kpi.numLanciati.toLocaleString("it")} color={T.text} sub={`${kpi.nonTrasmessi} da lanciare`} />
           <KpiCard label="Valore prenotato" value={`€ ${kpi.valPrenotato.toLocaleString("it", { maximumFractionDigits: 0 })}`} color={T.green} />
           <KpiCard label="Valore prenotato (escl. sbloccati)" value={`€ ${kpi.valPrenotatoNetto.toLocaleString("it", { maximumFractionDigits: 0 })}`} color={T.green} />
@@ -1161,6 +1236,7 @@ export default function ModuloAvanzamento({ titoli, prenotato, canali, token, ru
         <table style={css.table}>
           <thead>
             <tr>
+              <th style={{ ...css.th, textAlign: "center", padding: "8px 6px" }} title="Escludi il titolo dai conteggi dell'anno (es. uscita slittata all'anno dopo)">Escl.</th>
               <th style={{ ...css.th, cursor: "pointer" }} onClick={() => toggleSort("cedola")}>Cedola{sortIcon("cedola")}</th>
               <th style={css.th}>EAN</th>
               <th style={css.th}>Titolo</th>
@@ -1174,6 +1250,35 @@ export default function ModuloAvanzamento({ titoli, prenotato, canali, token, ru
               <th style={{ ...css.th, cursor: "pointer" }} onClick={() => toggleSort("data_vendita")}>Data Vendita{sortIcon("data_vendita")}</th>
               <th style={{ ...css.th, cursor: "pointer" }} onClick={() => toggleSort("stato_vendita")}>SV{sortIcon("stato_vendita")}</th>
               <th style={{ ...css.th, cursor: "pointer" }} onClick={() => toggleSort("risposta_editore")}>RE{sortIcon("risposta_editore")}</th>
+              {/* Sezione gruppi di canali: clic sul gruppo per aprire/chiudere il dettaglio canali */}
+              {gruppiTabella.map((g, gi) => {
+                const aperto = gruppiAperti.has(g.id);
+                const bordo = { borderLeft: `2px solid ${T.borderHi}` };
+                const thTot = (
+                  <th key={`${g.id}-tot`} style={{ ...css.th, ...(aperto ? {} : bordo), textAlign: "right", cursor: "pointer", color: T.accent, fontWeight: "700", lineHeight: 1.25 }}
+                    onClick={() => toggleGruppo(g.id)} title={aperto ? "Chiudi il dettaglio canali" : "Apri il dettaglio canali"}>
+                    {gi === 0 && <span style={{ color: T.textDim, cursor: "pointer", marginRight: 6 }} title={tuttiGruppiAperti ? "Chiudi tutti i gruppi" : "Apri tutti i gruppi"}
+                      onClick={e => { e.stopPropagation(); setGruppiAperti(tuttiGruppiAperti ? new Set() : new Set(gruppiTabella.map(x => x.id))); }}>{tuttiGruppiAperti ? "⇤" : "⇥"}</span>}
+                    {g.label} {aperto ? "◂" : "▸"}
+                    <div style={{ color: T.green, fontSize: "10px", fontWeight: "600", letterSpacing: 0, textTransform: "none" }}>{g.tot.toLocaleString("it")}</div>
+                  </th>
+                );
+                if (!aperto) return thTot;
+                return [
+                  ...g.canaliG.map((c, ci) => (
+                    <th key={c.id} style={{ ...css.th, ...(ci === 0 ? bordo : {}), textAlign: "right", whiteSpace: "normal", maxWidth: 80, lineHeight: 1.25 }}>
+                      <div style={{ color: T.textDim, fontSize: "9px" }}>{g.label}</div>
+                      {nomeCanale(c)}
+                      <div style={{ color: T.green, fontSize: "10px", fontWeight: "600", letterSpacing: 0, textTransform: "none" }}>{(g.totCanale[c.codice] || 0).toLocaleString("it")}</div>
+                    </th>
+                  )),
+                  thTot,
+                ];
+              })}
+              <th style={{ ...css.th, borderLeft: `2px solid ${T.borderHi}`, textAlign: "right", color: T.purple, fontWeight: "700", lineHeight: 1.25 }} title="Copie lanciate (totale del titolo, non diviso per canale)">
+                Lanciato
+                <div style={{ fontSize: "10px", fontWeight: "600", letterSpacing: 0, textTransform: "none" }}>{totLanciatoTab.toLocaleString("it")}</div>
+              </th>
             </tr>
           </thead>
           <tbody>
@@ -1184,10 +1289,15 @@ export default function ModuloAvanzamento({ titoli, prenotato, canali, token, ru
               // "0 di prossima pubblicazione" (a prescindere dalle copie)
               const isRif = !n.num_lancio && n.stato_vendita && n.stato_vendita !== "0";
               return (
-                <tr key={n.ean || i} style={{ background: isRif ? cv("#1a1f38", "#e9edf6") : (i % 2 === 0 ? "transparent" : T.surface + "66"), opacity: isRif ? 0.6 : 1 }}>
+                <tr key={n.ean || i} style={{ background: isRif ? cv("#1a1f38", "#e9edf6") : (i % 2 === 0 ? "transparent" : T.surface + "66"), opacity: n.escluso ? 0.45 : isRif ? 0.6 : 1 }}>
+                  <td style={{ ...css.td, textAlign: "center", padding: "8px 6px" }}>
+                    <input type="checkbox" checked={n.escluso} disabled={ruolo === "agente"} onChange={() => toggleEscluso(n.ean)}
+                      title={n.escluso ? "Escluso dai conteggi dell'anno: togli la spunta per riconteggiarlo" : "Escludi dai conteggi dell'anno"}
+                      style={{ cursor: ruolo === "agente" ? "default" : "pointer", accentColor: T.red }} />
+                  </td>
                   <td style={{ ...css.td, color: T.textMid, fontSize: "10px", whiteSpace: "nowrap" }}>{n.nome_cedola}</td>
                   <td style={{ ...css.td, fontFamily: "monospace", fontSize: "11px", color: T.textMid }}>{n.ean}</td>
-                  <td style={{ ...css.td, maxWidth: 220 }}><div style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", fontWeight: "600" }}>{n.titolo}</div></td>
+                  <td style={{ ...css.td, maxWidth: 220 }}><div style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", fontWeight: "600", textDecoration: n.escluso ? "line-through" : "none" }}>{n.titolo}</div></td>
                   <td style={{ ...css.td, color: T.textMid }}>{n.autore}</td>
                   <td style={{ ...css.td, color: T.accent, fontWeight: "600", whiteSpace: "nowrap" }}>{n.editore}</td>
                   <td style={{ ...css.td, whiteSpace: "nowrap" }}>€ {(n.prezzo || 0).toFixed(2)}</td>
@@ -1222,6 +1332,32 @@ export default function ModuloAvanzamento({ titoli, prenotato, canali, token, ru
                   <td style={{ ...css.td, whiteSpace: "nowrap" }}>{fmtDate(n.data_messa_in_vendita)}</td>
                   <td style={{ ...css.td, color: T.textMid, fontSize: "11px" }}>{n.stato_vendita || "—"}</td>
                   <td style={{ ...css.td, color: T.textMid, fontSize: "11px" }}>{n.risposta_editore || "—"}</td>
+                  {gruppiTabella.map(g => {
+                    const aperto = gruppiAperti.has(g.id);
+                    const bordo = { borderLeft: `2px solid ${T.borderHi}` };
+                    const totG = g.canaliG.reduce((s, c) => s + (n.pren_canale[c.codice] || 0), 0);
+                    const tdTot = (
+                      <td key={`${g.id}-tot`} style={{ ...css.td, ...(aperto ? {} : bordo), textAlign: "right", whiteSpace: "nowrap", fontWeight: "700", color: totG > 0 ? T.green : T.textDim }}>
+                        {totG > 0 ? totG.toLocaleString("it") : "—"}
+                      </td>
+                    );
+                    if (!aperto) return tdTot;
+                    return [
+                      ...g.canaliG.map((c, ci) => {
+                        const q = n.pren_canale[c.codice] || 0;
+                        return <td key={c.id} style={{ ...css.td, ...(ci === 0 ? bordo : {}), textAlign: "right", whiteSpace: "nowrap", color: q > 0 ? T.text : T.textDim }}>{q > 0 ? q.toLocaleString("it") : "—"}</td>;
+                      }),
+                      tdTot,
+                    ];
+                  })}
+                  <td style={{ ...css.td, borderLeft: `2px solid ${T.borderHi}`, textAlign: "right", whiteSpace: "nowrap" }}>
+                    {isRif ? <span style={{ color: T.textDim }}>—</span> : (
+                      <>
+                        <span style={{ color: n.copie_lanciate > 0 ? T.purple : T.textDim, fontWeight: "700" }}>{n.copie_lanciate > 0 ? n.copie_lanciate.toLocaleString("it") : "—"}</span>
+                        {n.copie_lanciate > 0 && n.prenotato_giri > 0 && <span style={{ color: T.textDim, fontSize: "10px" }}> / {n.prenotato_giri.toLocaleString("it")}</span>}
+                      </>
+                    )}
+                  </td>
                 </tr>
               );
             })}
