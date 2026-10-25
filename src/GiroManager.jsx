@@ -2342,7 +2342,13 @@ function ModuloFineGiro({ titoli, prenotato, canali, token, ruolo, spalmatura, u
 
   const clientiFiltrati = useMemo(() => { if (!clienteSearch) return clientiList; const q = clienteSearch.toLowerCase(); return clientiList.filter(c => c.nome.toLowerCase().includes(q) || c.cod.includes(q)); }, [clientiList, clienteSearch]);
 
+  const [exportStato, setExportStato] = useState(null);
   const exportExcel = async () => {
+    if (exportStato) return;
+    setExportStato("Preparo il file…");
+    try { await exportExcelInner(); } finally { setExportStato(null); }
+  };
+  const exportExcelInner = async () => {
     const XLSX = window.XLSX;
     const colCanali = canaliTabella;
     const dirStampHeaders = ruolo !== "agente" ? ["Dir.Stamp./Fuori lancio"] : [];
@@ -2378,30 +2384,56 @@ function ModuloFineGiro({ titoli, prenotato, canali, token, ruolo, spalmatura, u
     const titoloIds = righeFiltrate.map(({ titolo: t }) => t.id);
     let dettaglioRows = [["LIBRERIA", "COD. CLIENTE", "EAN", "TITOLO", "CANALE", "QUANTITÀ"]];
     if (titoloIds.length > 0) {
-      try {
-        const res = await fetch(
-          `${SUPABASE_URL}/rest/v1/prenotato_clienti?titolo_id=in.(${titoloIds.join(",")})&select=codice_cliente,nome_cliente,titolo_id,canale_id,quantita&limit=100000`,
-          { headers: { "apikey": SUPABASE_KEY, "Authorization": `Bearer ${token}` } }
-        );
-        const data = await res.json();
-        if (Array.isArray(data)) {
-          const titoloById = {};
-          righeFiltrate.forEach(({ titolo: t }) => { titoloById[t.id] = t; });
-          const canaleById = {};
-          canali.forEach(c => { canaleById[c.id] = getCanaleDisplayName(c); });
-          const righe = data
-            .filter(r => r.quantita > 0)
-            .map(r => {
-              const t = titoloById[r.titolo_id];
-              return [r.nome_cliente || "—", r.codice_cliente, t?.ean || "", t?.titolo || "", canaleById[r.canale_id] || "—", r.quantita];
-            })
-            .sort((a, b) => a[0].localeCompare(b[0], "it", { sensitivity: "base" }));
-          const totQta = righe.reduce((s, r) => s + r[5], 0);
-          dettaglioRows = dettaglioRows.concat(righe);
-          dettaglioRows.push(["", "", "", "", "TOTALE", totQta]);
+      // Il dettaglio può superare le 100.000 righe sui giri aperti (es. Giro 5 2026):
+      // Supabase restituisce max 1000 righe per richiesta e un URL con centinaia di id
+      // viene rifiutato. Quindi: blocchi da 25 titoli, paginazione a 1000, 6 richieste in parallelo.
+      const PAGE = 1000, CHUNK = 25, PARALLEL = 6;
+      const chunks = [];
+      for (let i = 0; i < titoloIds.length; i += CHUNK) chunks.push(titoloIds.slice(i, i + CHUNK));
+      const fetchChunk = async ids => {
+        const out = [];
+        for (let offset = 0; ; offset += PAGE) {
+          const url = `${SUPABASE_URL}/rest/v1/prenotato_clienti?titolo_id=in.(${ids.join(",")})&quantita=gt.0&select=codice_cliente,nome_cliente,titolo_id,canale_id,quantita&order=titolo_id,id&limit=${PAGE}&offset=${offset}`;
+          let data = null;
+          for (let tent = 0; tent < 3 && !Array.isArray(data); tent++) {
+            const res = await fetch(url, { headers: { "apikey": SUPABASE_KEY, "Authorization": `Bearer ${token}` } });
+            data = res.ok ? await res.json() : null;
+          }
+          if (!Array.isArray(data)) throw new Error("lettura dettaglio prenotato non riuscita");
+          out.push(...data);
+          if (data.length < PAGE) return out;
         }
+      };
+      try {
+        setExportStato("Scarico dettaglio prenotato…");
+        const data = [];
+        let fatti = 0;
+        const coda = [...chunks];
+        await Promise.all(Array.from({ length: Math.min(PARALLEL, coda.length) }, async () => {
+          while (coda.length) {
+            const ids = coda.shift();
+            data.push(...await fetchChunk(ids));
+            fatti++;
+            setExportStato(`Scarico dettaglio prenotato… ${Math.round(fatti / chunks.length * 100)}%`);
+          }
+        }));
+        const titoloById = {};
+        righeFiltrate.forEach(({ titolo: t }) => { titoloById[t.id] = t; });
+        const canaleById = {};
+        canali.forEach(c => { canaleById[c.id] = getCanaleDisplayName(c); });
+        const righe = data
+          .map(r => {
+            const t = titoloById[r.titolo_id];
+            return [r.nome_cliente || "—", r.codice_cliente, t?.ean || "", t?.titolo || "", canaleById[r.canale_id] || "—", r.quantita];
+          })
+          .sort((a, b) => a[0].localeCompare(b[0], "it", { sensitivity: "base" }));
+        const totQta = righe.reduce((s, r) => s + r[5], 0);
+        dettaglioRows = dettaglioRows.concat(righe);
+        dettaglioRows.push(["", "", "", "", "TOTALE", totQta]);
       } catch (e) {
         console.error("Errore fetch dettaglio prenotato:", e);
+        alert("Non sono riuscito a scaricare il dettaglio per punto vendita: il file esce senza il foglio DETTAGLIO PRENOTATO. Riprova tra poco.");
+        dettaglioRows.push(["Dettaglio non disponibile: errore di lettura dal database", "", "", "", "", ""]);
       }
     }
     const wsDettaglio = XLSX.utils.aoa_to_sheet(dettaglioRows);
@@ -2559,7 +2591,7 @@ function ModuloFineGiro({ titoli, prenotato, canali, token, ruolo, spalmatura, u
         >
           {rpnSync.status === "loading" ? "Scarico da RPN..." : "📡 Aggiorna da RPN"}
         </button>
-        <button style={css.btn("accent")} onClick={exportExcel}>↓ Export Excel</button>
+        <button style={{ ...css.btn("accent"), opacity: exportStato ? 0.6 : 1 }} disabled={!!exportStato} onClick={exportExcel}>{exportStato || "↓ Export Excel"}</button>
       </div>
 
       {/* Errore sync RPN */}
