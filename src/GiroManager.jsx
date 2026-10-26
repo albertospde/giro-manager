@@ -2571,6 +2571,11 @@ function ModuloFineGiro({ titoli, prenotato, canali, token, ruolo, spalmatura, u
                   <span>Clienti senza agente</span><span>{fmtIt(tipAgenti.dati.senza_agente.quantita)}</span>
                 </div>
               )}
+              {tipAgenti.dati.editore_nuovo && (
+                <div style={{ fontSize: "10px", color: T.textMid, marginTop: 6 }}>
+                  Editore nuovo entrante, senza terne: per ogni libreria l'agente che la segue sugli altri editori, tra quelli abilitati a questo editore.
+                </div>
+              )}
               {tipAgenti.dati.clienti_condivisi > 0 && (
                 <div style={{ fontSize: "10px", color: T.textMid, marginTop: 6 }}>
                   {tipAgenti.dati.clienti_condivisi} {tipAgenti.dati.clienti_condivisi === 1 ? "cliente è seguito" : "clienti sono seguiti"} da più agenti: le copie compaiono sotto ciascuno.
