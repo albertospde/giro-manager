@@ -2160,7 +2160,39 @@ function ModuloFineGiro({ titoli, prenotato, canali, token, ruolo, spalmatura, u
   const [auroraEdit, setAuroraEdit] = useState({});
   const [auroraEditing, setAuroraEditing] = useState(null);
 
-  const resetFiltri = () => { setGiroLabelSel([]); setExtraSel([]); setCedolaSel([]); setFilterEditori([]); setFilterAccount([]); setFilterPromozione([]); setFilterCanale([]); setSearch(""); setClienteSel(null); setSoloPrenotati(false); };
+  // Passando il mouse su una quantità di canale: copie per agente (clienti → terne), solo agenti veri.
+  // Caricato dopo una breve sosta sulla cella e tenuto in memoria per la sessione.
+  const [tipAgenti, setTipAgenti] = useState(null); // { x, y, titolo, canale, chiave, dati?, errore? }
+  const cacheAgenti = useRef(new Map());
+  const attesaAgenti = useRef(null);
+  const apriTipAgenti = (e, t, c) => {
+    if (ruolo === "agente") return;
+    const { clientX: x, clientY: y } = e;
+    const chiave = `${t.id}|${c.id}|${clienteSel || ""}`;
+    clearTimeout(attesaAgenti.current);
+    attesaAgenti.current = setTimeout(async () => {
+      const base = { x, y, titolo: t.titolo, canale: getCanaleDisplayName(c), chiave };
+      if (cacheAgenti.current.has(chiave)) { setTipAgenti({ ...base, dati: cacheAgenti.current.get(chiave) }); return; }
+      setTipAgenti(base);
+      try {
+        const r = await fetch(`${SUPABASE_URL}/rest/v1/rpc/fine_giro_agenti_cella`, {
+          method: "POST",
+          headers: { "apikey": SUPABASE_KEY, "Authorization": `Bearer ${token}`, "Content-Type": "application/json" },
+          body: JSON.stringify({ p_titolo: t.id, p_canale: c.id, p_cliente: clienteSel || null }),
+        });
+        const dati = await r.json();
+        if (!r.ok) throw new Error(dati?.message || `Errore ${r.status}`);
+        cacheAgenti.current.set(chiave, dati);
+        setTipAgenti(prev => (prev?.chiave === chiave ? { ...prev, dati } : prev));
+      } catch (err) {
+        setTipAgenti(prev => (prev?.chiave === chiave ? { ...prev, errore: err.message } : prev));
+      }
+    }, 250);
+  };
+  const muoviTipAgenti = (e) => setTipAgenti(prev => (prev ? { ...prev, x: e.clientX, y: e.clientY } : prev));
+  const chiudiTipAgenti = () => { clearTimeout(attesaAgenti.current); setTipAgenti(null); };
+
+  const resetFiltri =() => { setGiroLabelSel([]); setExtraSel([]); setCedolaSel([]); setFilterEditori([]); setFilterAccount([]); setFilterPromozione([]); setFilterCanale([]); setSearch(""); setClienteSel(null); setSoloPrenotati(false); };
 
   useEffect(() => {
     if (!token) return;
@@ -2511,8 +2543,42 @@ function ModuloFineGiro({ titoli, prenotato, canali, token, ruolo, spalmatura, u
     );
   }
 
+  const fmtIt = (n) => (n || 0).toLocaleString("it");
   return (
     <div style={{ display: "flex", flexDirection: "column", height: "100%", overflow: "hidden" }}>
+      {tipAgenti && (
+        <div style={{ position: "fixed", left: Math.min(tipAgenti.x + 14, window.innerWidth - 300), top: Math.min(tipAgenti.y + 14, window.innerHeight - 320), zIndex: 600, pointerEvents: "none",
+          background: cv("#0f1530", "#ffffff"), border: `1px solid ${T.borderHi}`, borderRadius: 6, padding: "10px 12px", boxShadow: "0 8px 28px #0007", width: 280 }}>
+          <div style={{ color: T.text, fontSize: "12px", fontWeight: 700 }}>{tipAgenti.canale}</div>
+          <div style={{ color: T.textMid, fontSize: "11px", marginBottom: 8, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
+            {tipAgenti.titolo}{clienteSel ? ` · cliente ${clienteSel}` : ""}
+          </div>
+          {tipAgenti.errore ? <div style={{ color: T.red, fontSize: "11px" }}>{tipAgenti.errore}</div>
+            : !tipAgenti.dati ? <div style={{ color: T.textMid, fontSize: "11px" }}>Caricamento…</div>
+            : <>
+              {tipAgenti.dati.agenti.length === 0 && <div style={{ color: T.textMid, fontSize: "11px" }}>Nessun agente sui clienti di questa cella.</div>}
+              {tipAgenti.dati.agenti.slice(0, 14).map(a => (
+                <div key={a.codice} style={{ display: "flex", justifyContent: "space-between", gap: 10, fontSize: "12px", lineHeight: 1.7 }}>
+                  <span style={{ color: T.text, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{a.nome || a.codice}</span>
+                  <span style={{ color: T.text, fontWeight: 700, fontVariantNumeric: "tabular-nums", whiteSpace: "nowrap" }}>
+                    {fmtIt(a.quantita)} <span style={{ color: T.textMid, fontWeight: 400, fontSize: "10px" }}>· {a.clienti} {a.clienti === 1 ? "cliente" : "clienti"}</span>
+                  </span>
+                </div>
+              ))}
+              {tipAgenti.dati.agenti.length > 14 && <div style={{ color: T.textMid, fontSize: "11px" }}>… e altri {tipAgenti.dati.agenti.length - 14} agenti</div>}
+              {tipAgenti.dati.senza_agente?.quantita > 0 && (
+                <div style={{ display: "flex", justifyContent: "space-between", fontSize: "11px", color: T.textMid, borderTop: `1px solid ${T.border}`, marginTop: 6, paddingTop: 6 }}>
+                  <span>Clienti senza agente</span><span>{fmtIt(tipAgenti.dati.senza_agente.quantita)}</span>
+                </div>
+              )}
+              {tipAgenti.dati.clienti_condivisi > 0 && (
+                <div style={{ fontSize: "10px", color: T.textMid, marginTop: 6 }}>
+                  {tipAgenti.dati.clienti_condivisi} {tipAgenti.dati.clienti_condivisi === 1 ? "cliente è seguito" : "clienti sono seguiti"} da più agenti: le copie compaiono sotto ciascuno.
+                </div>
+              )}
+            </>}
+        </div>
+      )}
       {/* Overlay bloccante durante lo scarico/import da RPN: impedisce di perdere di vista
           l'operazione in corso e ricorda di non chiudere/cambiare pagina. */}
       {(rpnSync.status === "loading" || rpnSync.status === "importing") && (
@@ -2752,8 +2818,12 @@ function ModuloFineGiro({ titoli, prenotato, canali, token, ruolo, spalmatura, u
                   {canaliTabella.map(c => {
                     const qta = byCanale[c.codice] || 0;
                     const obj = byCanaleObj?.[c.codice] || 0;
+                    const conAgenti = qta > 0 && ruolo !== "agente";
                     return (
-                      <td key={c.id} style={{ ...css.td, whiteSpace: "nowrap", minWidth: 60 }}>
+                      <td key={c.id} style={{ ...css.td, whiteSpace: "nowrap", minWidth: 60, cursor: conAgenti ? "help" : undefined }}
+                        onMouseEnter={conAgenti ? e => apriTipAgenti(e, t, c) : undefined}
+                        onMouseMove={conAgenti ? muoviTipAgenti : undefined}
+                        onMouseLeave={conAgenti ? chiudiTipAgenti : undefined}>
                         {qta > 0 || obj > 0 ? (
                           <div>
                             <span style={{ color: qta > 0 ? T.text : T.textDim, fontWeight: "600", fontSize: "12px" }}>{qta > 0 ? qta.toLocaleString("it") : "0"}</span>
