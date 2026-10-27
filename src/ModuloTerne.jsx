@@ -87,6 +87,102 @@ function leggiTerne(arrayBuffer) {
   return { righe, scartate, distinte, perAgente };
 }
 
+// ─── Terne degli editori nuovi entranti non ancora su RPN (es. NNE, Sinnos) ──────────────────
+// Elenco separato (terne_editori_nuovi): il riallineamento da RPN non lo tocca. Stesso formato file
+// dell'export RPN; un caricamento sostituisce le terne degli editori presenti nel file e scarta le
+// righe di editori che non sono nella sezione Nuovi editori (quelle vanno caricate su RPN).
+const CHUNK_NUOVI = 5000;
+function TerneEditoriNuovi({ token }) {
+  const [stato, setStato] = useState(null);
+  const [errore, setErrore] = useState(null);
+  const [analisi, setAnalisi] = useState(null); // { nome, perEditore: {cod: n}, righe, scartate, scartateEditori }
+  const [busy, setBusy] = useState(false);
+  const [esito, setEsito] = useState(null);
+
+  const carica = useCallback(() => {
+    rpc("terne_nuovi_stato", token).then((s) => { setStato(s || []); setErrore(null); }).catch((e) => setErrore(e.message));
+  }, [token]);
+  useEffect(() => { carica(); }, [carica]);
+
+  const nomi = Object.fromEntries((stato || []).map((e) => [e.codice_editore, e.nome_editore]));
+
+  const scegli = async (e) => {
+    const f = e.target.files[0];
+    e.target.value = "";
+    setAnalisi(null); setEsito(null); setErrore(null);
+    if (!f) return;
+    try {
+      const { righe } = leggiTerne(await f.arrayBuffer());
+      const ammessi = new Set((stato || []).map((x) => x.codice_editore));
+      const buone = righe.filter(([, ed]) => ammessi.has(ed));
+      const altri = righe.filter(([, ed]) => !ammessi.has(ed));
+      const perEditore = {};
+      buone.forEach(([, ed]) => { perEditore[ed] = (perEditore[ed] || 0) + 1; });
+      if (!buone.length) throw new Error("Nel file non ci sono terne di editori nuovi entranti (sezione Nuovi editori).");
+      setAnalisi({ nome: f.name, righe: buone, perEditore, scartate: altri.length, scartateEditori: [...new Set(altri.map(([, ed]) => ed))].slice(0, 8) });
+    } catch (err) { setErrore(err.message); }
+  };
+
+  const conferma = async () => {
+    if (!analisi) return;
+    setBusy(true); setErrore(null);
+    try {
+      await rpc("terne_nuovi_svuota", token, { p_editori: Object.keys(analisi.perEditore) });
+      let caricate = 0;
+      for (let i = 0; i < analisi.righe.length; i += CHUNK_NUOVI) {
+        caricate += await rpc("terne_nuovi_carica", token, { p_righe: analisi.righe.slice(i, i + CHUNK_NUOVI) });
+      }
+      setEsito(`Caricate ${fmt(caricate)} terne per ${Object.keys(analisi.perEditore).map((c) => nomi[c] || c).join(", ")}.`);
+      setAnalisi(null);
+      carica();
+    } catch (err) { setErrore(err.message); }
+    setBusy(false);
+  };
+
+  return (
+    <div style={css.card}>
+      <div style={css.h}>🆕 Terne editori nuovi (non ancora su RPN)</div>
+      <div style={css.sub}>
+        Per gli editori della sezione Nuovi editori che RPN non conosce ancora (es. NNE, Sinnos). Stesso file dell'export RPN: <b>Codice agente · Codice editore · Codice libreria</b>.
+        Il caricamento <b>sostituisce</b> le terne degli editori presenti nel file; le righe di altri editori vengono scartate. Restano anche dopo "Aggiorna terne da RPN"
+        e servono al dettaglio agenti di Fine Giro. Non modifica nulla su RPN.
+      </div>
+      {stato && stato.length > 0 && (
+        <table style={{ borderCollapse: "collapse", marginBottom: 14 }}>
+          <thead><tr>{["Editore", "Codice", "Terne", "Agenti", "Aggiornate"].map((h) => <th key={h} style={css.th}>{h}</th>)}</tr></thead>
+          <tbody>
+            {stato.map((e) => (
+              <tr key={e.codice_editore}>
+                <td style={css.td}>{e.nome_editore}</td>
+                <td style={{ ...css.td, color: T.textMid }}>{e.codice_editore}</td>
+                <td style={{ ...css.td, color: e.terne ? T.text : T.amber, fontWeight: 700 }}>{e.terne ? fmt(e.terne) : "nessuna"}</td>
+                <td style={css.td}>{e.agenti || "—"}</td>
+                <td style={{ ...css.td, color: T.textMid }}>{fmtData(e.aggiornato)}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      )}
+      <div style={{ display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap" }}>
+        <input type="file" accept=".xlsx,.xls" id="file-terne-nuovi" onChange={scegli} style={{ display: "none" }} disabled={busy} />
+        <label htmlFor="file-terne-nuovi" style={{ ...css.btn("default", busy), display: "inline-block" }}>Scegli file .xlsx</label>
+        {analisi && (
+          <>
+            <span style={{ color: T.text, fontSize: "12px" }}>
+              <b>{analisi.nome}</b>: {Object.entries(analisi.perEditore).map(([c, n]) => `${nomi[c] || c} ${fmt(n)}`).join(" · ")}
+              {analisi.scartate > 0 && <span style={{ color: T.amber }}> · {fmt(analisi.scartate)} righe di altri editori scartate ({analisi.scartateEditori.join(", ")}{analisi.scartateEditori.length === 8 ? "…" : ""})</span>}
+            </span>
+            <button style={css.btn("accent", busy)} disabled={busy} onClick={conferma}>{busy ? "Caricamento…" : "Sostituisci terne"}</button>
+            <button style={css.btn("default", busy)} disabled={busy} onClick={() => setAnalisi(null)}>Annulla</button>
+          </>
+        )}
+      </div>
+      {esito && <div style={{ color: T.green, fontSize: "12px", marginTop: 10 }}>✓ {esito}</div>}
+      {errore && <div style={{ color: T.red, fontSize: "12px", marginTop: 10 }}>✕ {errore}</div>}
+    </div>
+  );
+}
+
 export default function ModuloTerne({ token }) {
   const [stato, setStato] = useState(null);
   const [erroreStato, setErroreStato] = useState(null);
@@ -301,6 +397,8 @@ export default function ModuloTerne({ token }) {
         <div style={css.sub}>Legge le terne attuali da RPN e aggiorna BookUp/GiroManager. Usalo se le terne sono state modificate direttamente nel pannello RPN. Non modifica nulla su RPN.</div>
         <button style={css.btn("default", busy)} disabled={busy} onClick={eseguiRiallinea}>🔄 Aggiorna terne da RPN</button>
       </div>
+
+      <TerneEditoriNuovi token={token} />
 
       {/* Storico */}
       {stato?.storico?.length > 0 && (

@@ -2571,9 +2571,9 @@ function ModuloFineGiro({ titoli, prenotato, canali, token, ruolo, spalmatura, u
                   <span>Clienti senza agente</span><span>{fmtIt(tipAgenti.dati.senza_agente.quantita)}</span>
                 </div>
               )}
-              {tipAgenti.dati.editore_nuovo && (
+              {tipAgenti.dati.editore_nuovo && tipAgenti.dati.clienti_dedotti > 0 && (
                 <div style={{ fontSize: "10px", color: T.textMid, marginTop: 6 }}>
-                  Editore nuovo entrante, senza terne: per ogni libreria l'agente che la segue sugli altri editori, tra quelli abilitati a questo editore.
+                  Editore nuovo entrante: per {tipAgenti.dati.clienti_dedotti} {tipAgenti.dati.clienti_dedotti === 1 ? "libreria" : "librerie"} senza terna caricata, l'agente è quello che la segue sugli altri editori (tra gli abilitati). Carica le terne in Aggiorna Terne per averle esatte.
                 </div>
               )}
               {tipAgenti.dati.clienti_condivisi > 0 && (
