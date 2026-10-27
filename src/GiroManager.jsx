@@ -1109,6 +1109,165 @@ function TendinaGiroCedola({ items, eanIndex, statoMap, onToggleChiuso, selected
   );
 }
 
+// ─── Fine Giro: "Agenti per editore e titolo" (sezione richiudibile) ────────
+// Pivot editore → titoli × agenti delle copie prenotate per i titoli visibili (stessa associazione
+// cliente→agente del riquadro sulle celle: terne, terne editori nuovi, dedotta per gli editori nuovi).
+// Un cliente seguito da più agenti conta per ciascuno, quindi la somma degli agenti può superare il totale.
+const BLOCCO_AGENTI_TITOLI = 150;
+function SezioneAgentiTitoli({ titoli, token, clienteSel }) {
+  const [aperta, setAperta] = useState(false);
+  const [stato, setStato] = useState({ caricamento: false, errore: null, righe: null, agenti: {} });
+  const [espansi, setEspansi] = useState(() => new Set());
+  const ids = useMemo(() => titoli.map(t => t.id).sort((a, b) => a - b), [titoli]);
+  const chiave = `${ids.join(",")}|${clienteSel || ""}`;
+
+  useEffect(() => {
+    if (!aperta || !ids.length) return;
+    let vivo = true;
+    const timer = setTimeout(async () => {
+      setStato(s => ({ ...s, caricamento: true, errore: null }));
+      try {
+        const righe = [], agenti = {};
+        for (let i = 0; i < ids.length; i += BLOCCO_AGENTI_TITOLI) {
+          const r = await fetch(`${SUPABASE_URL}/rest/v1/rpc/fine_giro_agenti_titoli`, {
+            method: "POST",
+            headers: { apikey: SUPABASE_KEY, Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
+            body: JSON.stringify({ p_titoli: ids.slice(i, i + BLOCCO_AGENTI_TITOLI), p_cliente: clienteSel || null }),
+          });
+          const d = await r.json();
+          if (!r.ok) throw new Error(d?.message || `Errore ${r.status}`);
+          righe.push(...d.righe); Object.assign(agenti, d.agenti);
+          if (!vivo) return;
+        }
+        if (vivo) setStato({ caricamento: false, errore: null, righe, agenti });
+      } catch (e) { if (vivo) setStato(s => ({ ...s, caricamento: false, errore: e.message })); }
+    }, 500);
+    return () => { vivo = false; clearTimeout(timer); };
+  }, [aperta, chiave]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const pivot = useMemo(() => {
+    if (!stato.righe) return null;
+    const perTitolo = {}, totAgente = {};
+    stato.righe.forEach(([tid, ag, q]) => {
+      const k = ag || "__SENZA__";
+      (perTitolo[tid] = perTitolo[tid] || {})[k] = (perTitolo[tid][k] || 0) + q;
+      if (ag) totAgente[ag] = (totAgente[ag] || 0) + q;
+    });
+    const agenti = Object.keys(totAgente).sort((a, b) => totAgente[b] - totAgente[a]);
+    const editori = {};
+    titoli.forEach(t => {
+      const v = perTitolo[t.id];
+      if (!v) return;
+      const ed = t.editore_nome || "—";
+      const e = editori[ed] || (editori[ed] = { nome: ed, valori: {}, titoli: [] });
+      const tot = t._tot || 0; // prenotato del titolo (come in tabella): la somma degli agenti conta due volte i clienti condivisi
+      e.titoli.push({ t, valori: v, tot });
+      Object.entries(v).forEach(([k, q]) => { e.valori[k] = (e.valori[k] || 0) + q; });
+    });
+    const lista = Object.values(editori).map(e => ({ ...e, tot: e.titoli.reduce((s, x) => s + x.tot, 0), titoli: e.titoli.sort((a, b) => b.tot - a.tot) }))
+      .sort((a, b) => b.tot - a.tot);
+    const senza = lista.reduce((s, e) => s + (e.valori.__SENZA__ || 0), 0);
+    return { agenti, totAgente, lista, senza };
+  }, [stato.righe, titoli]);
+
+  const nomeAgente = (c) => stato.agenti[c] || c;
+  const toggle = (ed) => setEspansi(s => { const n = new Set(s); n.has(ed) ? n.delete(ed) : n.add(ed); return n; });
+
+  const esporta = () => {
+    if (!pivot) return;
+    const XLSX = window.XLSX;
+    const intest = ["EDITORE", "EAN", "TITOLO", "PRENOTATO", ...pivot.agenti.map(nomeAgente), "SENZA AGENTE"];
+    const rows = [];
+    pivot.lista.forEach(e => {
+      rows.push([e.nome, "", "TOTALE EDITORE", e.tot, ...pivot.agenti.map(a => e.valori[a] || 0), e.valori.__SENZA__ || 0]);
+      e.titoli.forEach(x => rows.push([e.nome, x.t.ean, x.t.titolo, x.tot, ...pivot.agenti.map(a => x.valori[a] || 0), x.valori.__SENZA__ || 0]));
+    });
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet([intest, ...rows]), "AGENTI");
+    XLSX.writeFile(wb, `AGENTI_PER_EDITORE_TITOLO${clienteSel ? "_" + clienteSel : ""}.xlsx`);
+  };
+
+  const cellaNum = (q, forte) => (
+    <td style={{ ...css.td, padding: "5px 10px", textAlign: "right", fontVariantNumeric: "tabular-nums", color: q ? T.text : T.textDim, fontWeight: forte ? 700 : 400 }}>{q ? q.toLocaleString("it") : "·"}</td>
+  );
+  const th = { ...css.th, padding: "6px 10px", textAlign: "right", position: "sticky", top: 0, background: T.surface, zIndex: 1 };
+  const thPrima = { ...th, textAlign: "left", left: 0, zIndex: 2, minWidth: 280 };
+  const tdPrima = (sfondo) => ({ ...css.td, padding: "5px 10px", position: "sticky", left: 0, background: sfondo, zIndex: 1, maxWidth: 340, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" });
+
+  return (
+    <div style={{ borderBottom: `1px solid ${T.border}`, background: T.surface, flexShrink: 0 }}>
+      <div style={{ display: "flex", alignItems: "center", gap: 12, padding: "8px 20px", cursor: "pointer", userSelect: "none" }} onClick={() => setAperta(a => !a)}>
+        <span style={{ color: T.textMid, fontSize: "11px", width: 10 }}>{aperta ? "▾" : "▸"}</span>
+        <span style={{ color: T.accent, fontWeight: 700, fontSize: "12px", letterSpacing: "0.06em" }}>AGENTI PER EDITORE E TITOLO</span>
+        <span style={{ color: T.textMid, fontSize: "12px" }}>
+          {!aperta ? `${ids.length} titoli visibili` : stato.caricamento ? "Calcolo in corso…" : pivot ? `${pivot.agenti.length} agenti · ${pivot.lista.length} editori${pivot.senza ? ` · ${pivot.senza.toLocaleString("it")} copie senza agente` : ""}${clienteSel ? ` · cliente ${clienteSel}` : ""}` : ""}
+        </span>
+        {aperta && pivot && (
+          <span style={{ marginLeft: "auto", display: "flex", gap: 8 }} onClick={e => e.stopPropagation()}>
+            <button style={{ ...css.btn(), padding: "3px 10px", fontSize: "11px" }} onClick={() => setEspansi(new Set(pivot.lista.map(e => e.nome)))}>Apri tutti</button>
+            <button style={{ ...css.btn(), padding: "3px 10px", fontSize: "11px" }} onClick={() => setEspansi(new Set())}>Chiudi tutti</button>
+            <button style={{ ...css.btn("accent"), padding: "3px 10px", fontSize: "11px" }} onClick={esporta}>↓ Excel</button>
+          </span>
+        )}
+      </div>
+      {aperta && (
+        <div style={{ padding: "0 20px 12px" }}>
+          {stato.errore && <div style={{ color: T.red, fontSize: "12px", marginBottom: 8 }}>✕ {stato.errore}</div>}
+          {!ids.length && <div style={{ color: T.textMid, fontSize: "12px" }}>Nessun titolo con i filtri attuali.</div>}
+          {pivot && (
+            <div style={{ maxHeight: "45vh", overflow: "auto", border: `1px solid ${T.border}`, borderRadius: 4, opacity: stato.caricamento ? 0.5 : 1 }}>
+              <table style={{ borderCollapse: "separate", borderSpacing: 0, minWidth: "100%" }}>
+                <thead>
+                  <tr>
+                    <th style={thPrima}>Editore / titolo</th>
+                    <th style={th}>Prenotato</th>
+                    {pivot.agenti.map(a => <th key={a} style={{ ...th, whiteSpace: "nowrap" }} title={a}>{nomeAgente(a)}</th>)}
+                    <th style={th}>Senza agente</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {pivot.lista.map(e => {
+                    const aperto = espansi.has(e.nome);
+                    return (
+                      <Fragment key={e.nome}>
+                        <tr style={{ cursor: "pointer" }} onClick={() => toggle(e.nome)}>
+                          <td style={{ ...tdPrima(T.surface), fontWeight: 700, color: T.accent }}>
+                            <span style={{ color: T.textMid, display: "inline-block", width: 14 }}>{aperto ? "▾" : "▸"}</span>{e.nome}
+                            <span style={{ color: T.textMid, fontWeight: 400, fontSize: "11px" }}> · {e.titoli.length} {e.titoli.length === 1 ? "titolo" : "titoli"}</span>
+                          </td>
+                          {cellaNum(e.tot, true)}
+                          {pivot.agenti.map(a => <Fragment key={a}>{cellaNum(e.valori[a], true)}</Fragment>)}
+                          {cellaNum(e.valori.__SENZA__, true)}
+                        </tr>
+                        {aperto && e.titoli.map(x => (
+                          <tr key={x.t.id}>
+                            <td style={{ ...tdPrima(cv("#1c2648", "#f6f8fd")), paddingLeft: 30, color: T.text }} title={`${x.t.ean} · ${x.t.titolo}`}>
+                              <span style={{ color: T.textMid, fontSize: "10px", fontFamily: "monospace", marginRight: 8 }}>{x.t.ean}</span>{x.t.titolo}
+                            </td>
+                            {cellaNum(x.tot)}
+                            {pivot.agenti.map(a => <Fragment key={a}>{cellaNum(x.valori[a])}</Fragment>)}
+                            {cellaNum(x.valori.__SENZA__)}
+                          </tr>
+                        ))}
+                      </Fragment>
+                    );
+                  })}
+                  <tr>
+                    <td style={{ ...tdPrima(T.surface), fontWeight: 700, borderTop: `1px solid ${T.borderHi}` }}>Totale agenti</td>
+                    <td style={{ ...css.td, borderTop: `1px solid ${T.borderHi}` }}></td>
+                    {pivot.agenti.map(a => <td key={a} style={{ ...css.td, padding: "5px 10px", textAlign: "right", fontWeight: 700, borderTop: `1px solid ${T.borderHi}`, fontVariantNumeric: "tabular-nums" }}>{pivot.totAgente[a].toLocaleString("it")}</td>)}
+                    <td style={{ ...css.td, padding: "5px 10px", textAlign: "right", fontWeight: 700, borderTop: `1px solid ${T.borderHi}` }}>{pivot.senza ? pivot.senza.toLocaleString("it") : "·"}</td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
 // ─── Checklist "Editori del giro" (Giri e cedole) ──────────────────────────
 // Tutti gli editori attivi dell'anagrafica (ranking_editori) in ordine di ranking: chi ha già
 // titoli nel giro selezionato viene depennato, chi manca resta in evidenza. Il tasto "Escludi"
@@ -2349,6 +2508,8 @@ function ModuloFineGiro({ titoli, prenotato, canali, token, ruolo, spalmatura, u
     return result;
   }, [righe, filterCanale, sortPren, soloPrenotati, clienteSel, sortCanale]);
 
+  // titoli visibili per la sezione "Agenti per editore e titolo" (con il loro prenotato)
+  const titoliPerAgenti = useMemo(() => righeFiltrate.map(r => ({ ...r.titolo, _tot: r.totPren })), [righeFiltrate]);
   const totObj = righeFiltrate.reduce((s, r) => s + (r.titolo.obiettivo_assegnato || 0), 0);
   const totPrenotato = righeFiltrate.reduce((s, r) => s + r.totPren, 0);
   const pctTot = totObj > 0 ? Math.round(totPrenotato / totObj * 100) : 0;
@@ -2790,6 +2951,8 @@ function ModuloFineGiro({ titoli, prenotato, canali, token, ruolo, spalmatura, u
           );
         })}
       </div>
+
+      {ruolo !== "agente" && <SezioneAgentiTitoli titoli={titoliPerAgenti} token={token} clienteSel={clienteSel} />}
 
       {/* Tabella */}
       <div style={{ flex: 1, overflowY: "auto", overflowX: "auto" }}>
