@@ -1114,12 +1114,14 @@ function TendinaGiroCedola({ items, eanIndex, statoMap, onToggleChiuso, selected
 // cliente→agente del riquadro sulle celle: terne, terne editori nuovi, dedotta per gli editori nuovi).
 // Un cliente seguito da più agenti conta per ciascuno, quindi la somma degli agenti può superare il totale.
 const BLOCCO_AGENTI_TITOLI = 150;
-function SezioneAgentiTitoli({ titoli, token, clienteSel }) {
+// Canali in cui lavorano gli agenti: rete (Libraccio, Religiose, Coop, Indipendenti) + Fastbook, Centrolibri, Grossisti
+const CANALI_AGENTI = ["LIBRACCIO", "LIB_RELIGIOSE", "LIB_COOP", "INDIPENDENTI_ALTRE_CATENE", "FASTBOOK", "CENTROLIBRI", "GROSSISTI"];
+function SezioneAgentiTitoli({ titoli, token, clienteSel, canaliIds }) {
   const [aperta, setAperta] = useState(false);
   const [stato, setStato] = useState({ caricamento: false, errore: null, righe: null, agenti: {} });
   const [espansi, setEspansi] = useState(() => new Set());
   const ids = useMemo(() => titoli.map(t => t.id).sort((a, b) => a - b), [titoli]);
-  const chiave = `${ids.join(",")}|${clienteSel || ""}`;
+  const chiave = `${ids.join(",")}|${clienteSel || ""}|${(canaliIds || []).join(",")}`;
 
   useEffect(() => {
     if (!aperta || !ids.length) return;
@@ -1132,7 +1134,7 @@ function SezioneAgentiTitoli({ titoli, token, clienteSel }) {
           const r = await fetch(`${SUPABASE_URL}/rest/v1/rpc/fine_giro_agenti_titoli`, {
             method: "POST",
             headers: { apikey: SUPABASE_KEY, Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
-            body: JSON.stringify({ p_titoli: ids.slice(i, i + BLOCCO_AGENTI_TITOLI), p_cliente: clienteSel || null }),
+            body: JSON.stringify({ p_titoli: ids.slice(i, i + BLOCCO_AGENTI_TITOLI), p_cliente: clienteSel || null, p_canali: canaliIds?.length ? canaliIds : null }),
           });
           const d = await r.json();
           if (!r.ok) throw new Error(d?.message || `Errore ${r.status}`);
@@ -1199,6 +1201,7 @@ function SezioneAgentiTitoli({ titoli, token, clienteSel }) {
       <div style={{ display: "flex", alignItems: "center", gap: 12, padding: "8px 20px", cursor: "pointer", userSelect: "none" }} onClick={() => setAperta(a => !a)}>
         <span style={{ color: T.textMid, fontSize: "11px", width: 10 }}>{aperta ? "▾" : "▸"}</span>
         <span style={{ color: T.accent, fontWeight: 700, fontSize: "12px", letterSpacing: "0.06em" }}>AGENTI PER EDITORE E TITOLO</span>
+        <span style={{ color: T.textDim, fontSize: "11px" }}>Libraccio · Religiose · Coop · Indipendenti · Fastbook · Centrolibri · Grossisti</span>
         <span style={{ color: T.textMid, fontSize: "12px" }}>
           {!aperta ? `${ids.length} titoli visibili` : stato.caricamento ? "Calcolo in corso…" : pivot ? `${pivot.agenti.length} agenti · ${pivot.lista.length} editori${pivot.senza ? ` · ${pivot.senza.toLocaleString("it")} copie senza agente` : ""}${clienteSel ? ` · cliente ${clienteSel}` : ""}` : ""}
         </span>
@@ -2509,7 +2512,8 @@ function ModuloFineGiro({ titoli, prenotato, canali, token, ruolo, spalmatura, u
   }, [righe, filterCanale, sortPren, soloPrenotati, clienteSel, sortCanale]);
 
   // titoli visibili per la sezione "Agenti per editore e titolo" (con il loro prenotato)
-  const titoliPerAgenti = useMemo(() => righeFiltrate.map(r => ({ ...r.titolo, _tot: r.totPren })), [righeFiltrate]);
+  const titoliPerAgenti = useMemo(() => righeFiltrate.map(r => ({ ...r.titolo, _tot: CANALI_AGENTI.reduce((s, cod) => s + (r.byCanale[cod] || 0), 0) })), [righeFiltrate]);
+  const canaliAgentiIds = useMemo(() => canali.filter(c => CANALI_AGENTI.includes(c.codice)).map(c => c.id), [canali]);
   const totObj = righeFiltrate.reduce((s, r) => s + (r.titolo.obiettivo_assegnato || 0), 0);
   const totPrenotato = righeFiltrate.reduce((s, r) => s + r.totPren, 0);
   const pctTot = totObj > 0 ? Math.round(totPrenotato / totObj * 100) : 0;
@@ -2952,7 +2956,7 @@ function ModuloFineGiro({ titoli, prenotato, canali, token, ruolo, spalmatura, u
         })}
       </div>
 
-      {ruolo !== "agente" && <SezioneAgentiTitoli titoli={titoliPerAgenti} token={token} clienteSel={clienteSel} />}
+      {ruolo !== "agente" && <SezioneAgentiTitoli titoli={titoliPerAgenti} token={token} clienteSel={clienteSel} canaliIds={canaliAgentiIds} />}
 
       {/* Tabella */}
       <div style={{ flex: 1, overflowY: "auto", overflowX: "auto" }}>
@@ -2986,7 +2990,7 @@ function ModuloFineGiro({ titoli, prenotato, canali, token, ruolo, spalmatura, u
                   {canaliTabella.map(c => {
                     const qta = byCanale[c.codice] || 0;
                     const obj = byCanaleObj?.[c.codice] || 0;
-                    const conAgenti = qta > 0 && ruolo !== "agente";
+                    const conAgenti = qta > 0 && ruolo !== "agente" && CANALI_AGENTI.includes(c.codice);
                     return (
                       <td key={c.id} style={{ ...css.td, whiteSpace: "nowrap", minWidth: 60, cursor: conAgenti ? "help" : undefined }}
                         onMouseEnter={conAgenti ? e => apriTipAgenti(e, t, c) : undefined}
