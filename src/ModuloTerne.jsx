@@ -92,6 +92,26 @@ function leggiTerne(arrayBuffer) {
 // dell'export RPN; un caricamento sostituisce le terne degli editori presenti nel file e scarta le
 // righe di editori che non sono nella sezione Nuovi editori (quelle vanno caricate su RPN).
 const CHUNK_NUOVI = 5000;
+// Tutti i fogli con le tre colonne attese (es. un foglio per editore: NN, Sinnos, …)
+function leggiTerneTuttiFogli(arrayBuffer) {
+  const XLSX = window.XLSX;
+  if (!XLSX) throw new Error("Libreria Excel non caricata: ricarica la pagina");
+  const wb = XLSX.read(arrayBuffer, { type: "array", dense: true });
+  const righe = [], fogli = [];
+  wb.SheetNames.forEach((nome) => {
+    const data = XLSX.utils.sheet_to_json(wb.Sheets[nome], { header: 1, raw: false, defval: "" });
+    const head = (data[0] || []).slice(0, 3).map((h) => String(h).trim().toLowerCase());
+    if (HEADERS_ATTESE.some((h, i) => head[i] !== h)) return;
+    let n = 0;
+    for (let i = 1; i < data.length; i++) {
+      const a = String(data[i][0] ?? "").trim(), e = String(data[i][1] ?? "").trim(), l = String(data[i][2] ?? "").trim();
+      if (a && e && l) { righe.push([a, e, l]); n++; }
+    }
+    fogli.push(`${nome} (${n})`);
+  });
+  if (!fogli.length) throw new Error(`Nessun foglio con le colonne "Codice agente | Codice editore | Codice libreria"`);
+  return { righe, fogli };
+}
 function TerneEditoriNuovi({ token }) {
   const [stato, setStato] = useState(null);
   const [errore, setErrore] = useState(null);
@@ -112,14 +132,14 @@ function TerneEditoriNuovi({ token }) {
     setAnalisi(null); setEsito(null); setErrore(null);
     if (!f) return;
     try {
-      const { righe } = leggiTerne(await f.arrayBuffer());
+      const { righe, fogli } = leggiTerneTuttiFogli(await f.arrayBuffer());
       const ammessi = new Set((stato || []).map((x) => x.codice_editore));
       const buone = righe.filter(([, ed]) => ammessi.has(ed));
       const altri = righe.filter(([, ed]) => !ammessi.has(ed));
       const perEditore = {};
       buone.forEach(([, ed]) => { perEditore[ed] = (perEditore[ed] || 0) + 1; });
       if (!buone.length) throw new Error("Nel file non ci sono terne di editori nuovi entranti (sezione Nuovi editori).");
-      setAnalisi({ nome: f.name, righe: buone, perEditore, scartate: altri.length, scartateEditori: [...new Set(altri.map(([, ed]) => ed))].slice(0, 8) });
+      setAnalisi({ nome: `${f.name} · fogli ${fogli.join(", ")}`, righe: buone, perEditore, scartate: altri.length, scartateEditori: [...new Set(altri.map(([, ed]) => ed))].slice(0, 8) });
     } catch (err) { setErrore(err.message); }
   };
 
