@@ -1114,8 +1114,9 @@ function TendinaGiroCedola({ items, eanIndex, statoMap, onToggleChiuso, selected
 // cliente→agente del riquadro sulle celle: terne, terne editori nuovi, dedotta per gli editori nuovi).
 // Un cliente seguito da più agenti conta per ciascuno, quindi la somma degli agenti può superare il totale.
 const BLOCCO_AGENTI_TITOLI = 150;
-// Canali in cui lavorano gli agenti: rete (Libraccio, Religiose, Coop, Indipendenti) + Fastbook, Centrolibri, Grossisti
-const CANALI_AGENTI = ["LIBRACCIO", "LIB_RELIGIOSE", "LIB_COOP", "INDIPENDENTI_ALTRE_CATENE", "FASTBOOK", "CENTROLIBRI", "GROSSISTI"];
+// Canali in cui lavorano gli agenti: rete (Libraccio, Religiose, Coop, Indipendenti) + Grossisti.
+// Fastbook + GD e Centrolibri li inserisce la sede: esclusi.
+const CANALI_AGENTI = ["LIBRACCIO", "LIB_RELIGIOSE", "LIB_COOP", "INDIPENDENTI_ALTRE_CATENE", "GROSSISTI"];
 function SezioneAgentiTitoli({ titoli, token, clienteSel, canaliIds }) {
   const [aperta, setAperta] = useState(false);
   const [stato, setStato] = useState({ caricamento: false, errore: null, righe: null, agenti: {} });
@@ -1201,7 +1202,7 @@ function SezioneAgentiTitoli({ titoli, token, clienteSel, canaliIds }) {
       <div style={{ display: "flex", alignItems: "center", gap: 12, padding: "8px 20px", cursor: "pointer", userSelect: "none" }} onClick={() => setAperta(a => !a)}>
         <span style={{ color: T.textMid, fontSize: "11px", width: 10 }}>{aperta ? "▾" : "▸"}</span>
         <span style={{ color: T.accent, fontWeight: 700, fontSize: "12px", letterSpacing: "0.06em" }}>AGENTI PER EDITORE E TITOLO</span>
-        <span style={{ color: T.textDim, fontSize: "11px" }}>Libraccio · Religiose · Coop · Indipendenti · Fastbook · Centrolibri · Grossisti</span>
+        <span style={{ color: T.textDim, fontSize: "11px" }}>Libraccio · Religiose · Coop · Indipendenti · Grossisti</span>
         <span style={{ color: T.textMid, fontSize: "12px" }}>
           {!aperta ? `${ids.length} titoli visibili` : stato.caricamento ? "Calcolo in corso…" : pivot ? `${pivot.agenti.length} agenti · ${pivot.lista.length} editori${pivot.senza ? ` · ${pivot.senza.toLocaleString("it")} copie senza agente` : ""}${clienteSel ? ` · cliente ${clienteSel}` : ""}` : ""}
         </span>
