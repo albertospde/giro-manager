@@ -220,6 +220,8 @@ export default function ModuloEditoriNewEntry({ token, onDataChange }) {
   const [savingT, setSavingT] = useState(false);
 
   const [bulkOpen, setBulkOpen] = useState(false);
+  const [titoliAperti, setTitoliAperti] = useState(false); // sezione Titoli chiusa di default: in vista restano editori e agenti
+  const [selTitoli, setSelTitoli] = useState(new Set());   // id dei titoli selezionati per attiva/disattiva in blocco
   const [bulkText, setBulkText] = useState("");
   const [bulkFile, setBulkFile] = useState(null);
   const [bulkNCedola, setBulkNCedola] = useState("");
@@ -451,6 +453,25 @@ export default function ModuloEditoriNewEntry({ token, onDataChange }) {
     }
   };
 
+  // Attiva/disattiva in un colpo i titoli selezionati
+  const impostaTitoliSelezionati = async (nuovoAttivo) => {
+    const ids = [...selTitoli];
+    if (!ids.length) return;
+    if (!window.confirm(`${nuovoAttivo ? "Riattivo" : "Disattivo"} ${ids.length} titoli?${nuovoAttivo ? "" : "\nI titoli disattivati spariscono dalla griglia di BookUp."}`)) return;
+    setError("");
+    try {
+      for (let i = 0; i < ids.length; i += 100) {
+        await sbRest(`titoli_manuali?id=in.(${ids.slice(i, i + 100).join(",")})`, token, {
+          method: "PATCH",
+          body: JSON.stringify({ attivo: nuovoAttivo }),
+        });
+      }
+      setSelTitoli(new Set());
+      await load();
+      if (onDataChange) onDataChange();
+    } catch (e) { setError(e.message); }
+  };
+
   const toggleTitolo = async (id, nuovoAttivo) => {
     try {
       await sbRest(`titoli_manuali?id=eq.${id}`, token, {
@@ -628,7 +649,12 @@ export default function ModuloEditoriNewEntry({ token, onDataChange }) {
           </div>
 
           <div style={{ flex: "1.6 1 420px", minWidth: 420 }}>
-            <h3 style={{ fontSize: "13px", color: T.text, marginBottom: 10 }}>Titoli (EAN)</h3>
+            <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: titoliAperti ? 10 : 0 }}>
+              <h3 style={{ fontSize: "13px", color: T.text }}>Titoli (EAN)</h3>
+              <span style={{ color: T.textMid, fontSize: "11px" }}>{titoli.length} titoli · {titoli.filter(t => t.attivo).length} attivi</span>
+              <button style={{ ...css.btn(), fontSize: "11px", padding: "3px 8px", marginLeft: "auto" }} onClick={() => setTitoliAperti(a => !a)}>{titoliAperti ? "▴ Chiudi" : "▾ Apri"}</button>
+            </div>
+            {titoliAperti && <>
             <div style={{ display: "flex", gap: 8, marginBottom: 6, flexWrap: "wrap" }}>
               <div><label style={css.label}>EAN</label><input style={{ ...css.input, width: 130 }} value={tEan} onChange={e => setTEan(e.target.value)} /></div>
               <div style={{ flex: 1, minWidth: 180 }}><label style={css.label}>Titolo</label><input style={{ ...css.input, width: "100%" }} value={tTitolo} onChange={e => setTTitolo(e.target.value)} /></div>
@@ -698,12 +724,27 @@ export default function ModuloEditoriNewEntry({ token, onDataChange }) {
               )}
             </div>
 
+            {titoli.length > 0 && (
+              <div style={{ display: "flex", gap: 8, alignItems: "center", marginBottom: 8, flexWrap: "wrap" }}>
+                <span style={{ color: T.textMid, fontSize: "11px" }}>{selTitoli.size ? `${selTitoli.size} selezionati` : "Seleziona i titoli con le caselle"}</span>
+                <button style={{ ...css.btn(), fontSize: "11px", padding: "3px 8px", color: T.red, borderColor: T.red }} disabled={!selTitoli.size} onClick={() => impostaTitoliSelezionati(false)}>⛔ Disattiva selezionati</button>
+                <button style={{ ...css.btn(), fontSize: "11px", padding: "3px 8px", color: T.green, borderColor: T.green }} disabled={!selTitoli.size} onClick={() => impostaTitoliSelezionati(true)}>✅ Riattiva selezionati</button>
+              </div>
+            )}
             <table style={css.table}>
-              <thead><tr><th style={css.th}>EAN</th><th style={css.th}>Titolo</th><th style={css.th}>Editore</th><th style={css.th}>Cedola</th><th style={css.th}></th></tr></thead>
+              <thead><tr>
+                <th style={{ ...css.th, width: 28 }}>
+                  <input type="checkbox" title="Seleziona tutti" disabled={!titoli.length}
+                    checked={titoli.length > 0 && titoli.every(t => selTitoli.has(t.id))}
+                    onChange={e => setSelTitoli(e.target.checked ? new Set(titoli.map(t => t.id)) : new Set())} />
+                </th>
+                <th style={css.th}>EAN</th><th style={css.th}>Titolo</th><th style={css.th}>Editore</th><th style={css.th}>Cedola</th><th style={css.th}></th>
+              </tr></thead>
               <tbody>
-                {titoli.length === 0 && <tr><td style={css.td} colSpan={5}><span style={{ color: T.textDim }}>Nessun titolo manuale ancora inserito.</span></td></tr>}
+                {titoli.length === 0 && <tr><td style={css.td} colSpan={6}><span style={{ color: T.textDim }}>Nessun titolo manuale ancora inserito.</span></td></tr>}
                 {titoli.map(t => (
-                  <tr key={t.id}>
+                  <tr key={t.id} style={{ opacity: t.attivo ? 1 : 0.6 }}>
+                    <td style={css.td}><input type="checkbox" checked={selTitoli.has(t.id)} onChange={() => setSelTitoli(s => { const n = new Set(s); n.has(t.id) ? n.delete(t.id) : n.add(t.id); return n; })} /></td>
                     <td style={css.td}>{t.ean}</td>
                     <td style={css.td}>{t.titolo}</td>
                     <td style={css.td}>{t.editore_nome}</td>
@@ -713,6 +754,7 @@ export default function ModuloEditoriNewEntry({ token, onDataChange }) {
                 ))}
               </tbody>
             </table>
+            </>}
           </div>
 
         </div>
