@@ -550,14 +550,26 @@ function Ciambella({ fette, totale, onHover, size = 168, spessore = 26 }) {
   );
 }
 
+// Preseleziona (una sola volta, appena i titoli sono caricati) l'anno più alto tra i giri esistenti:
+// anniDisp è ordinato decrescente, quindi il primo è l'anno dell'ultimo giro creato.
+function useAnnoUltimoGiro(anniDisp, setAnno) {
+  const fatto = useRef(false);
+  useEffect(() => {
+    if (fatto.current || anniDisp.length === 0) return;
+    fatto.current = true;
+    setAnno([anniDisp[0]]);
+  }, [anniDisp]);
+}
+
 function ModuloDashboard({ titoli, prenotato, canali, spalmatura, ruolo }) {
   const anniDisp = useMemo(() => {
     const s = new Set();
     titoli.forEach(t => { if (t.giro_label) { const yr = Number(t.giro_label.split(" ")[1]); if (yr >= 2020) s.add(yr); } });
     return [...s].sort((a, b) => b - a);
   }, [titoli]);
-  const annoCorrente = new Date().getFullYear();
-  const [filterAnno, setFilterAnno] = useState([annoCorrente]);
+  // Si parte dall'anno dell'ultimo giro (anche se è l'anno successivo: il Giro 1 parte già in autunno)
+  const [filterAnno, setFilterAnno] = useState([]);
+  useAnnoUltimoGiro(anniDisp, setFilterAnno);
 
   const giriLabel = useMemo(() => {
     return [...new Set(titoli.map(t => t.giro_label).filter(Boolean))]
@@ -1689,7 +1701,8 @@ function ModuloCedola({ titoli, giriList, onUpdateTitolo, onDeleteTitolo, spalma
     titoli.forEach(t => { if (t.giro_label) { const yr = Number(t.giro_label.split(" ")[1]); if (yr >= 2020) s.add(yr); } });
     return [...s].sort((a, b) => b - a);
   }, [titoli]);
-  const [filterAnnoCedola, setFilterAnnoCedola] = useState([new Date().getFullYear()]);
+  const [filterAnnoCedola, setFilterAnnoCedola] = useState([]);
+  useAnnoUltimoGiro(anniDispCedola, setFilterAnnoCedola);
 
   const giriLabel = useMemo(() => [...new Set(titoli.filter(t => t.giro_label !== "EXTRA").map(t => t.giro_label).filter(Boolean))]
     .filter(g => filterAnnoCedola.length === 0 || filterAnnoCedola.includes(Number(g.split(" ")[1])))
@@ -2169,8 +2182,9 @@ function ModuloFineGiro({ titoli, prenotato, canali, token, ruolo, spalmatura, u
     titoli.forEach(t => { if (t.giro_label && t.giro_label !== "EXTRA") { const yr = Number(t.giro_label.split(" ")[1]); if (yr >= 2020) s.add(yr); } });
     return [...s].sort((a, b) => b - a);
   }, [titoli]);
-  // Anno corrente + successivo: il Giro 1 dell'anno dopo parte già in autunno (es. Giro 1 2027 da ottobre 2026)
-  const [filterAnnoFineGiro, setFilterAnnoFineGiro] = useState([new Date().getFullYear(), new Date().getFullYear() + 1]);
+  // Anno dell'ultimo giro creato: il Giro 1 dell'anno dopo parte già in autunno (es. Giro 1 2027 da ottobre 2026)
+  const [filterAnnoFineGiro, setFilterAnnoFineGiro] = useState([]);
+  useAnnoUltimoGiro(anniDispFineGiro, setFilterAnnoFineGiro);
 
   const giriLabel = useMemo(() => [...new Set(titoli.filter(t => t.giro_label !== "EXTRA").map(t => t.giro_label).filter(Boolean))]
     .filter(g => filterAnnoFineGiro.length === 0 || filterAnnoFineGiro.includes(Number(g.split(" ")[1])))
