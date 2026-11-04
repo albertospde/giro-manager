@@ -2419,6 +2419,24 @@ function ModuloFineGiro({ titoli, prenotato, canali, token, ruolo, spalmatura, u
     setAuroraEditing(null);
   };
 
+  // Titoli già iscritti a un lancio settimanale (per EAN). num_lancio è salvato ×10 (480 = lancio 48).
+  const [filterLanciato, setFilterLanciato] = useState("tutti");
+  const [lanciByEan, setLanciByEan] = useState({});
+  useEffect(() => {
+    if (!token) return;
+    sbFetch("lanci_settimanali?select=ean,anno_lancio,num_lancio&order=anno_lancio.desc,num_lancio.desc", token).then(data => {
+      if (!Array.isArray(data)) return;
+      const map = {};
+      data.forEach(r => {
+        if (!r.ean) return;
+        const etichetta = `${r.num_lancio / 10}/${String(r.anno_lancio).slice(-2)}`;
+        if (!map[r.ean]) map[r.ean] = [];
+        if (!map[r.ean].includes(etichetta)) map[r.ean].push(etichetta);
+      });
+      setLanciByEan(map);
+    });
+  }, [token]);
+
   // Uscita prevista: soglia sul prenotato TOTALE del titolo (tutti i canali, a prescindere
   // da filtri cliente/agente), salvo scelta manuale salvata sul titolo.
   const [filterUscita, setFilterUscita] = useState("tutti");
@@ -2548,6 +2566,9 @@ function ModuloFineGiro({ titoli, prenotato, canali, token, ruolo, spalmatura, u
     if (filterUscita !== "tutti") {
       result = result.filter(({ titolo }) => uscitaTitolo(titolo).giorno === filterUscita);
     }
+    if (filterLanciato !== "tutti") {
+      result = result.filter(({ titolo }) => !!lanciByEan[titolo.ean] === (filterLanciato === "si"));
+    }
     if (sortPren) {
       result = [...result].sort((a, b) => sortPren === "asc" ? a.totPren - b.totPren : b.totPren - a.totPren);
     }
@@ -2560,7 +2581,7 @@ function ModuloFineGiro({ titoli, prenotato, canali, token, ruolo, spalmatura, u
       });
     }
     return result;
-  }, [righe, filterCanale, sortPren, soloPrenotati, clienteSel, sortCanale, filterUscita, uscitaTitolo]);
+  }, [righe, filterCanale, sortPren, soloPrenotati, clienteSel, sortCanale, filterUscita, uscitaTitolo, filterLanciato, lanciByEan]);
 
   // titoli visibili per la sezione "Agenti per editore e titolo" (con il loro prenotato)
   const titoliPerAgenti = useMemo(() => righeFiltrate.map(r => ({ ...r.titolo, _tot: CANALI_AGENTI.reduce((s, cod) => s + (r.byCanale[cod] || 0), 0) })), [righeFiltrate]);
@@ -2600,10 +2621,10 @@ function ModuloFineGiro({ titoli, prenotato, canali, token, ruolo, spalmatura, u
     const XLSX = window.XLSX;
     const colCanali = canaliTabella;
     const dirStampHeaders = ruolo !== "agente" ? ["Dir.Stamp./Fuori lancio"] : [];
-    const headers = ["N° CEDOLA","EAN","TITOLO","AUTORE","COD.EDITORE","EDITORE","PREZZO","USCITA","OBJ ASS.","PRENOTATO","USCITA PREVISTA","AVANZ %",...colCanali.map(c => getCanaleDisplayName(c)),...dirStampHeaders];
+    const headers = ["LANCIO","N° CEDOLA","EAN","TITOLO","AUTORE","COD.EDITORE","EDITORE","PREZZO","USCITA","OBJ ASS.","PRENOTATO","USCITA PREVISTA","AVANZ %",...colCanali.map(c => getCanaleDisplayName(c)),...dirStampHeaders];
     const rows = righeFiltrate.map(({ titolo: t, totPren, byCanale, dirStampatore }) => {
       const pct = t.obiettivo_assegnato > 0 ? Math.round(totPren / t.obiettivo_assegnato * 100) : 0;
-      const base = [t.n_cedola, t.ean, t.titolo, t.autore, t.codice_editore, t.editore_nome, t.prezzo, meseUscita(t), t.obiettivo_assegnato, totPren, uscitaTitolo(t).giorno, `${pct}%`, ...colCanali.map(c => byCanale[c.codice] ?? 0)];
+      const base = [(lanciByEan[t.ean] || []).join(", "), t.n_cedola, t.ean, t.titolo, t.autore, t.codice_editore, t.editore_nome, t.prezzo, meseUscita(t), t.obiettivo_assegnato, totPren, uscitaTitolo(t).giorno, `${pct}%`, ...colCanali.map(c => byCanale[c.codice] ?? 0)];
       if (ruolo !== "agente") base.push(dirStampatore || 0);
       return base;
     });
@@ -2833,6 +2854,11 @@ function ModuloFineGiro({ titoli, prenotato, canali, token, ruolo, spalmatura, u
           <option value="martedì">Uscita martedì</option>
           <option value="venerdì">Uscita venerdì</option>
         </select>
+        <select style={{ ...css.input, width: 130, color: filterLanciato === "tutti" ? T.text : T.accent }} value={filterLanciato} onChange={e => setFilterLanciato(e.target.value)}>
+          <option value="tutti">Lanciati: tutti</option>
+          <option value="si">Lanciati: sì</option>
+          <option value="no">Lanciati: no</option>
+        </select>
         <input style={{ ...css.input, width: 160 }} placeholder="Cerca EAN / titolo..." value={search} onChange={e => setSearch(e.target.value)} />
         {(filterCanale.length > 0 || clienteSel) && (
           <label style={{ display: "flex", alignItems: "center", gap: 5, cursor: "pointer", fontSize: "11px", color: soloPrenotati ? T.accent : T.textMid, userSelect: "none" }}>
@@ -3019,6 +3045,7 @@ function ModuloFineGiro({ titoli, prenotato, canali, token, ruolo, spalmatura, u
         <table style={css.table}>
           <thead>
             <tr>
+              <th style={css.th} title="Titolo iscritto a un lancio settimanale (numero lancio / anno)">Lancio</th>
               <th style={css.th}>Cedola</th><th style={css.th}>EAN</th><th style={css.th}>Titolo</th>
               <th style={css.th}>Autore</th><th style={css.th}>Cod.Ed.</th><th style={css.th}>Editore</th>
               <th style={css.th}>€</th><th style={css.th}>Uscita</th><th style={css.th}>Obj</th><th style={{ ...css.th, cursor: "pointer" }} onClick={() => { setSortPren(s => s === "desc" ? "asc" : s === "asc" ? null : "desc"); setSortCanale(null); }}>Pren.{sortPren === "desc" ? " ↓" : sortPren === "asc" ? " ↑" : ""}</th>
@@ -3034,6 +3061,11 @@ function ModuloFineGiro({ titoli, prenotato, canali, token, ruolo, spalmatura, u
               const isEditingAurora = auroraEditing === t.id;
               return (
                 <tr key={t.id} style={{ background: i % 2 === 0 ? "transparent" : T.surface + "66" }}>
+                  <td style={{ ...css.td, whiteSpace: "nowrap", fontSize: "11px" }}>
+                    {lanciByEan[t.ean]
+                      ? <span style={{ color: T.green, fontWeight: "700" }} title="Iscritto al lancio settimanale">✓ L.{lanciByEan[t.ean].join(", ")}</span>
+                      : <span style={{ color: T.textDim }}>—</span>}
+                  </td>
                   <td style={{ ...css.td, color: T.textMid, fontSize: "10px", whiteSpace: "nowrap" }}>{t.n_cedola}</td>
                   <td style={{ ...css.td, fontFamily: "monospace", fontSize: "11px", color: T.textMid }}>{t.ean}</td>
                   <td style={{ ...css.td, maxWidth: 200 }}><div style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{t.titolo}</div></td>
