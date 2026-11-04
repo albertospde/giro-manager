@@ -550,6 +550,11 @@ function Ciambella({ fette, totale, onHover, size = 168, spessore = 26 }) {
   );
 }
 
+// Uscita prevista: prenotato totale >= 2000 copie → martedì, sotto → venerdì.
+// In Fine Giro si può forzare a mano (titoli.uscita_giorno_override); Lanci settimanali la ripropone.
+const SOGLIA_USCITA_MARTEDI = 2000;
+const giornoDaSoglia = tot => tot >= SOGLIA_USCITA_MARTEDI ? "martedì" : "venerdì";
+
 // Preseleziona (una sola volta, appena i titoli sono caricati) l'anno più alto tra i giri esistenti:
 // anniDisp è ordinato decrescente, quindi il primo è l'anno dell'ultimo giro creato.
 function useAnnoUltimoGiro(anniDisp, setAnno) {
@@ -2176,7 +2181,7 @@ function ModuloCedola({ titoli, giriList, onUpdateTitolo, onDeleteTitolo, spalma
   );
 }
 
-function ModuloFineGiro({ titoli, prenotato, canali, token, ruolo, spalmatura, userAccount, onPrenotatoUpdated, statoChiusure, onToggleChiusura }) {
+function ModuloFineGiro({ titoli, prenotato, canali, token, ruolo, spalmatura, userAccount, onPrenotatoUpdated, statoChiusure, onToggleChiusura, onUpdateTitolo }) {
   const anniDispFineGiro = useMemo(() => {
     const s = new Set();
     titoli.forEach(t => { if (t.giro_label && t.giro_label !== "EXTRA") { const yr = Number(t.giro_label.split(" ")[1]); if (yr >= 2020) s.add(yr); } });
@@ -2414,6 +2419,34 @@ function ModuloFineGiro({ titoli, prenotato, canali, token, ruolo, spalmatura, u
     setAuroraEditing(null);
   };
 
+  // Uscita prevista: soglia sul prenotato TOTALE del titolo (tutti i canali, a prescindere
+  // da filtri cliente/agente), salvo scelta manuale salvata sul titolo.
+  const [filterUscita, setFilterUscita] = useState("tutti");
+  const [uscitaOverride, setUscitaOverride] = useState({});
+  useEffect(() => {
+    const map = {};
+    titoli.forEach(t => { if (t.uscita_giorno_override) map[t.id] = t.uscita_giorno_override; });
+    setUscitaOverride(map);
+  }, [titoli]);
+  const totPrenRealeByTitolo = useMemo(() => {
+    const map = {};
+    prenotato.forEach(p => { map[p.titolo_id] = (map[p.titolo_id] || 0) + p.quantita; });
+    return map;
+  }, [prenotato]);
+  const uscitaTitolo = useCallback(t => {
+    const calcolato = giornoDaSoglia(totPrenRealeByTitolo[t.id] || 0);
+    const override = uscitaOverride[t.id] || null;
+    return { giorno: override || calcolato, calcolato, forzato: !!override && override !== calcolato };
+  }, [totPrenRealeByTitolo, uscitaOverride]);
+  const saveUscita = async (t, value) => {
+    const nuovo = value === giornoDaSoglia(totPrenRealeByTitolo[t.id] || 0) ? null : value;
+    const prima = uscitaOverride[t.id] || null;
+    setUscitaOverride(prev => ({ ...prev, [t.id]: nuovo }));
+    const ok = await sbUpdateTitolo(t.id, { uscita_giorno_override: nuovo }, token);
+    if (!ok) { setUscitaOverride(prev => ({ ...prev, [t.id]: prima })); alert("Errore nel salvataggio dell'uscita prevista"); return; }
+    onUpdateTitolo && onUpdateTitolo({ id: t.id, uscita_giorno_override: nuovo });
+  };
+
   const cedole = useMemo(() => { if (giroLabelSel.length === 0) return []; return [...new Set(titoli.filter(t => giroLabelSel.includes(t.giro_label)).map(t => t.n_cedola).filter(Boolean))].sort(); }, [titoli, giroLabelSel]);
   const editori = useMemo(() => { const t = giroLabelSel.length > 0 ? titoli.filter(t => giroLabelSel.includes(t.giro_label)) : extraSel.length > 0 ? titoli.filter(t => t.giro_label === "EXTRA" && extraSel.includes(t.n_cedola)) : []; return [...new Set(t.map(t => t.editore_nome).filter(Boolean))].sort(); }, [titoli, giroLabelSel, extraSel]);
   const accounts = useMemo(() => { const t = giroLabelSel.length > 0 ? titoli.filter(t => giroLabelSel.includes(t.giro_label)) : extraSel.length > 0 ? titoli.filter(t => t.giro_label === "EXTRA" && extraSel.includes(t.n_cedola)) : []; return [...new Set(t.map(t => t.account_editore).filter(Boolean))].sort(); }, [titoli, giroLabelSel, extraSel]);
@@ -2512,6 +2545,9 @@ function ModuloFineGiro({ titoli, prenotato, canali, token, ruolo, spalmatura, u
     if (soloPrenotati && clienteSel) {
       result = result.filter(({ totPren }) => totPren > 0);
     }
+    if (filterUscita !== "tutti") {
+      result = result.filter(({ titolo }) => uscitaTitolo(titolo).giorno === filterUscita);
+    }
     if (sortPren) {
       result = [...result].sort((a, b) => sortPren === "asc" ? a.totPren - b.totPren : b.totPren - a.totPren);
     }
@@ -2524,7 +2560,7 @@ function ModuloFineGiro({ titoli, prenotato, canali, token, ruolo, spalmatura, u
       });
     }
     return result;
-  }, [righe, filterCanale, sortPren, soloPrenotati, clienteSel, sortCanale]);
+  }, [righe, filterCanale, sortPren, soloPrenotati, clienteSel, sortCanale, filterUscita, uscitaTitolo]);
 
   // titoli visibili per la sezione "Agenti per editore e titolo" (con il loro prenotato)
   const titoliPerAgenti = useMemo(() => righeFiltrate.map(r => ({ ...r.titolo, _tot: CANALI_AGENTI.reduce((s, cod) => s + (r.byCanale[cod] || 0), 0) })), [righeFiltrate]);
@@ -2564,10 +2600,10 @@ function ModuloFineGiro({ titoli, prenotato, canali, token, ruolo, spalmatura, u
     const XLSX = window.XLSX;
     const colCanali = canaliTabella;
     const dirStampHeaders = ruolo !== "agente" ? ["Dir.Stamp./Fuori lancio"] : [];
-    const headers = ["N° CEDOLA","EAN","TITOLO","AUTORE","COD.EDITORE","EDITORE","PREZZO","USCITA","OBJ ASS.","PRENOTATO","AVANZ %",...colCanali.map(c => getCanaleDisplayName(c)),...dirStampHeaders];
+    const headers = ["N° CEDOLA","EAN","TITOLO","AUTORE","COD.EDITORE","EDITORE","PREZZO","USCITA","OBJ ASS.","PRENOTATO","USCITA PREVISTA","AVANZ %",...colCanali.map(c => getCanaleDisplayName(c)),...dirStampHeaders];
     const rows = righeFiltrate.map(({ titolo: t, totPren, byCanale, dirStampatore }) => {
       const pct = t.obiettivo_assegnato > 0 ? Math.round(totPren / t.obiettivo_assegnato * 100) : 0;
-      const base = [t.n_cedola, t.ean, t.titolo, t.autore, t.codice_editore, t.editore_nome, t.prezzo, meseUscita(t), t.obiettivo_assegnato, totPren, `${pct}%`, ...colCanali.map(c => byCanale[c.codice] ?? 0)];
+      const base = [t.n_cedola, t.ean, t.titolo, t.autore, t.codice_editore, t.editore_nome, t.prezzo, meseUscita(t), t.obiettivo_assegnato, totPren, uscitaTitolo(t).giorno, `${pct}%`, ...colCanali.map(c => byCanale[c.codice] ?? 0)];
       if (ruolo !== "agente") base.push(dirStampatore || 0);
       return base;
     });
@@ -2792,6 +2828,11 @@ function ModuloFineGiro({ titoli, prenotato, canali, token, ruolo, spalmatura, u
         <SearchableMultiSelect values={filterAccount} onChange={setFilterAccount} options={accounts} placeholder="Tutti gli account" width={160} />
         <SearchableMultiSelect values={filterPromozione} onChange={setFilterPromozione} options={promozioni} renderOption={p => p === "PDE SERVICE" ? "PDE Service" : p === "0" ? "Nessuna" : "PDE Promozione"} placeholder="Tutte le promozioni" width={170} />
         <SearchableMultiSelect values={filterCanale} onChange={setFilterCanale} options={canali.filter(c => c.codice !== "AURORA" && c.codice !== "GDO").map(c => c.codice)} renderOption={cod => { const c = canali.find(x => x.codice === cod); return c?.nome || cod; }} placeholder="Tutti i canali" width={170} />
+        <select style={{ ...css.input, width: 150, color: filterUscita === "martedì" ? T.accent : filterUscita === "venerdì" ? T.green : T.text }} value={filterUscita} onChange={e => setFilterUscita(e.target.value)}>
+          <option value="tutti">Tutte le uscite</option>
+          <option value="martedì">Uscita martedì</option>
+          <option value="venerdì">Uscita venerdì</option>
+        </select>
         <input style={{ ...css.input, width: 160 }} placeholder="Cerca EAN / titolo..." value={search} onChange={e => setSearch(e.target.value)} />
         {(filterCanale.length > 0 || clienteSel) && (
           <label style={{ display: "flex", alignItems: "center", gap: 5, cursor: "pointer", fontSize: "11px", color: soloPrenotati ? T.accent : T.textMid, userSelect: "none" }}>
@@ -2980,7 +3021,9 @@ function ModuloFineGiro({ titoli, prenotato, canali, token, ruolo, spalmatura, u
             <tr>
               <th style={css.th}>Cedola</th><th style={css.th}>EAN</th><th style={css.th}>Titolo</th>
               <th style={css.th}>Autore</th><th style={css.th}>Cod.Ed.</th><th style={css.th}>Editore</th>
-              <th style={css.th}>€</th><th style={css.th}>Uscita</th><th style={css.th}>Obj</th><th style={{ ...css.th, cursor: "pointer" }} onClick={() => { setSortPren(s => s === "desc" ? "asc" : s === "asc" ? null : "desc"); setSortCanale(null); }}>Pren.{sortPren === "desc" ? " ↓" : sortPren === "asc" ? " ↑" : ""}</th><th style={css.th}>%</th>
+              <th style={css.th}>€</th><th style={css.th}>Uscita</th><th style={css.th}>Obj</th><th style={{ ...css.th, cursor: "pointer" }} onClick={() => { setSortPren(s => s === "desc" ? "asc" : s === "asc" ? null : "desc"); setSortCanale(null); }}>Pren.{sortPren === "desc" ? " ↓" : sortPren === "asc" ? " ↑" : ""}</th>
+              <th style={{ ...css.th, whiteSpace: "normal", lineHeight: 1.2 }} title={`Prenotato totale ≥ ${SOGLIA_USCITA_MARTEDI.toLocaleString("it")} copie → martedì, sotto → venerdì`}>Uscita prevista</th>
+              <th style={css.th}>%</th>
               {canaliTabella.map(c => <th key={c.id} style={{ ...css.th, whiteSpace: "normal", maxWidth: 70, lineHeight: 1.2, cursor: "pointer" }} onClick={() => { setSortCanale(prev => prev?.codice === c.codice ? (prev.dir === "desc" ? { codice: c.codice, dir: "asc" } : null) : { codice: c.codice, dir: "desc" }); setSortPren(null); }}>{getCanaleDisplayName(c)}{sortCanale?.codice === c.codice ? (sortCanale.dir === "desc" ? " ↓" : " ↑") : ""}</th>)}
               {ruolo !== "agente" && <th style={{ ...css.th, color: T.accent }}>Dir.Stamp./Fuori lancio ✎</th>}
             </tr>
@@ -2996,11 +3039,31 @@ function ModuloFineGiro({ titoli, prenotato, canali, token, ruolo, spalmatura, u
                   <td style={{ ...css.td, maxWidth: 200 }}><div style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{t.titolo}</div></td>
                   <td style={{ ...css.td, color: T.textMid }}>{t.autore}</td>
                   <td style={{ ...css.td, color: T.textMid, fontSize: "11px" }}>{t.codice_editore}</td>
-                  <td style={{ ...css.td, color: T.accent, fontWeight: "600", whiteSpace: "nowrap" }}>{t.editore_nome}</td>
+                  <td style={{ ...css.td, color: T.accent, fontWeight: "600", maxWidth: 110 }} title={t.editore_nome}><div style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{t.editore_nome}</div></td>
                   <td style={{ ...css.td, whiteSpace: "nowrap" }}>€ {t.prezzo?.toFixed(2)}</td>
                   <td style={{ ...css.td, color: T.textMid, fontSize: "11px", whiteSpace: "nowrap" }}>{meseUscita(t) || "—"}</td>
                   <td style={css.td}>{t.obiettivo_assegnato?.toLocaleString("it")}</td>
                   <td style={{ ...css.td, color: T.green, fontWeight: "600" }}>{totPren > 0 ? totPren.toLocaleString("it") : "—"}</td>
+                  {(() => {
+                    const u = uscitaTitolo(t);
+                    const colore = u.giorno === "martedì" ? T.accent : T.green;
+                    const avviso = cv("#e8a838", "#b7791f");
+                    const nota = u.forzato ? `Scelta manuale: dalla soglia sarebbe ${u.calcolato}` : `Da soglia ${SOGLIA_USCITA_MARTEDI.toLocaleString("it")} copie`;
+                    return (
+                      <td style={{ ...css.td, whiteSpace: "nowrap" }} title={nota}>
+                        {ruolo === "agente" ? (
+                          <span style={{ color: colore, fontWeight: "700", fontSize: "11px" }}>{u.giorno === "martedì" ? "Martedì" : "Venerdì"}</span>
+                        ) : (
+                          <select value={u.giorno} onChange={e => saveUscita(t, e.target.value)}
+                            style={{ ...css.input, width: 90, padding: "3px 6px", fontSize: "11px", fontWeight: "700", color: colore, borderColor: u.forzato ? avviso : T.border }}>
+                            <option value="martedì">Martedì</option>
+                            <option value="venerdì">Venerdì</option>
+                          </select>
+                        )}
+                        {u.forzato && <span style={{ color: avviso, fontSize: "9px", marginLeft: 4 }}>✎</span>}
+                      </td>
+                    );
+                  })()}
                   <td style={css.td}><span style={{ color: pct >= 80 ? T.green : pct >= 50 ? T.accent : T.red, fontWeight: "700" }}>{pct}%</span></td>
                   {canaliTabella.map(c => {
                     const qta = byCanale[c.codice] || 0;
@@ -3208,6 +3271,26 @@ function ModuloLanciSettimanali({ token, titoli, prenotato, canali, ruolo, userA
     return result;
   }, [titoli]);
 
+  // Uscita prevista decisa in Fine Giro, per EAN: soglia sul prenotato totale, salvo scelta
+  // manuale sul titolo. "forzato" = scelta diversa dalla soglia → va comunicata a Gestione Lancio.
+  const uscitaFineGiroByEan = useMemo(() => {
+    const totByTitolo = {};
+    prenotato.forEach(p => { totByTitolo[p.titolo_id] = (totByTitolo[p.titolo_id] || 0) + p.quantita; });
+    const acc = {};
+    titoli.forEach(t => {
+      if (!t.ean) return;
+      const a = acc[t.ean] || (acc[t.ean] = { tot: 0, override: null, overrideId: -1 });
+      a.tot += totByTitolo[t.id] || 0;
+      if (t.uscita_giorno_override && t.id > a.overrideId) { a.override = t.uscita_giorno_override; a.overrideId = t.id; }
+    });
+    const result = {};
+    Object.entries(acc).forEach(([ean, a]) => {
+      const calcolato = giornoDaSoglia(a.tot);
+      result[ean] = { giorno: a.override || calcolato, calcolato, forzato: !!a.override && a.override !== calcolato };
+    });
+    return result;
+  }, [titoli, prenotato]);
+
   // Canale Amazon ID
   const amazonCodice = "AMAZON";
 
@@ -3267,7 +3350,9 @@ function ModuloLanciSettimanali({ token, titoli, prenotato, canali, ruolo, userA
         const prenSenzaAmazon = prenFineGiro - prenAmazon;
         // Teorico = prenotato trasmesso (o iscritto) + amazon
         const teorico = (r.prenotato_trasmesso ?? r.prenotato_iscrizione ?? 0) + prenAmazon;
-        const giornoCalcolato = teorico >= 2000 ? "martedì" : "venerdì";
+        // Proposta: la scelta fatta in Fine Giro; per i titoli non in Fine Giro, soglia sul Teorico
+        const uscitaFG = uscitaFineGiroByEan[r.ean] || null;
+        const giornoCalcolato = uscitaFG ? uscitaFG.giorno : giornoDaSoglia(teorico);
         const giornoUscita = r.giorno_uscita_override || giornoCalcolato;
         const isOverride = !!r.giorno_uscita_override;
 
@@ -3291,6 +3376,8 @@ function ModuloLanciSettimanali({ token, titoli, prenotato, canali, ruolo, userA
           giorno_calcolato: giornoCalcolato,
           giorno_uscita: giornoUscita,
           is_override: isOverride,
+          uscita_fg_forzata: !!uscitaFG?.forzato,
+          uscita_fg_soglia: uscitaFG?.calcolato || null,
           delta_portale: deltaPortale,
           account_editore: accountMaps.byEan[r.ean] || accountMaps.byEditore[r.editore?.trim().toLowerCase()] || null,
           // Flag per sapere se i dati vengono dal DB o sono manuali/vuoti
@@ -3302,7 +3389,21 @@ function ModuloLanciSettimanali({ token, titoli, prenotato, canali, ruolo, userA
           is_manual_amazon: !haLiveAmazon && r.pren_amazon_manual > 0,
         };
       });
-  }, [data, filterAnno, filterLancio, anniDisponibili, prenByEanCanale, cedoleByEan, accountMaps]);
+  }, [data, filterAnno, filterLancio, anniDisponibili, prenByEanCanale, cedoleByEan, accountMaps, uscitaFineGiroByEan]);
+
+  // Popup: titoli iscritti al lancio con uscita forzata in Fine Giro (diversa dalla soglia).
+  // Si mostra una volta per sessione per ogni lancio selezionato.
+  const [popupUscitaForzata, setPopupUscitaForzata] = useState(null);
+  const popupUscitaVisti = useRef(new Set());
+  useEffect(() => {
+    if (filterLancio.length === 0) return;
+    const chiave = `${filterAnno}|${[...filterLancio].sort().join(",")}`;
+    if (popupUscitaVisti.current.has(chiave)) return;
+    const forzate = dataArricchita.filter(r => r.uscita_fg_forzata);
+    if (forzate.length === 0) return;
+    popupUscitaVisti.current.add(chiave);
+    setPopupUscitaForzata(forzate);
+  }, [dataArricchita, filterAnno, filterLancio]);
 
   // Filtro e sort
   const dataFiltrata = useMemo(() => {
@@ -3685,11 +3786,12 @@ if (!r.ok) throw new Error(await r.text());
           </thead>
           <tbody>
             {dataFiltrata.map((r, i) => (
-              <tr key={r.id || i} style={{
+              <tr key={r.id || i} title={r.uscita_fg_forzata ? `Uscita ${r.giorno_calcolato} scelta in Fine Giro (dalla soglia sarebbe ${r.uscita_fg_soglia}): comunicala a Gestione Lancio` : undefined} style={{
                 background: r.prenotato_trasmesso === 0
                   ? T.red + "22"
+                  : r.uscita_fg_forzata ? cv("#e8a838", "#b7791f") + "22"
                   : (i % 2 === 0 ? "transparent" : T.surface + "66"),
-                ...(r.prenotato_trasmesso === 0 ? { boxShadow: `inset 3px 0 0 ${T.red}` } : {})
+                ...(r.prenotato_trasmesso === 0 ? { boxShadow: `inset 3px 0 0 ${T.red}` } : r.uscita_fg_forzata ? { boxShadow: `inset 3px 0 0 ${cv("#e8a838", "#b7791f")}` } : {})
               }}>
                 <td style={{ ...css.td, fontFamily: "monospace", fontSize: "11px", color: T.textMid }}>{r.ean}</td>
                 <td style={{ ...css.td, color: T.textMid, fontSize: "11px" }}>{r.codice_editore}</td>
@@ -3811,6 +3913,7 @@ if (!r.ok) throw new Error(await r.text());
                     <option value="venerdì">Venerdì</option>
                   </select>
                   {r.is_override && <span style={{ color: cv("#e8a838", "#b7791f"), fontSize: "9px", marginLeft: 4 }}>✎</span>}
+                  {r.uscita_fg_forzata && <span style={{ color: cv("#e8a838", "#b7791f"), fontSize: "11px", marginLeft: 4, cursor: "pointer" }} onClick={() => setPopupUscitaForzata([r])}>⚠</span>}
                 </td>
               </tr>
             ))}
@@ -3824,6 +3927,48 @@ if (!r.ok) throw new Error(await r.text());
       {toast && (
         <div style={{ position: "fixed", bottom: 24, left: "50%", transform: "translateX(-50%)", background: toast.type === "err" ? cv("#4a1a2a", "#fdecec") : cv("#1a3a2a", "#e7f6ee"), border: `1px solid ${toast.type === "err" ? T.red : T.green}`, color: toast.type === "err" ? T.red : T.green, borderRadius: 6, padding: "8px 20px", fontSize: "12px", zIndex: 999, boxShadow: "0 4px 20px #0008" }}>
           {toast.msg}
+        </div>
+      )}
+
+      {/* POPUP USCITA FORZATA IN FINE GIRO */}
+      {popupUscitaForzata && (
+        <div style={{ position: "fixed", inset: 0, background: "#000a", zIndex: 300, display: "flex", alignItems: "center", justifyContent: "center" }} onClick={() => setPopupUscitaForzata(null)}>
+          <div style={{ background: T.surface, border: `1px solid ${cv("#e8a838", "#b7791f")}`, borderRadius: 6, padding: 28, width: 560, maxHeight: "80vh", overflowY: "auto" }} onClick={e => e.stopPropagation()}>
+            <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 6 }}>
+              <span style={{ fontSize: "22px" }}>⚠</span>
+              <span style={{ color: cv("#e8a838", "#b7791f"), fontWeight: "700", fontSize: "14px" }}>COMUNICA A GESTIONE LANCIO</span>
+            </div>
+            <div style={{ color: T.textMid, fontSize: "12px", marginBottom: 16, lineHeight: 1.5 }}>
+              {popupUscitaForzata.length === 1 ? "Questo titolo ha" : `Questi ${popupUscitaForzata.length} titoli hanno`} un'uscita scelta in Fine Giro diversa da quella determinata dalla soglia di {SOGLIA_USCITA_MARTEDI.toLocaleString("it")} copie. Comunica a Gestione Lancio l'uscita corretta.
+            </div>
+            <div style={{ border: `1px solid ${T.border}`, borderRadius: 4, overflow: "hidden", marginBottom: 20 }}>
+              <table style={css.table}>
+                <thead>
+                  <tr>
+                    <th style={css.th}>EAN</th>
+                    <th style={css.th}>Titolo</th>
+                    <th style={css.th}>Pren. F.G.</th>
+                    <th style={css.th}>Da soglia</th>
+                    <th style={css.th}>Uscita</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {popupUscitaForzata.map((r, i) => (
+                    <tr key={r.id || i} style={{ background: i % 2 === 0 ? "transparent" : T.bg }}>
+                      <td style={{ ...css.td, fontFamily: "monospace", fontSize: "11px", color: T.textMid }}>{r.ean}</td>
+                      <td style={{ ...css.td, maxWidth: 200 }}><div style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", fontWeight: "600" }}>{r.titolo}</div></td>
+                      <td style={css.td}>{(r.pren_fine_giro || 0).toLocaleString("it")}</td>
+                      <td style={{ ...css.td, color: T.textMid }}>{r.uscita_fg_soglia}</td>
+                      <td style={{ ...css.td, fontWeight: "700", color: r.giorno_calcolato === "martedì" ? T.accent : T.green }}>{r.giorno_calcolato}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+            <div style={{ display: "flex", justifyContent: "flex-end" }}>
+              <button style={css.btn("accent")} onClick={() => setPopupUscitaForzata(null)}>Ho capito</button>
+            </div>
+          </div>
         </div>
       )}
 
@@ -5694,7 +5839,7 @@ export default function App() {
           {activeModule === "cedola" && <ModuloCedola titoli={titoli} giriList={giriDB} canali={canali} onUpdateTitolo={t => { updateTitolo(t); setTitoli(prev => prev.some(x => x.id === t.id) ? prev.map(x => x.id === t.id ? t : x) : [...prev, t]); }} onDeleteTitolo={deleteTitolo} spalmatura={spalmatura} prenotato={prenotato} ruolo={ruolo} token={session.token} onTitoliChange={refreshDati} userAccount={userAccount} statoChiusure={statoChiusure} onToggleChiusura={toggleChiusura} />}
           {activeModule === "prenotato" && <ModuloPrenotato token={session.token} titoli={titoli} onImportDone={() => sbFetch("prenotato?select=*&limit=100000", session.token).then(setPrenotato)} />}
           {/* MOD 4: Passato spalmatura a ModuloFineGiro */}
-          {activeModule === "finegiro" && <ModuloFineGiro titoli={titoli} prenotato={prenotato} canali={canali} token={session.token} ruolo={ruolo} spalmatura={spalmatura} userAccount={userAccount} onPrenotatoUpdated={refreshDati} statoChiusure={statoChiusure} onToggleChiusura={toggleChiusura} />}
+          {activeModule === "finegiro" && <ModuloFineGiro titoli={titoli} prenotato={prenotato} canali={canali} token={session.token} ruolo={ruolo} spalmatura={spalmatura} userAccount={userAccount} onPrenotatoUpdated={refreshDati} onUpdateTitolo={updateTitolo} statoChiusure={statoChiusure} onToggleChiusura={toggleChiusura} />}
           {activeModule === "avanzamento" && <ModuloAvanzamento token={session.token} titoli={titoli} prenotato={prenotato} canali={canali} ruolo={ruolo} userAccount={userAccount} userEmail={session.user?.email} />}
           {activeModule === "lanci" && <ModuloLanciSettimanali token={session.token} titoli={titoli} prenotato={prenotato} canali={canali} ruolo={ruolo} userAccount={userAccount} onNavigateAnticipi={() => setActiveModule("anticipilancio")} />}
           {activeModule === "verificalanci" && <ModuloVerificaLanciAmazon token={session.token} titoli={titoli} prenotato={prenotato} canali={canali} />}
