@@ -3437,6 +3437,49 @@ function ModuloLanciSettimanali({ token, titoli, prenotato, canali, ruolo, userA
     setPopupUscitaForzata(forzate);
   }, [dataArricchita, filterAnno, filterLancio]);
 
+  // Mail a Gestione Lancio con i titoli a uscita forzata: come per gli Anticipi Lancio, la
+  // tabella va negli appunti (HTML + testo) e si incolla con Ctrl+V nella mail aperta da mailto.
+  const [avvisoMailUscita, setAvvisoMailUscita] = useState(null);
+  const creaMailUscitaForzata = (righe) => {
+    const nomeGiorno = g => g === "martedì" ? "Martedì" : "Venerdì";
+    const lanci = [...new Set(righe.map(r => r.num_lancio / 10))].sort((a, b) => a - b).join(" - ");
+    const subject = `Richiesta variazione uscita titoli al lancio ${lanci}`;
+    const firma = (() => { try { return localStorage.getItem("anticipiLancio_firma") || ""; } catch { return ""; } })();
+    const colonne = [
+      ["Ean", r => r.ean],
+      ["Titolo", r => r.titolo],
+      ["Autore", r => r.autore],
+      ["Editore", r => r.editore],
+      ["Uscita richiesta", r => nomeGiorno(r.giorno_calcolato)],
+    ];
+    const esc = (v) => String(v ?? "").replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+    const cella = "border:1px solid #000;padding:4px 8px;font-family:Calibri,Arial,sans-serif;font-size:11pt;";
+    const tabellaHtml =
+      `<table style="border-collapse:collapse;border:1px solid #000;">` +
+      `<tr>${colonne.map(([h]) => `<td style="${cella}">${esc(h)}</td>`).join("")}</tr>` +
+      righe.map(r => `<tr>${colonne.map(([, f]) => `<td style="${cella}">${esc(f(r))}</td>`).join("")}</tr>`).join("") +
+      `</table>`;
+    const intro = "di seguito vi elenchiamo i titoli per cui richiediamo uscita diversa da quella prevista dalla soglia:";
+    const p = (t) => `<p style="font-family:Calibri,Arial,sans-serif;font-size:11pt;margin:0 0 12px 0;">${t}</p>`;
+    const corpoHtml = `<div>${p("Buongiorno,")}${p(intro)}${tabellaHtml}<br>${p("Grazie.")}${p(esc(firma || "[Firma]").replace(/\n/g, "<br>"))}</div>`;
+    const tabellaTesto = [colonne.map(([h]) => h), ...righe.map(r => colonne.map(([, f]) => String(f(r) ?? "")))].map(c => c.join("\t")).join("\n");
+    const corpoTesto = `Buongiorno,\n\n${intro}\n\n${tabellaTesto}\n\nGrazie.\n\n${firma || "[Firma]"}`;
+
+    const url = `mailto:gestione.lancio@meli.it?cc=${encodeURIComponent("alberto.simola@pde.it,chiara.piazzolla@pde.it")}&subject=${encodeURIComponent(subject)}`;
+    const apriMail = (copiato) => {
+      if (copiato) { setAvvisoMailUscita(url); return; }
+      window.location.href = `${url}&body=${encodeURIComponent(corpoTesto)}`;
+      showToast("Copia negli appunti non riuscita: nella mail c'è il testo semplice", "err");
+    };
+    try {
+      navigator.clipboard.write([new ClipboardItem({
+        "text/html": new Blob([corpoHtml], { type: "text/html" }),
+        "text/plain": new Blob([corpoTesto], { type: "text/plain" }),
+      })]).then(() => apriMail(true), () => apriMail(false));
+    } catch { apriMail(false); }
+    setPopupUscitaForzata(null);
+  };
+
   // Filtro e sort
   const dataFiltrata = useMemo(() => {
     let result = [...dataArricchita];
@@ -3945,7 +3988,7 @@ if (!r.ok) throw new Error(await r.text());
                     <option value="venerdì">Venerdì</option>
                   </select>
                   {r.is_override && <span style={{ color: cv("#e8a838", "#b7791f"), fontSize: "9px", marginLeft: 4 }}>✎</span>}
-                  {r.uscita_fg_forzata && <span style={{ color: cv("#e8a838", "#b7791f"), fontSize: "11px", marginLeft: 4, cursor: "pointer" }} onClick={() => setPopupUscitaForzata([r])}>⚠</span>}
+                  {r.uscita_fg_forzata && <span style={{ color: cv("#e8a838", "#b7791f"), fontSize: "11px", marginLeft: 4, cursor: "pointer" }} onClick={() => setPopupUscitaForzata(dataArricchita.filter(x => x.uscita_fg_forzata))}>⚠</span>}
                 </td>
               </tr>
             ))}
@@ -3997,9 +4040,24 @@ if (!r.ok) throw new Error(await r.text());
                 </tbody>
               </table>
             </div>
-            <div style={{ display: "flex", justifyContent: "flex-end" }}>
-              <button style={css.btn("accent")} onClick={() => setPopupUscitaForzata(null)}>Ho capito</button>
+            <div style={{ display: "flex", justifyContent: "flex-end", gap: 8 }}>
+              <button style={css.btn()} onClick={() => setPopupUscitaForzata(null)}>Chiudi</button>
+              <button style={css.btn("accent")} onClick={() => creaMailUscitaForzata(popupUscitaForzata)}>✉ Crea mail a Gestione Lancio</button>
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* AVVISO: la mail si apre vuota, il testo con la tabella è negli appunti */}
+      {avvisoMailUscita && (
+        <div style={{ position: "fixed", inset: 0, background: "#000a", zIndex: 300, display: "flex", alignItems: "center", justifyContent: "center" }}>
+          <div style={{ background: T.surface, border: `1px solid ${T.accent}`, borderRadius: 6, padding: 28, width: 420, textAlign: "center" }}>
+            <div style={{ fontSize: "28px", marginBottom: 10 }}>📋</div>
+            <div style={{ color: T.text, fontSize: "15px", fontWeight: "700", marginBottom: 10 }}>Clicca CTRL + V per incollare il testo</div>
+            <div style={{ color: T.textMid, fontSize: "12px", lineHeight: 1.6, marginBottom: 20 }}>
+              Il testo della mail con la tabella è già copiato.<br />Quando si apre la mail, clicca nel corpo del messaggio e premi <b style={{ color: T.text }}>CTRL + V</b>.
+            </div>
+            <button style={css.btn("accent")} autoFocus onClick={() => { window.location.href = avvisoMailUscita; setAvvisoMailUscita(null); }}>OK, apri la mail</button>
           </div>
         </div>
       )}
