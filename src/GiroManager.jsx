@@ -3409,6 +3409,8 @@ function ModuloLanciSettimanali({ token, titoli, prenotato, canali, ruolo, userA
           giorno_uscita: giornoUscita,
           is_override: isOverride,
           uscita_fg_forzata: !!uscitaFG?.forzato,
+          // già mandata la mail a Gestione Lancio per questa uscita: non si ripropone
+          uscita_comunicata: !!uscitaFG?.forzato && r.uscita_comunicata === giornoCalcolato,
           uscita_fg_soglia: uscitaFG?.calcolato || null,
           delta_portale: deltaPortale,
           account_editore: accountMaps.byEan[r.ean] || accountMaps.byEditore[r.editore?.trim().toLowerCase()] || null,
@@ -3431,7 +3433,7 @@ function ModuloLanciSettimanali({ token, titoli, prenotato, canali, ruolo, userA
     if (filterLancio.length === 0) return;
     const chiave = `${filterAnno}|${[...filterLancio].sort().join(",")}`;
     if (popupUscitaVisti.current.has(chiave)) return;
-    const forzate = dataArricchita.filter(r => r.uscita_fg_forzata);
+    const forzate = dataArricchita.filter(r => r.uscita_fg_forzata && !r.uscita_comunicata);
     if (forzate.length === 0) return;
     popupUscitaVisti.current.add(chiave);
     setPopupUscitaForzata(forzate);
@@ -3448,6 +3450,27 @@ function ModuloLanciSettimanali({ token, titoli, prenotato, canali, ruolo, userA
     const corpo = `Buongiorno,\n\ndi seguito vi elenchiamo i titoli per cui richiediamo uscita diversa da quella prevista dalla soglia:\n\n${elenco}\n\nGrazie.${firma ? `\n\n${firma}` : ""}`;
     window.location.href = `mailto:gestione.lancio@meli.it?cc=${encodeURIComponent("alberto.simola@pde.it,chiara.piazzolla@pde.it")}&subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(corpo)}`;
     setPopupUscitaForzata(null);
+    segnaUscitaComunicata(righe);
+  };
+
+  // Flag sulle righe del lancio: uscita comunicata a Gestione Lancio (con il giorno comunicato,
+  // così se in Fine Giro la scelta cambia ancora il titolo torna a essere segnalato).
+  const segnaUscitaComunicata = async (righe) => {
+    const ora = new Date().toISOString();
+    const perGiorno = {};
+    righe.forEach(r => { if (r.id) (perGiorno[r.giorno_calcolato] ||= []).push(r.id); });
+    let ok = true;
+    for (const [giorno, ids] of Object.entries(perGiorno)) {
+      const resp = await fetch(`${SUPABASE_URL}/rest/v1/lanci_settimanali?id=in.(${ids.join(",")})`, {
+        method: "PATCH",
+        headers: { "apikey": SUPABASE_KEY, "Authorization": `Bearer ${token}`, "Content-Type": "application/json", "Prefer": "return=minimal" },
+        body: JSON.stringify({ uscita_comunicata: giorno, uscita_comunicata_il: ora }),
+      });
+      if (!resp.ok) { ok = false; continue; }
+      const set = new Set(ids);
+      setData(prev => prev.map(r => set.has(r.id) ? { ...r, uscita_comunicata: giorno, uscita_comunicata_il: ora } : r));
+    }
+    if (!ok) showToast("Mail aperta, ma non sono riuscito a segnare i titoli come comunicati", "err");
   };
 
   // Filtro e sort
@@ -3831,12 +3854,12 @@ if (!r.ok) throw new Error(await r.text());
           </thead>
           <tbody>
             {dataFiltrata.map((r, i) => (
-              <tr key={r.id || i} title={r.uscita_fg_forzata ? `Uscita ${r.giorno_calcolato} scelta in Fine Giro (dalla soglia sarebbe ${r.uscita_fg_soglia}): comunicala a Gestione Lancio` : undefined} style={{
+              <tr key={r.id || i} title={r.uscita_comunicata ? `Uscita ${r.giorno_calcolato} già comunicata a Gestione Lancio` : r.uscita_fg_forzata ? `Uscita ${r.giorno_calcolato} scelta in Fine Giro (dalla soglia sarebbe ${r.uscita_fg_soglia}): comunicala a Gestione Lancio` : undefined} style={{
                 background: r.prenotato_trasmesso === 0
                   ? T.red + "22"
-                  : r.uscita_fg_forzata ? cv("#e8a838", "#b7791f") + "22"
+                  : r.uscita_fg_forzata && !r.uscita_comunicata ? cv("#e8a838", "#b7791f") + "22"
                   : (i % 2 === 0 ? "transparent" : T.surface + "66"),
-                ...(r.prenotato_trasmesso === 0 ? { boxShadow: `inset 3px 0 0 ${T.red}` } : r.uscita_fg_forzata ? { boxShadow: `inset 3px 0 0 ${cv("#e8a838", "#b7791f")}` } : {})
+                ...(r.prenotato_trasmesso === 0 ? { boxShadow: `inset 3px 0 0 ${T.red}` } : r.uscita_fg_forzata && !r.uscita_comunicata ? { boxShadow: `inset 3px 0 0 ${cv("#e8a838", "#b7791f")}` } : {})
               }}>
                 <td style={{ ...css.td, fontFamily: "monospace", fontSize: "11px", color: T.textMid }}>{r.ean}</td>
                 <td style={{ ...css.td, color: T.textMid, fontSize: "11px" }}>{r.codice_editore}</td>
@@ -3958,7 +3981,8 @@ if (!r.ok) throw new Error(await r.text());
                     <option value="venerdì">Venerdì</option>
                   </select>
                   {r.is_override && <span style={{ color: cv("#e8a838", "#b7791f"), fontSize: "9px", marginLeft: 4 }}>✎</span>}
-                  {r.uscita_fg_forzata && <span style={{ color: cv("#e8a838", "#b7791f"), fontSize: "11px", marginLeft: 4, cursor: "pointer" }} onClick={() => setPopupUscitaForzata(dataArricchita.filter(x => x.uscita_fg_forzata))}>⚠</span>}
+                  {r.uscita_fg_forzata && !r.uscita_comunicata && <span style={{ color: cv("#e8a838", "#b7791f"), fontSize: "11px", marginLeft: 4, cursor: "pointer" }} onClick={() => setPopupUscitaForzata(dataArricchita.filter(x => x.uscita_fg_forzata && !x.uscita_comunicata))}>⚠</span>}
+                  {r.uscita_comunicata && <span style={{ color: T.green, fontSize: "10px", marginLeft: 4 }} title={`Comunicata a Gestione Lancio${r.uscita_comunicata_il ? ` il ${new Date(r.uscita_comunicata_il).toLocaleDateString("it")}` : ""}`}>✉✓</span>}
                 </td>
               </tr>
             ))}
