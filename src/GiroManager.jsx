@@ -5219,6 +5219,65 @@ async function cercaTitoloDaEan(ean, token) {
   return titles.find(t => t.ean === ean) || titles[0] || null;
 }
 
+// Consultazione ordini Messaggerie (portale POC) via rpn-sync, come in BookUp.
+// Il collegamento SSO del portale ogni tanto fallisce a caso: si riprova fino a 3 volte.
+async function pocOrdiniCall(path, body, token) {
+  for (let tentativo = 1; ; tentativo++) {
+    const res = await fetch(`${RPN_TITOLI_BASE}/${path}`, {
+      method: "POST",
+      headers: { "Authorization": `Bearer ${token}`, "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    });
+    const data = await res.json().catch(() => ({}));
+    if (res.ok) return data;
+    const msg = String(data.message || data.error || `Errore ${res.status}`);
+    const glitch = /POC login|oidc_failed|Sessione dati non attiva/i.test(msg);
+    if (!glitch || tentativo >= 3) {
+      const err = new Error(glitch ? "Messaggerie non ha completato l'accesso al portale ordini: riprova tra qualche minuto." : msg);
+      err.status = res.status;
+      throw err;
+    }
+    await new Promise(r => setTimeout(r, 2000 * tentativo));
+  }
+}
+
+const normCodCliente = (c) => String(c ?? "").trim().replace(/^0+/, "").toUpperCase();
+
+// Cerca nel portafoglio ordini l'ordine con stesso EAN, stesso cliente e stessa quantità.
+// Restituisce { numero, interno } oppure { motivo } se non lo trova.
+async function cercaOrdinePortafoglio(riga, token) {
+  const ean = String(riga.ean || "").trim();
+  const codici = String(riga.codice_cliente || "").split(/[^0-9A-Za-z]+/).map(normCodCliente).filter(Boolean);
+  const qta = Number(riga.quantita);
+  if (!ean || !codici.length) return { motivo: "cliente o EAN mancanti" };
+  const data = await pocOrdiniCall("verifica-ordini-righe", {
+    startRow: 0, endRow: 200,
+    filterModel: { EAN13: { filterType: "text", type: "equals", filter: ean } },
+    sortModel: [{ sort: "desc", type: "default", colId: "DATA_E_ORA" }],
+    periodPreset: "all",
+  }, token);
+  // Codice cliente della riga ordine: null se il portale non lo riporta (allora non si scarta).
+  const codiciDi = (o) => {
+    const cod = [o.DEST_MERCI_COD, o.CLIENTE_COD, o.COD_CLIENTE].map(normCodCliente).filter(Boolean);
+    const label = String(o.DEST_MERCI_LABEL || "").trim();
+    (label.match(/\d{4,}/g) || []).forEach(n => cod.push(normCodCliente(n))); // es. "2663901 - LIBRERIA ..."
+    return cod.length ? cod : null;
+  };
+  const delCliente = (o) => { const cod = codiciDi(o); return cod === null ? null : codici.some(c => cod.includes(c)); };
+  const tutti = (data.rows || []).filter(o => o.N_ORDINE);
+  let ordini = tutti.filter(o => delCliente(o) === true);
+  if (!ordini.length) ordini = tutti.filter(o => delCliente(o) === null); // riepilogo senza codice cliente: si verifica sulle righe
+  if (!ordini.length) return { motivo: tutti.length ? "ordini per questo EAN trovati, ma di altri clienti" : "nessun ordine per questo EAN nel portafoglio" };
+  const qtaTrovate = [];
+  for (const o of ordini.slice(0, 10)) {
+    const dett = await pocOrdiniCall("verifica-ordini-dettaglio", { nOrdine: String(o.N_ORDINE) }, token);
+    const righeEan = (dett.rows || []).filter(x => String(x.EAN13 || "").trim() === ean && (delCliente(o) === true || delCliente(x) !== false));
+    if (righeEan.some(x => Number(x.COPIE) === qta)) return { numero: String(o.N_ORDINE), interno: o.N_ORDINE_INTERNO ? String(o.N_ORDINE_INTERNO) : null };
+    righeEan.forEach(x => qtaTrovate.push(`${x.COPIE} (ord. ${o.N_ORDINE})`));
+  }
+  return { motivo: qtaTrovate.length ? `quantità diversa: trovate ${qtaTrovate.join(", ")}` : "ordine del cliente trovato ma senza la riga di questo EAN" };
+}
+
 function ModuloAnticipiLancio({ token, userEmail }) {
   const [data, setData] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -5410,6 +5469,46 @@ function ModuloAnticipiLancio({ token, userEmail }) {
 
   const toggleSelect = (id) => setSelected(prev => { const n = new Set(prev); n.has(id) ? n.delete(id) : n.add(id); return n; });
 
+  // Recupera ordine: per le righe visibili senza N° ordine (o solo le selezionate)
+  // cerca l'ordine nel portafoglio Messaggerie (cliente + EAN + quantità) e lo salva.
+  const [recupero, setRecupero] = useState(null); // { fatti, totale } durante la ricerca
+  const [esitoOrdine, setEsitoOrdine] = useState({}); // id → motivo se non trovato
+  const recuperaOrdini = async () => {
+    const base = selected.size > 0 ? dataFiltrata.filter(r => selected.has(r.id)) : dataFiltrata;
+    const righe = base.filter(r => !r.numero_ordine && r.ean && r.codice_cliente);
+    if (!righe.length) { showToast("Nessuna riga senza N° ordine da cercare", "err"); return; }
+    setRecupero({ fatti: 0, totale: righe.length });
+    let trovati = 0, nonTrovati = 0;
+    const esiti = {};
+    for (const r of righe) {
+      try {
+        const res = await cercaOrdinePortafoglio(r, token);
+        if (res.numero) {
+          const p = await fetch(`${SUPABASE_URL}/rest/v1/novita_fuori_lancio?id=eq.${r.id}`, {
+            method: "PATCH",
+            headers: { "apikey": SUPABASE_KEY, "Authorization": `Bearer ${token}`, "Content-Type": "application/json", "Prefer": "return=minimal" },
+            body: JSON.stringify({ numero_ordine: res.numero }),
+          });
+          if (p.ok) {
+            trovati++;
+            setData(prev => prev.map(x => x.id === r.id ? { ...x, numero_ordine: res.numero } : x));
+          } else { nonTrovati++; esiti[r.id] = "errore nel salvataggio"; }
+        } else { nonTrovati++; esiti[r.id] = res.motivo; }
+      } catch (e) {
+        if (e.status === 428) {
+          setRecupero(null);
+          showToast("Account Messaggerie Libri non collegato in BookUp (sezione Consultazione Titoli)", "err");
+          return;
+        }
+        nonTrovati++; esiti[r.id] = "errore: " + e.message;
+      }
+      setEsitoOrdine(prev => ({ ...prev, ...esiti }));
+      setRecupero(prev => prev ? { ...prev, fatti: prev.fatti + 1 } : prev);
+    }
+    setRecupero(null);
+    showToast(`Recupero ordini: ${trovati} trovati${nonTrovati ? `, ${nonTrovati} non trovati` : ""}`, trovati ? "ok" : "err");
+  };
+
   const creaMail = () => {
     const righeSel = dataFiltrata.filter(r => selected.has(r.id));
     if (righeSel.length === 0) { showToast("Seleziona almeno una riga", "err"); return; }
@@ -5555,6 +5654,7 @@ function ModuloAnticipiLancio({ token, userEmail }) {
             <label style={{ color: T.textMid, fontSize: "9px", textTransform: "uppercase", letterSpacing: "0.06em", display: "block", marginBottom: 2 }}>Firma mail</label>
             <input style={{ ...css.input, width: 160 }} placeholder="Firma per la mail..." value={firma} onChange={e => setFirma(e.target.value)} />
           </div>
+          <button style={{ ...css.btn(), borderColor: T.accent, color: T.accent, alignSelf: "flex-end" }} onClick={recuperaOrdini} disabled={!!recupero} title="Cerca nel portafoglio ordini Messaggerie (Consultazione ordini) l'ordine con stesso cliente, EAN e quantità e compila il N° ordine. Lavora sulle righe selezionate, oppure su tutte quelle visibili senza N° ordine.">{recupero ? `⏳ Ricerca ordini ${recupero.fatti}/${recupero.totale}…` : `🔎 Recupera ordine${selected.size > 0 ? ` (${selected.size})` : ""}`}</button>
           <button style={{ ...css.btn(), borderColor: T.accent, color: T.accent, alignSelf: "flex-end" }} onClick={creaMail} disabled={selected.size === 0} title="Copia negli appunti la mail con la tabella degli ordini selezionati e apre una mail nuova: incolla con Ctrl+V">✉️ Crea mail{selected.size > 0 ? ` (${selected.size})` : ""}</button>
           <button style={{ ...css.btn(), borderColor: T.green, color: T.green, alignSelf: "flex-end" }} onClick={apriNuovo}>+ Nuovo</button>
         </div>
@@ -5604,7 +5704,9 @@ function ModuloAnticipiLancio({ token, userEmail }) {
                 <td style={css.td}>{r.editore || "—"}</td>
                 <td style={css.td}>{r.prezzo != null ? `€ ${Number(r.prezzo).toFixed(2)}` : "—"}</td>
                 <td style={css.td}>{r.quantita}</td>
-                <td style={{ ...css.td, fontFamily: "monospace", fontSize: "11px" }}>{r.numero_ordine || "—"}</td>
+                <td style={{ ...css.td, fontFamily: "monospace", fontSize: "11px" }}>{r.numero_ordine || (esitoOrdine[r.id]
+                  ? <span title={esitoOrdine[r.id]} style={{ color: cv("#e8a838", "#b7791f"), fontFamily: "inherit", cursor: "help" }}>non trovato ⓘ</span>
+                  : "—")}</td>
                 <td style={css.td}>{fmtDataIt(r.data_consegna_desiderata)}</td>
                 <td style={{ ...css.td, maxWidth: 160, fontSize: "11px", color: T.textMid, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }} title={r.note}>{r.note || ""}</td>
                 <td style={{ ...css.td, whiteSpace: "nowrap" }}>
