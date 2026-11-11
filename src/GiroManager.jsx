@@ -5258,7 +5258,9 @@ async function cercaOrdinePortafoglio(riga, token) {
   }, token);
   // Codice cliente della riga ordine: null se il portale non lo riporta (allora non si scarta).
   const codiciDi = (o) => {
-    const cod = [o.DEST_MERCI_COD, o.CLIENTE_COD, o.COD_CLIENTE].map(normCodCliente).filter(Boolean);
+    // tutti i campi codice cliente del portale (destinatario merci, cliente/committente, ordinante…)
+    const cod = Object.keys(o).filter(k => /COD/.test(k) && /(CLIENTE|DEST_MERCI|COMMITT|ORDINANTE|SOLD|INTESTATARIO)/.test(k))
+      .map(k => normCodCliente(o[k])).filter(Boolean);
     const label = String(o.DEST_MERCI_LABEL || "").trim();
     (label.match(/\d{4,}/g) || []).forEach(n => cod.push(normCodCliente(n))); // es. "2663901 - LIBRERIA ..."
     return cod.length ? cod : null;
@@ -5267,13 +5269,21 @@ async function cercaOrdinePortafoglio(riga, token) {
   const tutti = (data.rows || []).filter(o => o.N_ORDINE);
   let ordini = tutti.filter(o => delCliente(o) === true);
   if (!ordini.length) ordini = tutti.filter(o => delCliente(o) === null); // riepilogo senza codice cliente: si verifica sulle righe
-  if (!ordini.length) return { motivo: tutti.length ? "ordini per questo EAN trovati, ma di altri clienti" : "nessun ordine per questo EAN nel portafoglio" };
+  if (!ordini.length) {
+    if (!tutti.length) return { motivo: "nessun ordine per questo EAN nel portafoglio" };
+    const altri = [...new Set(tutti.map(o => `${o.N_ORDINE}: cliente ${o.DEST_MERCI_COD || o.CLIENTE_COD || "?"} ${o.DEST_MERCI_DES || ""}`.trim()))];
+    return { motivo: `ordini per questo EAN trovati, ma di altri clienti (cercato ${codici.join("/")}): ${altri.slice(0, 5).join("; ")}${altri.length > 5 ? ` e altri ${altri.length - 5}` : ""}` };
+  }
+  const trovato = (o) => ({ numero: String(o.N_ORDINE), interno: o.N_ORDINE_INTERNO ? String(o.N_ORDINE_INTERNO) : null });
+  // Ordine del cliente con una sola riga (quella dell'EAN cercato) e copie uguali: basta il riepilogo.
+  const unaRiga = ordini.find(o => delCliente(o) === true && Number(o.N_RIGHE) === 1 && (Number(o.COPIE_TOT ?? o.COPIE) === qta || Number(o.PRENOTATO_TOT) === qta));
+  if (unaRiga) return trovato(unaRiga);
   const qtaTrovate = [];
   for (const o of ordini.slice(0, 10)) {
     const dett = await pocOrdiniCall("verifica-ordini-dettaglio", { nOrdine: String(o.N_ORDINE) }, token);
     const righeEan = (dett.rows || []).filter(x => String(x.EAN13 || "").trim() === ean && (delCliente(o) === true || delCliente(x) !== false));
-    if (righeEan.some(x => Number(x.COPIE) === qta)) return { numero: String(o.N_ORDINE), interno: o.N_ORDINE_INTERNO ? String(o.N_ORDINE_INTERNO) : null };
-    righeEan.forEach(x => qtaTrovate.push(`${x.COPIE} (ord. ${o.N_ORDINE})`));
+    if (righeEan.some(x => Number(x.COPIE) === qta || Number(x.QTA_PRENOTATO_CALC) === qta)) return trovato(o);
+    righeEan.forEach(x => qtaTrovate.push(`${x.COPIE ?? x.QTA_PRENOTATO_CALC ?? "?"} (ord. ${o.N_ORDINE})`));
   }
   return { motivo: qtaTrovate.length ? `quantità diversa: trovate ${qtaTrovate.join(", ")}` : "ordine del cliente trovato ma senza la riga di questo EAN" };
 }
