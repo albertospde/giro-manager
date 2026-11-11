@@ -5250,12 +5250,20 @@ async function cercaOrdinePortafoglio(riga, token) {
   const codici = String(riga.codice_cliente || "").split(/[^0-9A-Za-z]+/).map(normCodCliente).filter(Boolean);
   const qta = Number(riga.quantita);
   if (!ean || !codici.length) return { motivo: "cliente o EAN mancanti" };
-  const data = await pocOrdiniCall("verifica-ordini-righe", {
-    startRow: 0, endRow: 200,
-    filterModel: { EAN13: { filterType: "text", type: "equals", filter: ean } },
-    sortModel: [{ sort: "desc", type: "default", colId: "DATA_E_ORA" }],
-    periodPreset: "all",
-  }, token);
+  // Un titolo in lancio può avere migliaia di ordini: si filtra subito anche per cliente.
+  // Il portale vuole DEST_MERCI_COD a 10 cifre con gli zeri davanti (es. 0002717851).
+  const righeOrdini = [];
+  for (const c of codici) {
+    const filterModel = { EAN13: { filterType: "text", type: "equals", filter: ean } };
+    if (/^\d+$/.test(c)) filterModel.DEST_MERCI_COD = { filterType: "text", type: "equals", filter: c.padStart(10, "0") };
+    const d = await pocOrdiniCall("verifica-ordini-righe", {
+      startRow: 0, endRow: 200, filterModel,
+      sortModel: [{ sort: "desc", type: "default", colId: "DATA_E_ORA" }],
+      periodPreset: "all",
+    }, token);
+    righeOrdini.push(...(d.rows || []));
+  }
+  const data = { rows: righeOrdini };
   // Codice cliente della riga ordine: null se il portale non lo riporta (allora non si scarta).
   const codiciDi = (o) => {
     // tutti i campi codice cliente del portale (destinatario merci, cliente/committente, ordinante…)
