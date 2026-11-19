@@ -1,5 +1,5 @@
 import { useState, useCallback } from "react";
-import { tema, cv } from "./tema.js";
+import { tema, cv, stileBtn, stileInput, stileTag, stileMini, OMBRA_CARD, FONT } from "./tema.js";
 
 const SUPABASE_URL = "https://tdflwenlylhctxssatax.supabase.co";
 const SUPABASE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InRkZmx3ZW5seWxoY3R4c3NhdGF4Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzYzMzgyNzYsImV4cCI6MjA5MTkxNDI3Nn0.l35qEL7LOvyYuI1McQlVqj4vbyTqmlevcmqWbTGYi2Q";
@@ -11,10 +11,10 @@ const T = tema({
 });
 
 const css = {
-  btn: (v = "default") => ({ padding: "6px 14px", border: `1px solid ${v === "accent" ? T.accent : v === "danger" ? T.red : T.border}`, background: v === "accent" ? T.accent : v === "danger" ? T.red + "22" : "transparent", color: v === "accent" ? "#000" : v === "danger" ? T.red : T.text, cursor: "pointer", fontSize: "12px", fontFamily: "inherit", borderRadius: 3, fontWeight: v === "accent" ? "700" : "400" }),
-  input: { background: T.bg, border: `1px solid ${T.border}`, color: T.text, padding: "5px 10px", fontSize: "12px", fontFamily: "inherit", borderRadius: 3, outline: "none" },
-  th: { padding: "8px 12px", textAlign: "left", color: T.textMid, fontWeight: "400", fontSize: "11px", letterSpacing: "0.08em", textTransform: "uppercase", borderBottom: `1px solid ${T.border}`, whiteSpace: "nowrap", background: T.surface },
-  td: { padding: "7px 12px", borderBottom: `1px solid ${T.border}22`, verticalAlign: "middle", fontSize: "12px" },
+  btn: (v = "default", disabled = false) => ({ ...stileBtn(v, disabled) }),
+  input: { background: T.surface, border: `2px solid ${T.border}`, color: T.text, padding: "5px 10px", fontSize: "13px", fontFamily: "inherit", borderRadius: 8, outline: "none" },
+  th: { padding: "8px 12px", textAlign: "left", color: T.textMid, fontWeight: 700, fontSize: "11px", letterSpacing: "0.03em", textTransform: "uppercase", borderBottom: `2px solid ${T.border}`, whiteSpace: "nowrap", background: T.surface },
+  td: { padding: "7px 12px", borderBottom: `1px solid ${T.border}`, verticalAlign: "middle", fontSize: "12px" },
 };
 
 // Template ridotto — solo i campi essenziali del carico semplice.
@@ -266,7 +266,7 @@ export default function ModuloCaricoSemplice({ giriList, titoliEsistenti, token,
 
   return (
     <div style={{ position: "fixed", inset: 0, background: "#000a", zIndex: 200, display: "flex", alignItems: "center", justifyContent: "center" }} onClick={onClose}>
-      <div style={{ background: T.bg, border: `1px solid ${T.borderHi}`, borderRadius: 6, width: "min(1100px, 95vw)", maxHeight: "90vh", overflowY: "auto", padding: 24 }} onClick={e => e.stopPropagation()}>
+      <div style={{ background: T.bg, border: `1px solid ${T.borderHi}`, borderRadius: 12, width: "min(1100px, 95vw)", maxHeight: "90vh", overflowY: "auto", padding: 24 }} onClick={e => e.stopPropagation()}>
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 16 }}>
           <div style={{ color: T.accent, fontWeight: "700", fontSize: "14px" }}>CARICO SEMPLICE</div>
           <button style={css.btn()} onClick={onClose}>✕ Chiudi</button>
@@ -292,7 +292,7 @@ export default function ModuloCaricoSemplice({ giriList, titoliEsistenti, token,
                 {giriList.map(g => <option key={g.id} value={g.id}>{g.label ?? `Giro ${g.numero} ${g.anno}`}</option>)}
               </select>
             </div>
-            <div style={{ border: `2px dashed ${T.borderHi}`, borderRadius: 6, padding: 40, textAlign: "center", marginBottom: 20 }}>
+            <div style={{ border: `2px dashed ${T.borderHi}`, borderRadius: 12, padding: 40, textAlign: "center", marginBottom: 20 }}>
               <div style={{ fontSize: "32px", marginBottom: 12 }}>📂</div>
               <div style={{ color: T.text, marginBottom: 8 }}>Carica il template compilato</div>
               <div style={{ color: T.textMid, fontSize: "11px", marginBottom: 20 }}>Solo file .xlsx — template "Carico Semplice"</div>
@@ -309,16 +309,16 @@ export default function ModuloCaricoSemplice({ giriList, titoliEsistenti, token,
         {step === "preview" && (
           <div>
             <div style={{ display: "flex", gap: 12, marginBottom: 16, alignItems: "center", flexWrap: "wrap" }}>
-              <div style={{ background: T.surface, border: `1px solid ${T.border}`, borderRadius: 4, padding: "10px 16px" }}>
+              <div style={{ background: T.surface, border: `1px solid ${T.border}`, borderRadius: 9, padding: "10px 16px" }}>
                 <span style={{ color: T.textMid, fontSize: "11px" }}>Righe lette: </span>
                 <span style={{ color: T.text, fontWeight: "700" }}>{rows.length}</span>
               </div>
-              <div style={{ background: T.surface, border: `1px solid ${errors.length > 0 ? T.red : T.green}`, borderRadius: 4, padding: "10px 16px" }}>
+              <div style={{ background: T.surface, border: `1px solid ${errors.length > 0 ? T.red : T.green}`, borderRadius: 9, padding: "10px 16px" }}>
                 <span style={{ color: T.textMid, fontSize: "11px" }}>Errori: </span>
                 <span style={{ color: errors.length > 0 ? T.red : T.green, fontWeight: "700" }}>{errors.length}</span>
               </div>
               {anagraficaMissing.length > 0 && (
-                <div style={{ background: T.surface, border: `1px solid ${T.accent}66`, borderRadius: 4, padding: "10px 16px" }}>
+                <div style={{ background: T.surface, border: `1px solid ${T.accent}66`, borderRadius: 9, padding: "10px 16px" }}>
                   <span style={{ color: T.textMid, fontSize: "11px" }}>Editori non in anagrafica: </span>
                   <span style={{ color: T.accent, fontWeight: "700" }}>{anagraficaMissing.length}</span>
                 </div>
@@ -332,14 +332,14 @@ export default function ModuloCaricoSemplice({ giriList, titoliEsistenti, token,
             </div>
 
             {errors.length > 0 && (
-              <div style={{ background: T.red + "11", border: `1px solid ${T.red}44`, borderRadius: 4, padding: 16, marginBottom: 16 }}>
+              <div style={{ background: T.red + "11", border: `1px solid ${T.red}44`, borderRadius: 9, padding: 16, marginBottom: 16 }}>
                 <div style={{ color: T.red, fontWeight: "700", marginBottom: 8, fontSize: "12px" }}>⚠ Correggi gli errori prima di importare</div>
                 {errors.map((e, i) => <div key={i} style={{ color: T.textMid, fontSize: "11px" }}>Riga {e.row}: campi mancanti/errati → {e.fields.join(", ")}</div>)}
               </div>
             )}
 
             {anagraficaMissing.length > 0 && (
-              <div style={{ background: T.accent + "11", border: `1px solid ${T.accent}44`, borderRadius: 4, padding: 16, marginBottom: 16 }}>
+              <div style={{ background: T.accent + "11", border: `1px solid ${T.accent}44`, borderRadius: 9, padding: 16, marginBottom: 16 }}>
                 <div style={{ color: T.accent, fontWeight: "700", marginBottom: 8, fontSize: "12px" }}>⚠ Editori non presenti in ranking_editori — verranno importati senza cod. editore / account / promozione / ranking</div>
                 {anagraficaMissing.map((e, i) => <div key={i} style={{ color: T.textMid, fontSize: "11px" }}>{e}</div>)}
               </div>

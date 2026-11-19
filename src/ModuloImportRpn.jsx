@@ -1,6 +1,6 @@
 import { useState, useCallback } from "react";
 import { fetchAnagraficaEditori, resolveGiri } from "./ModuloImport.jsx";
-import { tema, cv } from "./tema.js";
+import { tema, cv, stileBtn, stileInput, stileTag, stileMini, OMBRA_CARD, FONT } from "./tema.js";
 
 const SUPABASE_URL = "https://tdflwenlylhctxssatax.supabase.co";
 const SUPABASE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InRkZmx3ZW5seWxoY3R4c3NhdGF4Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzYzMzgyNzYsImV4cCI6MjA5MTkxNDI3Nn0.l35qEL7LOvyYuI1McQlVqj4vbyTqmlevcmqWbTGYi2Q";
@@ -11,9 +11,9 @@ const T = tema({
   accent: "#c8a96e", green: "#4caf7d", red: "#e05c5c", blue: "#5b8fd4",
 });
 const css = {
-  btn: (v = "default") => ({ padding: "6px 14px", border: `1px solid ${v === "accent" ? T.accent : v === "danger" ? T.red : T.border}`, background: v === "accent" ? T.accent : v === "danger" ? T.red + "22" : "transparent", color: v === "accent" ? "#000" : v === "danger" ? T.red : T.text, cursor: "pointer", fontSize: "12px", fontFamily: "inherit", borderRadius: 3, fontWeight: v === "accent" ? "700" : "400" }),
-  th: { padding: "7px 10px", textAlign: "left", color: T.textMid, fontWeight: "400", fontSize: "11px", letterSpacing: "0.06em", textTransform: "uppercase", borderBottom: `1px solid ${T.border}`, whiteSpace: "nowrap", background: T.surface },
-  td: { padding: "6px 10px", borderBottom: `1px solid ${T.border}22`, verticalAlign: "middle", fontSize: "12px" },
+  btn: (v = "default", disabled = false) => ({ ...stileBtn(v, disabled) }),
+  th: { padding: "7px 10px", textAlign: "left", color: T.textMid, fontWeight: 700, fontSize: "11px", letterSpacing: "0.03em", textTransform: "uppercase", borderBottom: `2px solid ${T.border}`, whiteSpace: "nowrap", background: T.surface },
+  td: { padding: "6px 10px", borderBottom: `1px solid ${T.border}`, verticalAlign: "middle", fontSize: "12px" },
 };
 
 const FORMATO_DEFAULT = "Cover";
@@ -459,12 +459,12 @@ export default function ModuloImportRpn({ token, onImportDone }) {
               placeholder="Anno"
               value={anno}
               onChange={e => setAnno(e.target.value)}
-              style={{ background: T.surface, border: `1px solid ${T.border}`, borderRadius: 3, padding: "6px 10px", color: T.text, fontSize: "12px", width: 80 }}
+              style={{ background: T.surface, border: `1px solid ${T.border}`, borderRadius: 7, padding: "6px 10px", color: T.text, fontSize: "12px", width: 80 }}
             />
             <select
               value={statoFiltro}
               onChange={e => setStatoFiltro(e.target.value)}
-              style={{ background: T.surface, border: `1px solid ${T.border}`, borderRadius: 3, padding: "6px 10px", color: T.text, fontSize: "12px" }}
+              style={{ background: T.surface, border: `1px solid ${T.border}`, borderRadius: 7, padding: "6px 10px", color: T.text, fontSize: "12px" }}
             >
               <option value="">Tutti gli stati</option>
               {statiDisponibili.map(s => <option key={s} value={s}>{s}</option>)}
@@ -483,7 +483,7 @@ export default function ModuloImportRpn({ token, onImportDone }) {
             placeholder="Cerca per nome giro..."
             value={ricerca}
             onChange={e => setRicerca(e.target.value)}
-            style={{ background: T.surface, border: `1px solid ${T.border}`, borderRadius: 3, padding: "6px 10px", color: T.text, fontSize: "12px", width: "100%", marginBottom: 8 }}
+            style={{ background: T.surface, border: `1px solid ${T.border}`, borderRadius: 7, padding: "6px 10px", color: T.text, fontSize: "12px", width: "100%", marginBottom: 8 }}
           />
           <div style={{ overflowX: "auto", maxHeight: 300, overflowY: "auto", border: `1px solid ${T.border}`, marginBottom: 24 }}>
             <table style={{ width: "100%", borderCollapse: "collapse" }}>
@@ -522,10 +522,10 @@ export default function ModuloImportRpn({ token, onImportDone }) {
               onChange={e => { setExtraQuery(e.target.value); setExtraOpen(true); }}
               onFocus={() => setExtraOpen(true)}
               onBlur={() => setTimeout(() => setExtraOpen(false), 150)}
-              style={{ background: T.surface, border: `1px solid ${T.border}`, borderRadius: 3, padding: "6px 10px", color: T.text, fontSize: "12px", width: "100%" }}
+              style={{ background: T.surface, border: `1px solid ${T.border}`, borderRadius: 7, padding: "6px 10px", color: T.text, fontSize: "12px", width: "100%" }}
             />
             {extraOpen && (
-              <div style={{ position: "absolute", top: "100%", left: 0, right: 0, zIndex: 10, background: T.surface, border: `1px solid ${T.borderHi}`, borderRadius: 3, maxHeight: 260, overflowY: "auto", boxShadow: "0 4px 12px rgba(0,0,0,0.4)" }}>
+              <div style={{ position: "absolute", top: "100%", left: 0, right: 0, zIndex: 10, background: T.surface, border: `1px solid ${T.borderHi}`, borderRadius: 7, maxHeight: 260, overflowY: "auto", boxShadow: "0 4px 12px rgba(0,0,0,0.4)" }}>
                 {extraCandidati.length === 0 && (
                   <div style={{ padding: "10px 12px", color: T.textDim, fontSize: "12px" }}>Nessuna cedola extra trovata</div>
                 )}

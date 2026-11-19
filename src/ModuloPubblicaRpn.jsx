@@ -1,5 +1,5 @@
 import { useState, useEffect, useMemo, useCallback } from "react";
-import { tema, cv } from "./tema.js";
+import { tema, cv, stileBtn, stileInput, stileTag, stileMini, OMBRA_CARD, FONT } from "./tema.js";
 
 // ─── Pubblica su RPN ─────────────────────────────────────────────────────────
 // Crea/aggiorna su RPN le cedole di GiroManager: giro e cedola (se mancano), titoli agganciati
@@ -18,14 +18,14 @@ const T = tema({
   accent: "#7b9fe8", green: "#4caf7d", red: "#e05c5c", amber: "#e0a84c",
 });
 const css = {
-  btn: (v = "default", disabled = false) => ({ padding: "7px 14px", border: `1px solid ${v === "accent" ? T.accent : v === "green" ? T.green : v === "danger" ? T.red : T.border}`, background: v === "accent" ? T.accent : v === "green" ? T.green : "transparent", color: v === "accent" || v === "green" ? "#000" : v === "danger" ? T.red : T.text, cursor: disabled ? "default" : "pointer", fontSize: "12px", fontFamily: "inherit", borderRadius: 3, fontWeight: v === "accent" || v === "green" ? 700 : 400, opacity: disabled ? 0.5 : 1, whiteSpace: "nowrap" }),
-  card: { background: T.surface, border: `1px solid ${T.border}`, borderRadius: 6, padding: 18, marginBottom: 16 },
+  btn: (v = "default", disabled = false) => ({ ...stileBtn(v, disabled), whiteSpace: "nowrap" }),
+  card: { background: T.surface, border: `1px solid ${T.border}`, borderRadius: 14, boxShadow: OMBRA_CARD, padding: 18, marginBottom: 16 },
   h: { color: T.text, fontSize: "13px", fontWeight: 700, marginBottom: 6 },
   sub: { color: T.textMid, fontSize: "11px", lineHeight: 1.5 },
-  th: { padding: "7px 10px", textAlign: "left", color: T.textMid, fontWeight: 400, fontSize: "10px", letterSpacing: "0.08em", textTransform: "uppercase", borderBottom: `1px solid ${T.border}`, whiteSpace: "nowrap" },
-  td: { padding: "7px 10px", borderBottom: `1px solid ${T.border}55`, fontSize: "12px", color: T.text, whiteSpace: "nowrap" },
-  input: { background: T.bg, border: `1px solid ${T.borderHi}`, color: T.text, padding: "6px 8px", fontSize: "12px", fontFamily: "inherit", borderRadius: 3 },
-  kpi: { flex: 1, minWidth: 120, background: T.bg, border: `1px solid ${T.border}`, borderRadius: 4, padding: "10px 14px" },
+  th: { padding: "7px 10px", textAlign: "left", color: T.textMid, fontWeight: 700, fontSize: "11px", letterSpacing: "0.03em", textTransform: "uppercase", borderBottom: `2px solid ${T.border}`, whiteSpace: "nowrap" },
+  td: { padding: "7px 10px", borderBottom: `1px solid ${T.border}`, fontSize: "12px", color: T.text, whiteSpace: "nowrap" },
+  input: { background: T.surface, border: `2px solid ${T.border}`, color: T.text, padding: "6px 8px", fontSize: "13px", fontFamily: "inherit", borderRadius: 8 },
+  kpi: { flex: 1, minWidth: 120, background: T.surface2, border: `1px solid ${T.border}`, borderRadius: 9, padding: "10px 14px" },
 };
 
 const STATI = { CRE: ["Creata", T.amber], DAT: ["Da attivare", T.amber], ATT: ["Attiva", T.green], CHI: ["Chiusa", T.textMid] };
@@ -59,7 +59,7 @@ function ListaTitoli({ titolo, righe, colore, aperta }) {
         {open && <button style={css.btn()} onClick={copia}>Copia elenco</button>}
       </div>
       {open && (
-        <div style={{ maxHeight: 240, overflow: "auto", marginTop: 6, border: `1px solid ${T.border}`, borderRadius: 4 }}>
+        <div style={{ maxHeight: 240, overflow: "auto", marginTop: 6, border: `1px solid ${T.border}`, borderRadius: 9 }}>
           <table style={{ width: "100%", borderCollapse: "collapse" }}>
             <tbody>{righe.map(r => (
               <tr key={r.ean}><td style={{ ...css.td, fontFamily: "monospace", color: T.textMid }}>{r.ean}</td><td style={{ ...css.td, whiteSpace: "normal" }}>{r.titolo}</td><td style={{ ...css.td, color: T.textMid }}>{r.editore}</td></tr>
@@ -363,14 +363,14 @@ export default function ModuloPubblicaRpn({ token, titoli }) {
               {chiusa && <div style={{ color: T.textMid, fontSize: "11px", marginTop: 8 }}>Cedola chiusa su RPN: sola lettura.</div>}
 
               {esito && (
-                <div style={{ marginTop: 12, padding: 10, border: `1px solid ${T.green}55`, borderRadius: 4, fontSize: "12px", color: T.green }}>
+                <div style={{ marginTop: 12, padding: 10, border: `1px solid ${T.green}55`, borderRadius: 9, fontSize: "12px", color: T.green }}>
                   {esito.info ?? <>✓ Fatto{esito.giro_creato ? " · giro creato" : ""}{esito.cedola_creata ? " · cedola creata" : ""} · agganciati {esito.aggiunti} · tolti {esito.rimossi} · ordinati {esito.ordinati}</>}
                   {esito.avvisi?.length > 0 && <div style={{ color: T.amber, marginTop: 6 }}>Avvisi RPN: {esito.avvisi.join(" | ")}</div>}
                 </div>
               )}
               {busy === "apply" && !esitoObj && esito && <div style={{ ...css.sub, marginTop: 8 }}>Caricamento obiettivi su RPN…</div>}
               {esitoObj && (
-                <div style={{ marginTop: 8, padding: 10, border: `1px solid ${(esitoObj.ok ? T.green : T.red)}55`, borderRadius: 4, fontSize: "12px", color: esitoObj.ok ? T.green : T.red }}>
+                <div style={{ marginTop: 8, padding: 10, border: `1px solid ${(esitoObj.ok ? T.green : T.red)}55`, borderRadius: 9, fontSize: "12px", color: esitoObj.ok ? T.green : T.red }}>
                   {esitoObj.vuoto ? `Obiettivi: ${esitoObj.msg}.`
                     : esitoObj.ok ? `✓ Obiettivi caricati su RPN: ${esitoObj.titoli} titoli, ${esitoObj.copie.toLocaleString("it")} copie${esitoObj.msg && esitoObj.msg !== "caricati" ? ` — ${esitoObj.msg}` : ""}`
                     : `⚠ Obiettivi non caricati: ${esitoObj.msg}`}

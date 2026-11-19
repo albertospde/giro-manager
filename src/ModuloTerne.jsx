@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from "react";
-import { tema, cv } from "./tema.js";
+import { tema, cv, stileBtn, stileInput, stileTag, stileMini, OMBRA_CARD, FONT } from "./tema.js";
 
 // ─── Aggiorna Terne (Agente – Editore – Libreria) ─────────────────────────────
 // RPN è la fonte: le terne vivono nel pannello admin RPN (Terne › Associazione agenti).
@@ -23,13 +23,13 @@ const T = tema({
   accent: "#7b9fe8", green: "#4caf7d", red: "#e05c5c", amber: "#e0a84c",
 });
 const css = {
-  btn: (v = "default", disabled = false) => ({ padding: "7px 16px", border: `1px solid ${v === "accent" ? T.accent : v === "danger" ? T.red : T.border}`, background: v === "accent" ? T.accent : v === "danger" ? T.red + "22" : "transparent", color: v === "accent" ? "#000" : v === "danger" ? T.red : T.text, cursor: disabled ? "default" : "pointer", fontSize: "12px", fontFamily: "inherit", borderRadius: 3, fontWeight: v === "accent" ? "700" : "400", opacity: disabled ? 0.5 : 1 }),
-  card: { background: T.surface, border: `1px solid ${T.border}`, borderRadius: 6, padding: 20, marginBottom: 16 },
+  btn: (v = "default", disabled = false) => ({ ...stileBtn(v, disabled) }),
+  card: { background: T.surface, border: `1px solid ${T.border}`, borderRadius: 14, boxShadow: OMBRA_CARD, padding: 20, marginBottom: 16 },
   h: { color: T.text, fontSize: "13px", fontWeight: 700, marginBottom: 6, letterSpacing: "0.03em" },
   sub: { color: T.textMid, fontSize: "11px", lineHeight: 1.5, marginBottom: 14 },
-  th: { padding: "7px 10px", textAlign: "left", color: T.textMid, fontWeight: "400", fontSize: "10px", letterSpacing: "0.08em", textTransform: "uppercase", borderBottom: `1px solid ${T.border}`, whiteSpace: "nowrap" },
-  td: { padding: "7px 10px", borderBottom: `1px solid ${T.border}55`, fontSize: "12px", color: T.text, whiteSpace: "nowrap" },
-  kpi: { flex: 1, background: T.bg, border: `1px solid ${T.border}`, borderRadius: 4, padding: "10px 14px" },
+  th: { padding: "7px 10px", textAlign: "left", color: T.textMid, fontWeight: 700, fontSize: "11px", letterSpacing: "0.03em", textTransform: "uppercase", borderBottom: `2px solid ${T.border}`, whiteSpace: "nowrap" },
+  td: { padding: "7px 10px", borderBottom: `1px solid ${T.border}`, fontSize: "12px", color: T.text, whiteSpace: "nowrap" },
+  kpi: { flex: 1, background: T.surface2, border: `1px solid ${T.border}`, borderRadius: 9, padding: "10px 14px" },
 };
 
 const fmt = (n) => (n == null ? "—" : Number(n).toLocaleString("it-IT"));
@@ -349,7 +349,7 @@ export default function ModuloTerne({ token }) {
       {fase && (
         <div style={{ ...css.card, borderColor: T.accent }}>
           <div style={{ color: T.text, fontSize: 12, marginBottom: 8 }}><span style={{ display: "inline-block", animation: "gm-spin 1s linear infinite", marginRight: 8 }}>⟳</span>{fase.testo}</div>
-          <div style={{ height: 6, background: T.bg, borderRadius: 3 }}><div style={{ height: 6, width: `${fase.pct}%`, background: T.accent, borderRadius: 3, transition: "width .3s" }} /></div>
+          <div style={{ height: 6, background: T.bg, borderRadius: 7 }}><div style={{ height: 6, width: `${fase.pct}%`, background: T.accent, borderRadius: 7, transition: "width .3s" }} /></div>
           <div style={{ color: T.textDim, fontSize: 11, marginTop: 8 }}>Non chiudere la pagina fino al termine.</div>
         </div>
       )}
@@ -389,7 +389,7 @@ export default function ModuloTerne({ token }) {
                 {calo < -0.5 && <span style={{ color: T.red }}> Calo oltre il 50%: il riallineamento verrà bloccato per sicurezza.</span>}
               </div>
             )}
-            <div style={{ maxHeight: 180, overflowY: "auto", border: `1px solid ${T.border}`, borderRadius: 4, marginBottom: 12 }}>
+            <div style={{ maxHeight: 180, overflowY: "auto", border: `1px solid ${T.border}`, borderRadius: 9, marginBottom: 12 }}>
               <table style={{ width: "100%", borderCollapse: "collapse" }}>
                 <thead><tr><th style={css.th}>Codice agente</th><th style={{ ...css.th, textAlign: "right" }}>Terne nel file</th></tr></thead>
                 <tbody>

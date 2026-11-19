@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from "react";
-import { tema, cv } from "./tema.js";
+import { tema, cv, stileBtn, stileInput, stileTag, stileMini, OMBRA_CARD, FONT } from "./tema.js";
 
 const SUPABASE_URL = "https://tdflwenlylhctxssatax.supabase.co";
 const SUPABASE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InRkZmx3ZW5seWxoY3R4c3NhdGF4Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzYzMzgyNzYsImV4cCI6MjA5MTkxNDI3Nn0.l35qEL7LOvyYuI1McQlVqj4vbyTqmlevcmqWbTGYi2Q";
@@ -16,11 +16,11 @@ const T = tema({
   accent: "#7b9fe8", green: "#4caf7d", red: "#e05c5c", amber: "#e0a84c",
 });
 const css = {
-  btn: (v = "default") => ({ padding: "6px 14px", border: `1px solid ${v === "accent" ? T.accent : T.border}`, background: v === "accent" ? T.accent : "transparent", color: v === "accent" ? "#000" : T.text, cursor: "pointer", fontSize: "12px", fontFamily: "inherit", borderRadius: 3, fontWeight: v === "accent" ? "700" : "400", letterSpacing: "0.04em" }),
-  input: { background: T.bg, border: `1px solid ${T.border}`, color: T.text, padding: "5px 10px", fontSize: "12px", fontFamily: "inherit", borderRadius: 3, outline: "none" },
+  btn: (v = "default", disabled = false) => ({ ...stileBtn(v, disabled) }),
+  input: { background: T.surface, border: `2px solid ${T.border}`, color: T.text, padding: "5px 10px", fontSize: "13px", fontFamily: "inherit", borderRadius: 8, outline: "none" },
   table: { width: "100%", borderCollapse: "collapse" },
-  th: { padding: "8px 12px", textAlign: "left", color: T.textMid, fontWeight: "400", fontSize: "11px", letterSpacing: "0.08em", textTransform: "uppercase", borderBottom: `1px solid ${T.border}`, whiteSpace: "nowrap" },
-  td: { padding: "8px 12px", borderBottom: `1px solid ${T.border}22`, verticalAlign: "middle" },
+  th: { padding: "8px 12px", textAlign: "left", color: T.textMid, fontWeight: 700, fontSize: "11px", letterSpacing: "0.03em", textTransform: "uppercase", borderBottom: `2px solid ${T.border}`, whiteSpace: "nowrap" },
+  td: { padding: "8px 12px", borderBottom: `1px solid ${T.border}`, verticalAlign: "middle" },
   label: { display: "block", color: T.textDim, fontSize: "10px", letterSpacing: "0.06em", textTransform: "uppercase", marginBottom: 4 },
 };
 
@@ -148,7 +148,7 @@ function AgentiNewEntry({ token, editori }) {
         Gli agenti spuntati vedono l'editore in BookUp come se fosse nelle loro terne: titoli in Giri Vendita ed Excel, Materiali PDF, e possono prenotarne i titoli per i propri clienti.
         Vale finché l'editore è attivo qui; dopo "✅ Entrato su RPN" contano le terne vere di RPN.
       </p>
-      {msg && <div style={{ color: msg.ok ? T.green : T.red, fontSize: "12px", marginBottom: 12, background: (msg.ok ? T.green : T.red) + "18", border: `1px solid ${(msg.ok ? T.green : T.red)}44`, borderRadius: 4, padding: "8px 12px" }}>{msg.ok ? "✓ " : "⚠ "}{msg.testo}</div>}
+      {msg && <div style={{ color: msg.ok ? T.green : T.red, fontSize: "12px", marginBottom: 12, background: (msg.ok ? T.green : T.red) + "18", border: `1px solid ${(msg.ok ? T.green : T.red)}44`, borderRadius: 9, padding: "8px 12px" }}>{msg.ok ? "✓ " : "⚠ "}{msg.testo}</div>}
 
       <div style={{ marginBottom: 14 }}>
         <label style={css.label}>Editore new entry</label>
@@ -165,7 +165,7 @@ function AgentiNewEntry({ token, editori }) {
           <button style={{ ...css.btn(), fontSize: "11px", padding: "3px 8px" }} onClick={() => tuttiVisibili(false)}>Deseleziona {q ? "visibili" : "tutti"}</button>
           <span style={{ color: T.textMid, fontSize: "12px", marginLeft: "auto" }}>{spunte.size} selezionati</span>
         </div>
-        <div style={{ maxHeight: 360, overflowY: "auto", border: `1px solid ${T.border}`, borderRadius: 4, marginBottom: 12 }}>
+        <div style={{ maxHeight: 360, overflowY: "auto", border: `1px solid ${T.border}`, borderRadius: 9, marginBottom: 12 }}>
           <table style={css.table}>
             <thead><tr><th style={{ ...css.th, width: 30 }}></th><th style={css.th}>Agente</th><th style={css.th}>Codice</th><th style={css.th}>Utenza RPN</th><th style={{ ...css.th, textAlign: "right" }}>Clienti</th></tr></thead>
             <tbody>
@@ -584,7 +584,7 @@ export default function ModuloEditoriNewEntry({ token, onDataChange }) {
         Quando l'editore entra davvero su RPN: <b>1)</b> "🚀 Carica su RPN" (automatico — richiede che l'account RPN sia collegato per l'utente con cui sei loggato qui); <b>2)</b> controlla l'esito, e solo dopo "✅ Entrato su RPN" per disattivare i titoli manuali ed evitare doppioni/doppio conteggio. "📥 Esporta file" resta come backup se preferisci caricare a mano da BookUp.
       </p>
 
-      {error && <div style={{ color: T.red, fontSize: "12px", marginBottom: 14, background: T.red + "18", border: `1px solid ${T.red}44`, borderRadius: 4, padding: "8px 12px" }}>{error}</div>}
+      {error && <div style={{ color: T.red, fontSize: "12px", marginBottom: 14, background: T.red + "18", border: `1px solid ${T.red}44`, borderRadius: 9, padding: "8px 12px" }}>{error}</div>}
       {loading ? <div style={{ color: T.textMid, fontSize: "12px" }}>Caricamento…</div> : (
         <div style={{ display: "flex", gap: 28, flexWrap: "wrap", alignItems: "flex-start" }}>
 
@@ -675,7 +675,7 @@ export default function ModuloEditoriNewEntry({ token, onDataChange }) {
             </div>
             <p style={{ color: T.textDim, fontSize: "11px", marginBottom: 10 }}>N° e nome cedola devono combaciare ESATTAMENTE con quelli reali su RPN, altrimenti il titolo non comparirà mescolato nella cedola giusta in BookUp.</p>
 
-            <div style={{ border: `1px solid ${T.border}`, borderRadius: 4, padding: 12, marginBottom: 14 }}>
+            <div style={{ border: `1px solid ${T.border}`, borderRadius: 9, padding: 12, marginBottom: 14 }}>
               <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: bulkOpen ? 10 : 0 }}>
                 <span style={{ fontSize: "12px", color: T.text, fontWeight: 600 }}>📋 Caricamento massivo (EAN, Titolo, Autore, Editore, Prezzo)</span>
                 <button style={{ ...css.btn(), fontSize: "11px", padding: "3px 8px" }} onClick={() => setBulkOpen(!bulkOpen)}>{bulkOpen ? "Chiudi" : "Apri"}</button>

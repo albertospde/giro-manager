@@ -1,5 +1,5 @@
 import { useState, useEffect, useMemo, useCallback, useRef } from "react";
-import { tema, cv } from "./tema.js";
+import { tema, cv, stileBtn, stileInput, stileTag, stileMini, OMBRA_CARD, FONT } from "./tema.js";
 
 // ─── Ranking Editori ─────────────────────────────────────────────────────────
 // Anagrafica e sequenza editori (tabella ranking_editori): è l'ordine con cui gli editori compaiono
@@ -23,12 +23,12 @@ const CATEGORIE = ["A", "B", "C", "KIDS", "SERVICE"];
 const PROMOZIONI = ["PDE Promozione", "PDE Service"];
 
 const css = {
-  btn: (v = "default", disabled = false) => ({ padding: "6px 12px", border: `1px solid ${v === "accent" ? T.accent : v === "green" ? T.green : v === "danger" ? T.red : T.border}`, background: v === "accent" ? T.accent : v === "green" ? T.green : "transparent", color: v === "accent" || v === "green" ? "#000" : v === "danger" ? T.red : T.text, cursor: disabled ? "default" : "pointer", fontSize: "12px", fontFamily: "inherit", borderRadius: 3, fontWeight: v === "accent" || v === "green" ? 700 : 400, opacity: disabled ? 0.5 : 1, whiteSpace: "nowrap" }),
-  mini: { padding: "2px 6px", border: `1px solid ${T.border}`, background: "transparent", color: T.textMid, cursor: "pointer", fontSize: "11px", fontFamily: "inherit", borderRadius: 3 },
-  card: { background: T.surface, border: `1px solid ${T.border}`, borderRadius: 6, padding: 16, marginBottom: 14 },
-  th: { padding: "7px 8px", textAlign: "left", color: T.textMid, fontWeight: 400, fontSize: "10px", letterSpacing: "0.08em", textTransform: "uppercase", borderBottom: `1px solid ${T.border}`, whiteSpace: "nowrap", position: "sticky", top: 0, background: T.surface, zIndex: 1 },
-  td: { padding: "5px 8px", borderBottom: `1px solid ${T.border}55`, fontSize: "12px", color: T.text, whiteSpace: "nowrap", verticalAlign: "middle" },
-  input: { background: T.bg, border: `1px solid ${T.borderHi}`, color: T.text, padding: "4px 6px", fontSize: "12px", fontFamily: "inherit", borderRadius: 3 },
+  btn: (v = "default", disabled = false) => ({ ...stileBtn(v, disabled), whiteSpace: "nowrap" }),
+  mini: stileMini,
+  card: { background: T.surface, border: `1px solid ${T.border}`, borderRadius: 14, boxShadow: OMBRA_CARD, padding: 16, marginBottom: 14 },
+  th: { padding: "7px 8px", textAlign: "left", color: T.textMid, fontWeight: 700, fontSize: "11px", letterSpacing: "0.03em", textTransform: "uppercase", borderBottom: `2px solid ${T.border}`, whiteSpace: "nowrap", position: "sticky", top: 0, background: T.surface, zIndex: 1 },
+  td: { padding: "5px 8px", borderBottom: `1px solid ${T.border}`, fontSize: "12px", color: T.text, whiteSpace: "nowrap", verticalAlign: "middle" },
+  input: { background: T.surface, border: `2px solid ${T.border}`, color: T.text, padding: "4px 6px", fontSize: "13px", fontFamily: "inherit", borderRadius: 8 },
   label: { display: "flex", flexDirection: "column", gap: 4, color: T.textMid, fontSize: "11px" },
 };
 
@@ -242,7 +242,7 @@ export default function ModuloRankingEditori({ token, titoli, onDataChange }) {
           </div>
           <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
             {CATEGORIE.map(c => (
-              <div key={c} style={{ border: `1px solid ${CAT_COLORI[c]}66`, borderRadius: 4, padding: "6px 10px", minWidth: 60 }}>
+              <div key={c} style={{ border: `1px solid ${CAT_COLORI[c]}66`, borderRadius: 9, padding: "6px 10px", minWidth: 60 }}>
                 <div style={{ color: CAT_COLORI[c], fontSize: "10px", fontWeight: 700 }}>{c}</div>
                 <div style={{ color: T.text, fontWeight: 700 }}>{conteggi[c] || 0}</div>
               </div>
@@ -303,7 +303,7 @@ export default function ModuloRankingEditori({ token, titoli, onDataChange }) {
 
       {filtroAttivo && <div style={{ color: T.textDim, fontSize: "11px", marginBottom: 6 }}>Filtro attivo: il trascinamento è disattivato (usa ↑↓ o modifica il numero).</div>}
 
-      <div style={{ border: `1px solid ${T.border}`, borderRadius: 4, overflow: "auto", maxHeight: "70vh" }}>
+      <div style={{ border: `1px solid ${T.border}`, borderRadius: 9, overflow: "auto", maxHeight: "70vh" }}>
         <table style={{ width: "100%", borderCollapse: "collapse" }}>
           <thead><tr>{["", "Rk", "", "Editore", "Codice", "Cedola", "Account", "Promozione", "RPN", "Titoli GM", ""].map((h, i) => <th key={i} style={css.th}>{h}</th>)}</tr></thead>
           <tbody>

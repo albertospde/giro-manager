@@ -1,5 +1,5 @@
 import { useState, useEffect, useMemo, useCallback } from "react";
-import { tema, cv } from "./tema.js";
+import { tema, cv, stileBtn, stileInput, stileTag, stileMini, OMBRA_CARD, FONT } from "./tema.js";
 
 const SUPABASE_URL = "https://tdflwenlylhctxssatax.supabase.co";
 const SUPABASE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InRkZmx3ZW5seWxoY3R4c3NhdGF4Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzYzMzgyNzYsImV4cCI6MjA5MTkxNDI3Nn0.l35qEL7LOvyYuI1McQlVqj4vbyTqmlevcmqWbTGYi2Q";
@@ -11,16 +11,16 @@ const T = tema({
 });
 
 const css = {
-  app: { background: T.bg, color: T.text, minHeight: "100vh", fontFamily: "'Inter', 'Segoe UI', Arial, sans-serif", fontSize: "13px" },
+  app: { background: "transparent", color: T.text, minHeight: "100vh", fontFamily: FONT, fontSize: "13px" },
   sidebar: { width: 200, background: T.surface, borderRight: `1px solid ${T.border}`, display: "flex", flexDirection: "column", flexShrink: 0 },
   main: { flex: 1, overflow: "hidden", display: "flex", flexDirection: "column" },
   header: { borderBottom: `1px solid ${T.border}`, padding: "12px 20px", display: "flex", alignItems: "center", gap: 12, background: T.surface },
-  btn: (v = "default") => ({ padding: "6px 14px", border: `1px solid ${v === "accent" ? T.accent : T.border}`, background: v === "accent" ? T.accent : "transparent", color: v === "accent" ? "#000" : T.text, cursor: "pointer", fontSize: "12px", fontFamily: "inherit", borderRadius: 3, fontWeight: v === "accent" ? "700" : "400", letterSpacing: "0.04em", transition: "all 0.15s" }),
-  input: { background: T.bg, border: `1px solid ${T.border}`, color: T.text, padding: "5px 10px", fontSize: "12px", fontFamily: "inherit", borderRadius: 3, outline: "none" },
-  tag: (c = T.accent) => ({ display: "inline-block", padding: "2px 7px", background: c + "22", border: `1px solid ${c}44`, color: c, borderRadius: 2, fontSize: "10px", fontWeight: "700", letterSpacing: "0.06em", textTransform: "uppercase" }),
+  btn: (v = "default", disabled = false) => ({ ...stileBtn(v, disabled) }),
+  input: { background: T.surface, border: `2px solid ${T.border}`, color: T.text, padding: "5px 10px", fontSize: "13px", fontFamily: "inherit", borderRadius: 8, outline: "none" },
+  tag: stileTag,
   table: { width: "100%", borderCollapse: "collapse" },
-  th: { padding: "8px 12px", textAlign: "left", color: T.textMid, fontWeight: "400", fontSize: "11px", letterSpacing: "0.08em", textTransform: "uppercase", borderBottom: `1px solid ${T.border}`, whiteSpace: "nowrap", position: "sticky", top: 0, background: T.surface, zIndex: 1 },
-  td: { padding: "8px 12px", borderBottom: `1px solid ${T.border}22`, verticalAlign: "middle" },
+  th: { padding: "8px 12px", textAlign: "left", color: T.textMid, fontWeight: 700, fontSize: "11px", letterSpacing: "0.03em", textTransform: "uppercase", borderBottom: `2px solid ${T.border}`, whiteSpace: "nowrap", position: "sticky", top: 0, background: T.surface, zIndex: 1 },
+  td: { padding: "8px 12px", borderBottom: `1px solid ${T.border}`, verticalAlign: "middle" },
 };
 
 // Stessi gruppi di canali del Fine Giro (MACROGRUPPI in GiroManager.jsx): tenerli allineati
@@ -45,7 +45,7 @@ const sbFetch = async (path, token) => {
 
 function KpiCard({ label, value, sub, color = T.accent }) {
   return (
-    <div style={{ background: T.surface, border: `1px solid ${T.border}`, borderRadius: 4, padding: "16px 20px", minWidth: 160 }}>
+    <div style={{ background: T.surface, border: `1px solid ${T.border}`, borderRadius: 9, padding: "16px 20px", minWidth: 160 }}>
       <div style={{ color: T.textMid, fontSize: "10px", letterSpacing: "0.1em", textTransform: "uppercase", marginBottom: 8 }}>{label}</div>
       <div style={{ color, fontSize: "28px", fontWeight: "700", lineHeight: 1 }}>{value}</div>
       {sub && <div style={{ color: T.textMid, fontSize: "11px", marginTop: 6 }}>{sub}</div>}
@@ -60,14 +60,14 @@ function SearchableMultiSelect({ values, onChange, options, placeholder = "Tutti
   const filtered = options.filter(o => label(o).toLowerCase().includes(search.toLowerCase()));
   return (
     <div style={{ position: "relative" }}>
-      <button style={{ ...css.btn(values.length > 0 ? "accent" : "default"), minWidth: width, display: "flex", justifyContent: "space-between", alignItems: "center", gap: 8 }} onClick={() => setOpen(o => !o)}>
+      <button style={{ ...css.btn(values.length > 0 ? "attivo" : "default"), minWidth: width, display: "flex", justifyContent: "space-between", alignItems: "center", gap: 8 }} onClick={() => setOpen(o => !o)}>
         <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", maxWidth: width - 30 }}>
           {values.length === 0 ? placeholder : renderOption ? values.map(renderOption).join(", ") : `${values.length} selezionati`}
         </span>
         <span>▾</span>
       </button>
       {open && (
-        <div style={{ position: "absolute", top: "100%", left: 0, zIndex: 50, background: T.surface, border: `1px solid ${T.borderHi}`, borderRadius: 4, minWidth: width, maxHeight: 320, display: "flex", flexDirection: "column", marginTop: 4, boxShadow: "0 4px 20px #0008" }}>
+        <div style={{ position: "absolute", top: "100%", left: 0, zIndex: 50, background: T.surface, border: `1px solid ${T.borderHi}`, borderRadius: 9, minWidth: width, maxHeight: 320, display: "flex", flexDirection: "column", marginTop: 4, boxShadow: cv("0 14px 36px rgba(0,0,0,.5)", "0 14px 36px rgba(19,32,51,.18)") }}>
           <div style={{ padding: "8px 10px", borderBottom: `1px solid ${T.border}`, flexShrink: 0 }}>
             <input style={{ ...css.input, width: "100%", boxSizing: "border-box", marginBottom: 6 }} placeholder="Cerca..." value={search} onChange={e => setSearch(e.target.value)} autoFocus />
             <div style={{ display: "flex", justifyContent: "space-between" }}>
@@ -1091,7 +1091,7 @@ export default function ModuloAvanzamento({ titoli, prenotato, canali = [], toke
           </div>
         </div>
         {nonNeiGiriReport && nonNeiGiriReport.length > 0 && (
-          <div style={{ display: "flex", alignItems: "center", gap: 12, background: cv("#4a1a2a", "#fdecec"), border: `1px solid ${T.red}`, borderRadius: 4, padding: "10px 14px" }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 12, background: cv("#4a1a2a", "#fdecec"), border: `1px solid ${T.red}`, borderRadius: 9, padding: "10px 14px" }}>
             <span style={{ color: T.red, fontSize: "12px", flex: 1 }}>
               ⚠ Ultimo upload catalogo: <b>{nonNeiGiriReport.length} EAN</b> esclusi perché non presenti in nessun Giro — non compaiono in Avanzamento Novità.
             </span>
@@ -1107,10 +1107,10 @@ export default function ModuloAvanzamento({ titoli, prenotato, canali = [], toke
           <KpiCard label="Valore lancio" value={`€ ${kpi.valoreLancio.toLocaleString("it", { maximumFractionDigits: 0 })}`} color={T.accent} sub={`${kpi.numLanciati} titoli lanciati`} />
           <KpiCard label={`Titoli sbloccati ${filterAnno || ""}`} value={kpi.numSbloccati.toLocaleString("it")} color={cv("#e8a838", "#b7791f")} />
           <KpiCard label="Valore sbloccati" value={`€ ${kpi.valoreSbloccato.toLocaleString("it", { maximumFractionDigits: 0 })}`} color={cv("#e8a838", "#b7791f")} sub="valore finito nei rifornimenti (teorico)" />
-          <div style={{ background: T.surface, border: `1px solid ${T.border}`, borderRadius: 4, padding: "16px 20px", minWidth: 200 }}>
+          <div style={{ background: T.surface, border: `1px solid ${T.border}`, borderRadius: 9, padding: "16px 20px", minWidth: 200 }}>
             <div style={{ color: T.textMid, fontSize: "10px", letterSpacing: "0.1em", textTransform: "uppercase", marginBottom: 8 }}>Avanzamento totale</div>
             <div style={{ color: kpi.pctAvanzamento >= 80 ? T.green : kpi.pctAvanzamento >= 50 ? T.accent : T.red, fontSize: "28px", fontWeight: "700", lineHeight: 1, marginBottom: 8 }}>{kpi.pctAvanzamento}%</div>
-            <div style={{ height: 8, background: T.borderHi, borderRadius: 4, overflow: "hidden", display: "flex" }}>
+            <div style={{ height: 8, background: T.borderHi, borderRadius: 9, overflow: "hidden", display: "flex" }}>
               <div style={{ width: `${Math.round(kpi.numLanciati / Math.max(kpi.totTitoli, 1) * 100)}%`, height: "100%", background: T.accent }} />
               <div style={{ width: `${Math.round(kpi.numSbloccati / Math.max(kpi.totTitoli, 1) * 100)}%`, height: "100%", background: cv("#e8a838", "#b7791f") }} />
             </div>
@@ -1121,7 +1121,7 @@ export default function ModuloAvanzamento({ titoli, prenotato, canali = [], toke
           </div>
           <KpiCard label="Avanzamento novità" value={`${kpi.pctAvanzamentoNovita}%`} color={kpi.pctAvanzamentoNovita >= 80 ? T.green : kpi.pctAvanzamentoNovita >= 50 ? T.accent : T.red} sub={`${kpi.numLanciati} di ${kpi.totNovitaGestite} (esclusi sbloccati)`} />
           <KpiCard label="Pren. non ancora lanciato/sbloccato" value={`€ ${kpi.valNonLanciato.toLocaleString("it", { maximumFractionDigits: 0 })}`} color={T.red} sub={`${kpi.copieNonLanciate.toLocaleString("it")} copie · ${kpi.numNonLanciati} titoli`} />
-          <div style={{ background: T.surface, border: `1px solid ${T.border}`, borderRadius: 4, padding: "16px 20px", minWidth: 200, cursor: "pointer" }} onClick={() => setShowProiezione(p => !p)}>
+          <div style={{ background: T.surface, border: `1px solid ${T.border}`, borderRadius: 9, padding: "16px 20px", minWidth: 200, cursor: "pointer" }} onClick={() => setShowProiezione(p => !p)}>
             <div style={{ color: T.textMid, fontSize: "10px", letterSpacing: "0.1em", textTransform: "uppercase", marginBottom: 8, display: "flex", justifyContent: "space-between" }}>
               Proiezione anno <span>{showProiezione ? "▲" : "▼"}</span>
             </div>
@@ -1134,7 +1134,7 @@ export default function ModuloAvanzamento({ titoli, prenotato, canali = [], toke
 
         {/* SEZIONE PROIEZIONE ESPANDIBILE */}
         {showProiezione && (
-          <div style={{ marginTop: 14, padding: 16, background: T.bg, border: `1px solid ${T.border}`, borderRadius: 6 }}>
+          <div style={{ marginTop: 14, padding: 16, background: T.bg, border: `1px solid ${T.border}`, borderRadius: 12 }}>
             <div style={{ color: T.purple, fontSize: "11px", fontWeight: "700", letterSpacing: "0.08em", textTransform: "uppercase", marginBottom: 12 }}>
               Confronto {annoPrev} vs {annoRif} — Proiezione
             </div>
@@ -1372,7 +1372,7 @@ export default function ModuloAvanzamento({ titoli, prenotato, canali = [], toke
 
       {/* TOAST */}
       {toast && (
-        <div style={{ position: "fixed", bottom: 24, left: "50%", transform: "translateX(-50%)", background: toast.type === "err" ? cv("#4a1a2a", "#fdecec") : cv("#1a3a2a", "#e7f6ee"), border: `1px solid ${toast.type === "err" ? T.red : T.green}`, color: toast.type === "err" ? T.red : T.green, borderRadius: 6, padding: "8px 20px", fontSize: "12px", zIndex: 999, boxShadow: "0 4px 20px #0008" }}>
+        <div style={{ position: "fixed", bottom: 24, left: "50%", transform: "translateX(-50%)", background: toast.type === "err" ? cv("#4a1a2a", "#fdecec") : cv("#1a3a2a", "#e7f6ee"), border: `1px solid ${toast.type === "err" ? T.red : T.green}`, color: toast.type === "err" ? T.red : T.green, borderRadius: 12, padding: "8px 20px", fontSize: "12px", zIndex: 999, boxShadow: cv("0 14px 36px rgba(0,0,0,.5)", "0 14px 36px rgba(19,32,51,.18)") }}>
           {toast.msg}
         </div>
       )}

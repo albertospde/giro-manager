@@ -1,6 +1,6 @@
 import { useState, useCallback, useMemo } from "react";
 import { fetchPrenotatoRpn, parseEaggrega, importAggregato, CANALI_LABELS } from "./rpnPrenotatoSync.js";
-import { tema, cv } from "./tema.js";
+import { tema, cv, stileBtn, stileInput, stileTag, stileMini, OMBRA_CARD, FONT } from "./tema.js";
 
 const T = tema({
   bg: "#1a2140", surface: "#212d54", border: "#2e3d6b", borderHi: "#3d4f82",
@@ -9,10 +9,10 @@ const T = tema({
 });
 
 const css = {
-  btn: (v = "default") => ({ padding: "6px 14px", border: `1px solid ${v === "accent" ? T.accent : T.border}`, background: v === "accent" ? T.accent : "transparent", color: v === "accent" ? "#000" : T.text, cursor: "pointer", fontSize: "12px", fontFamily: "inherit", borderRadius: 3, fontWeight: v === "accent" ? "700" : "400" }),
-  input: { background: T.bg, border: `1px solid ${T.border}`, color: T.text, padding: "5px 10px", fontSize: "12px", fontFamily: "inherit", borderRadius: 3, outline: "none" },
-  th: { padding: "8px 12px", textAlign: "left", color: T.textMid, fontWeight: "400", fontSize: "11px", letterSpacing: "0.08em", textTransform: "uppercase", borderBottom: `1px solid ${T.border}`, whiteSpace: "nowrap", background: T.surface, position: "sticky", top: 0, zIndex: 1 },
-  td: { padding: "7px 12px", borderBottom: `1px solid ${T.border}22`, verticalAlign: "middle", fontSize: "12px" },
+  btn: (v = "default", disabled = false) => ({ ...stileBtn(v, disabled) }),
+  input: { background: T.surface, border: `2px solid ${T.border}`, color: T.text, padding: "5px 10px", fontSize: "13px", fontFamily: "inherit", borderRadius: 8, outline: "none" },
+  th: { padding: "8px 12px", textAlign: "left", color: T.textMid, fontWeight: 700, fontSize: "11px", letterSpacing: "0.03em", textTransform: "uppercase", borderBottom: `2px solid ${T.border}`, whiteSpace: "nowrap", background: T.surface, position: "sticky", top: 0, zIndex: 1 },
+  td: { padding: "7px 12px", borderBottom: `1px solid ${T.border}`, verticalAlign: "middle", fontSize: "12px" },
 };
 
 export default function ModuloPrenotato({ token, titoli, onImportDone }) {
@@ -121,7 +121,7 @@ export default function ModuloPrenotato({ token, titoli, onImportDone }) {
 
       {step === "upload" && (
         <div style={{ maxWidth: 500 }}>
-          <div style={{ background: T.surface, border: `1px solid ${T.border}`, borderRadius: 6, padding: 20, marginBottom: 16 }}>
+          <div style={{ background: T.surface, border: `1px solid ${T.border}`, borderRadius: 12, padding: 20, marginBottom: 16 }}>
             <div style={{ color: T.textMid, fontSize: "10px", textTransform: "uppercase", letterSpacing: "0.1em", marginBottom: 12 }}>Aggiorna da RPN</div>
             <div style={{ display: "flex", gap: 8, marginBottom: rpnError ? 10 : 0 }}>
               <select
@@ -143,7 +143,7 @@ export default function ModuloPrenotato({ token, titoli, onImportDone }) {
 
           <div style={{ textAlign: "center", color: T.textDim, fontSize: "11px", margin: "12px 0" }}>oppure</div>
 
-          <div style={{ border: `2px dashed ${T.borderHi}`, borderRadius: 6, padding: 40, textAlign: "center", marginBottom: 20 }}>
+          <div style={{ border: `2px dashed ${T.borderHi}`, borderRadius: 12, padding: 40, textAlign: "center", marginBottom: 20 }}>
             <div style={{ fontSize: "32px", marginBottom: 12 }}>📂</div>
             <div style={{ color: T.text, marginBottom: 8 }}>Carica il file "Pianifica Visite"</div>
             <div style={{ color: T.textMid, fontSize: "11px", marginBottom: 20 }}>File .xlsx esportato dal sistema Messaggerie</div>
@@ -157,14 +157,14 @@ export default function ModuloPrenotato({ token, titoli, onImportDone }) {
         <div>
           <div style={{ display: "flex", gap: 12, marginBottom: 20, flexWrap: "wrap" }}>
             {[["Righe lette", righe.length.toLocaleString("it"), T.text], ["Totale copie", totaleAggregato.toLocaleString("it"), T.accent], ["Trovati in cedola", totaleFound.toLocaleString("it"), T.green], ["Non trovati", aggregato.filter(r => !r.found).length, T.red]].map(([label, val, color]) => (
-              <div key={label} style={{ background: T.surface, border: `1px solid ${T.border}`, borderRadius: 4, padding: "10px 16px" }}>
+              <div key={label} style={{ background: T.surface, border: `1px solid ${T.border}`, borderRadius: 9, padding: "10px 16px" }}>
                 <div style={{ color: T.textMid, fontSize: "10px", textTransform: "uppercase", marginBottom: 4 }}>{label}</div>
                 <div style={{ color, fontWeight: "700", fontSize: "20px" }}>{val}</div>
               </div>
             ))}
           </div>
 
-          <div style={{ marginBottom: 20, background: T.surface, border: `1px solid ${T.border}`, borderRadius: 4, padding: 16 }}>
+          <div style={{ marginBottom: 20, background: T.surface, border: `1px solid ${T.border}`, borderRadius: 9, padding: 16 }}>
             <div style={{ color: T.textMid, fontSize: "10px", textTransform: "uppercase", letterSpacing: "0.1em", marginBottom: 12 }}>Riepilogo per canale</div>
             <div style={{ display: "flex", flexWrap: "wrap", gap: 12 }}>
               {riepilogoCanale.map(([canale, qta]) => (

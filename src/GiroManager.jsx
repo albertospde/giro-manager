@@ -12,7 +12,7 @@ import ModuloPubblicaRpn from "./ModuloPubblicaRpn.jsx";
 import ModuloRankingEditori from "./ModuloRankingEditori.jsx";
 import ModuloSftp from "./ModuloSftp.jsx";
 import { fetchPrenotatoRpn, fetchPrenotatoRpnCedola, parseEaggrega, importAggregato } from "./rpnPrenotatoSync.js";
-import { tema, cv, impostaTema, temaAttivo } from "./tema.js";
+import { tema, cv, impostaTema, temaAttivo, FONT, FONT_TITOLI, SU_ACCENT, OMBRA_CARD, OMBRA_POPUP, stileBtn, stileInput, stileTh, stileTd, stileTag, stileLabel } from "./tema.js";
 
 const SUPABASE_URL = "https://tdflwenlylhctxssatax.supabase.co";
 const SUPABASE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InRkZmx3ZW5seWxoY3R4c3NhdGF4Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzYzMzgyNzYsImV4cCI6MjA5MTkxNDI3Nn0.l35qEL7LOvyYuI1McQlVqj4vbyTqmlevcmqWbTGYi2Q";
@@ -204,16 +204,16 @@ const T = tema({
 });
 
 const css = {
-  app: { background: T.bg, color: T.text, minHeight: "100vh", fontFamily: "'Inter', 'Segoe UI', Arial, sans-serif", fontSize: "13px" },
-  sidebar: { width: 200, background: T.surface, borderRight: `1px solid ${T.border}`, display: "flex", flexDirection: "column", flexShrink: 0, minHeight: 0, overflow: "hidden" },
-  main: { flex: 1, overflow: "hidden", display: "flex", flexDirection: "column" },
-  header: { borderBottom: `1px solid ${T.border}`, padding: "12px 20px", display: "flex", alignItems: "center", gap: 12, background: T.surface },
-  btn: (v = "default") => ({ padding: "6px 14px", border: `1px solid ${v === "accent" ? T.accent : T.border}`, background: v === "accent" ? T.accent : "transparent", color: v === "accent" ? "#000" : T.text, cursor: "pointer", fontSize: "12px", fontFamily: "inherit", borderRadius: 3, fontWeight: v === "accent" ? "700" : "400", letterSpacing: "0.04em", transition: "all 0.15s" }),
-  input: { background: T.bg, border: `1px solid ${T.border}`, color: T.text, padding: "5px 10px", fontSize: "12px", fontFamily: "inherit", borderRadius: 3, outline: "none" },
-  tag: (c = T.accent) => ({ display: "inline-block", padding: "2px 7px", background: c + "22", border: `1px solid ${c}44`, color: c, borderRadius: 2, fontSize: "10px", fontWeight: "700", letterSpacing: "0.06em", textTransform: "uppercase" }),
+  app: { background: "transparent", color: T.text, minHeight: "100vh", fontFamily: FONT, fontSize: "13.5px" },
+  sidebar: { width: 250, background: cv("rgba(22,31,71,.82)", "rgba(255,255,255,.80)"), backdropFilter: "blur(6px)", WebkitBackdropFilter: "blur(6px)", border: `1px solid ${T.border}`, borderRadius: 18, boxShadow: cv("0 12px 26px -12px rgba(0,0,0,.7)", "0 12px 26px -16px rgba(20,45,90,.45)"), display: "flex", flexDirection: "column", flexShrink: 0, minHeight: 0, overflow: "hidden" },
+  main: { flex: 1, minWidth: 0, overflow: "hidden", display: "flex", flexDirection: "column" },
+  header: { borderBottom: `1px solid ${T.border}`, padding: "10px 24px", display: "flex", alignItems: "center", gap: 16, background: cv("rgba(22,31,71,.82)", "rgba(255,255,255,.80)"), backdropFilter: "blur(6px)", WebkitBackdropFilter: "blur(6px)", boxShadow: cv("0 12px 26px -16px rgba(0,0,0,.7)", "0 12px 26px -20px rgba(20,45,90,.45)"), flexShrink: 0, position: "relative", zIndex: 50 },
+  btn: stileBtn,
+  input: stileInput,
+  tag: stileTag,
   table: { width: "100%", borderCollapse: "collapse" },
-  th: { padding: "8px 12px", textAlign: "left", color: T.textMid, fontWeight: "400", fontSize: "11px", letterSpacing: "0.08em", textTransform: "uppercase", borderBottom: `1px solid ${T.border}`, whiteSpace: "nowrap", position: "sticky", top: 0, background: T.surface, zIndex: 1 },
-  td: { padding: "8px 12px", borderBottom: `1px solid ${T.border}22`, verticalAlign: "middle" },
+  th: { ...stileTh, position: "sticky", top: 0, background: T.surface, zIndex: 1 },
+  td: stileTd,
 };
 
 const CANALI_RETE = ["LIBRACCIO", "LIB_RELIGIOSE", "LIB_COOP", "INDIPENDENTI_ALTRE_CATENE"];
@@ -279,25 +279,24 @@ function LoginScreen({ onLogin }) {
   };
 
   return (
-    <div style={{ ...css.app, display: "flex", alignItems: "center", justifyContent: "center", height: "100vh" }}>
-      <div style={{ background: T.surface, border: `1px solid ${T.border}`, borderRadius: 6, padding: 40, width: 340 }}>
-        <div style={{ marginBottom: 32 }}>
-          <div style={{ background: "#fff", borderRadius: 8, padding: "12px 12px", boxSizing: "border-box", width: "100%" }}>
-            <img src={`${import.meta.env.BASE_URL}logo/giro-manager-logo-960.png`} style={{ width: "100%", display: "block" }} alt="Giro Manager" />
-          </div>
+    <div style={{ ...css.app, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", height: "100vh", gap: 28 }}>
+      <div style={{ background: T.surface, border: `1px solid ${T.border}`, borderRadius: 20, padding: "28px 36px 32px", width: 420, maxWidth: "92vw", boxSizing: "border-box", display: "flex", flexDirection: "column", gap: 16, boxShadow: cv("0 4px 18px rgba(0,0,0,.35)", "0 4px 18px rgba(20,45,90,0.08)") }}>
+        <div style={{ background: "#fff", borderRadius: 14, padding: "14px 12px", boxSizing: "border-box", width: "100%" }}>
+          <img src={`${import.meta.env.BASE_URL}logo/giro-manager-logo-960.png`} style={{ width: "100%", display: "block" }} alt="Giro Manager" />
         </div>
-        <div style={{ marginBottom: 16 }}>
-          <label style={{ color: T.textMid, fontSize: "10px", letterSpacing: "0.08em", textTransform: "uppercase", display: "block", marginBottom: 6 }}>Email</label>
-          <input style={{ ...css.input, width: "100%", boxSizing: "border-box" }} type="email" value={email} onChange={e => setEmail(e.target.value)} onKeyDown={e => e.key === "Enter" && handleLogin()} />
+        <p style={{ margin: "0 0 6px", color: T.textMid, fontSize: "15px", textAlign: "center" }}>Accedi con le credenziali PDE</p>
+        <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+          <label style={{ ...stileLabel, fontSize: "14px" }}>Email</label>
+          <input style={{ ...css.input, width: "100%", boxSizing: "border-box", padding: "12px 14px", fontSize: "16px", borderRadius: 10 }} type="email" value={email} onChange={e => setEmail(e.target.value)} onKeyDown={e => e.key === "Enter" && handleLogin()} />
         </div>
-        <div style={{ marginBottom: 24 }}>
-          <label style={{ color: T.textMid, fontSize: "10px", letterSpacing: "0.08em", textTransform: "uppercase", display: "block", marginBottom: 6 }}>Password</label>
-          <input style={{ ...css.input, width: "100%", boxSizing: "border-box" }} type="password" value={password} onChange={e => setPassword(e.target.value)} onKeyDown={e => e.key === "Enter" && handleLogin()} />
+        <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+          <label style={{ ...stileLabel, fontSize: "14px" }}>Password</label>
+          <input style={{ ...css.input, width: "100%", boxSizing: "border-box", padding: "12px 14px", fontSize: "16px", borderRadius: 10 }} type="password" value={password} onChange={e => setPassword(e.target.value)} onKeyDown={e => e.key === "Enter" && handleLogin()} />
         </div>
-        {error && <div style={{ color: T.red, fontSize: "12px", marginBottom: 16, textAlign: "center" }}>{error}</div>}
-        <button style={{ ...css.btn("accent"), width: "100%", padding: "10px" }} onClick={handleLogin} disabled={loading}>{loading ? "Accesso..." : "Accedi"}</button>
-        <div style={{ textAlign: "center", marginTop: 20, color: T.textDim, fontSize: "10px", letterSpacing: "0.06em" }}>Powered by PDE</div>
+        {error && <div style={{ color: T.red, fontSize: "14px", fontWeight: 600, textAlign: "center" }}>{error}</div>}
+        <button style={{ ...css.btn("accent"), width: "100%", padding: "13px 20px", fontSize: "16px", marginTop: 4 }} onClick={handleLogin} disabled={loading}>{loading ? "Accesso..." : "Accedi"}</button>
       </div>
+      <div style={{ color: T.textMid, fontSize: "13px" }}>Powered by PDE</div>
     </div>
   );
 }
@@ -308,7 +307,7 @@ function ProgressBar({ value, total, color = T.accent }) {
   const pct = total > 0 ? Math.min(100, Math.round((value / total) * 100)) : 0;
   return (
     <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-      <div style={{ width: 80, height: 4, background: T.borderHi, borderRadius: 2, overflow: "hidden" }}>
+      <div style={{ width: 80, height: 6, background: T.border, borderRadius: 9, overflow: "hidden" }}>
         <div style={{ width: `${pct}%`, height: "100%", background: pct >= 100 ? T.green : color }} />
       </div>
       <span style={{ color: T.textMid, fontSize: "11px" }}>{pct}%</span>
@@ -318,10 +317,10 @@ function ProgressBar({ value, total, color = T.accent }) {
 
 function KpiCard({ label, value, sub, color = T.accent }) {
   return (
-    <div style={{ background: T.surface, border: `1px solid ${T.border}`, borderRadius: 4, padding: "16px 20px", minWidth: 160 }}>
-      <div style={{ color: T.textMid, fontSize: "10px", letterSpacing: "0.1em", textTransform: "uppercase", marginBottom: 8 }}>{label}</div>
-      <div style={{ color, fontSize: "28px", fontWeight: "700", lineHeight: 1 }}>{value}</div>
-      {sub && <div style={{ color: T.textMid, fontSize: "11px", marginTop: 6 }}>{sub}</div>}
+    <div style={{ background: T.surface, border: `1px solid ${T.border}`, borderRadius: 14, padding: "16px 20px", minWidth: 160, boxShadow: OMBRA_CARD }}>
+      <div style={{ color: T.textMid, fontSize: "11px", fontWeight: 600, letterSpacing: "0.03em", textTransform: "uppercase", marginBottom: 8 }}>{label}</div>
+      <div style={{ color, fontSize: "26px", fontWeight: 800, lineHeight: 1 }}>{value}</div>
+      {sub && <div style={{ color: T.textMid, fontSize: "12px", marginTop: 6 }}>{sub}</div>}
     </div>
   );
 }
@@ -406,7 +405,7 @@ function EditModal({ titolo, siblings = [], onSave, onClose, onDelete, token }) 
 
   return (
     <div style={{ position: "fixed", inset: 0, background: "#000a", zIndex: 100, display: "flex", alignItems: "center", justifyContent: "center" }} onClick={onClose}>
-      <div style={{ background: T.surface, border: `1px solid ${T.borderHi}`, borderRadius: 6, padding: 24, width: 640, maxHeight: "85vh", overflowY: "auto" }} onClick={e => e.stopPropagation()}>
+      <div style={{ background: T.surface, border: `1px solid ${T.borderHi}`, borderRadius: 12, padding: 24, width: 640, maxHeight: "85vh", overflowY: "auto" }} onClick={e => e.stopPropagation()}>
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 20 }}>
           <span style={{ color: T.accent, fontWeight: "700", fontSize: "13px" }}>MODIFICA TITOLO</span>
           <button style={css.btn()} onClick={onClose}>✕</button>
@@ -481,9 +480,9 @@ const compatto = (n) => {
 };
 function RiquadroKpi({ etichetta, valore, nota }) {
   return (
-    <div style={{ background: T.surface, border: `1px solid ${T.border}`, borderRadius: 8, padding: "18px 20px", minWidth: 0 }}>
-      <div style={{ color: T.textMid, fontSize: "11px", marginBottom: 10 }}>{etichetta}</div>
-      <div style={{ color: T.text, fontSize: "28px", fontWeight: 700, lineHeight: 1 }}>{valore}</div>
+    <div style={{ background: T.surface, border: `1px solid ${T.border}`, borderRadius: 14, padding: "18px 20px", minWidth: 0, boxShadow: OMBRA_CARD }}>
+      <div style={{ color: T.textMid, fontSize: "11px", fontWeight: 600, letterSpacing: "0.03em", textTransform: "uppercase", marginBottom: 10 }}>{etichetta}</div>
+      <div style={{ color: T.text, fontSize: "28px", fontWeight: 800, lineHeight: 1 }}>{valore}</div>
       {nota && <div style={{ color: T.textMid, fontSize: "11px", marginTop: 8 }}>{nota}</div>}
     </div>
   );
@@ -511,7 +510,7 @@ function RigaBullet({ etichetta, pren, obj, scala, colore, tipTitolo, larghezzaE
   return (
     <div onMouseMove={e => onTip(e, tipTitolo || etichetta, [["Prenotato", fmtN(pren)], ["Obiettivo", obj > 0 ? fmtN(obj) : "—"], ["Avanzamento", pct != null ? `${pct}%` : "—"]])}
       onMouseEnter={() => setSopra(true)} onMouseLeave={e => { setSopra(false); onTip(e, null); }}
-      style={{ display: "grid", gridTemplateColumns: `${larghezzaEtichetta}px 1fr 150px 44px`, alignItems: "center", gap: 12, padding: "6px 4px", borderRadius: 4, background: sopra ? T.border + "55" : "transparent" }}>
+      style={{ display: "grid", gridTemplateColumns: `${larghezzaEtichetta}px 1fr 150px 44px`, alignItems: "center", gap: 12, padding: "6px 4px", borderRadius: 9, background: sopra ? T.border + "55" : "transparent" }}>
       <div style={{ color: T.text, fontSize: "12px", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }} title={etichetta}>{etichetta}</div>
       <div style={{ position: "relative", height: 14 }}>
         {wObj > 0 && <div style={{ position: "absolute", left: 0, top: 3, height: 8, width: `${wObj}%`, background: VIZ.traccia, borderRadius: "0 4px 4px 0" }} />}
@@ -643,9 +642,9 @@ function ModuloDashboard({ titoli, prenotato, canali, spalmatura, ruolo }) {
   });
   const totPrenGruppi = gruppi.reduce((s, g) => s + g.pren, 0);
 
-  const card = { background: T.surface, border: `1px solid ${T.border}`, borderRadius: 8, padding: "18px 20px", minWidth: 0 };
-  const titoloCard = { color: T.text, fontSize: "13px", fontWeight: 600, marginBottom: 2 };
-  const sottoCard = { color: T.textMid, fontSize: "11px", marginBottom: 16 };
+  const card = { background: T.surface, border: `1px solid ${T.border}`, borderRadius: 14, padding: "18px 22px", minWidth: 0, boxShadow: OMBRA_CARD };
+  const titoloCard = { color: T.text, fontSize: "16px", fontWeight: 700, marginBottom: 2 };
+  const sottoCard = { color: T.textMid, fontSize: "12.5px", marginBottom: 16 };
 
   return (
     <div style={{ flex: 1, overflowY: "auto", padding: 20 }}>
@@ -732,7 +731,7 @@ function ModuloDashboard({ titoli, prenotato, canali, spalmatura, ruolo }) {
       </>}
 
       {tip && (
-        <div style={{ position: "fixed", left: Math.min(tip.x + 14, window.innerWidth - 240), top: Math.min(tip.y + 14, window.innerHeight - 110), zIndex: 500, pointerEvents: "none", background: cv("#0f1530", "#ffffff"), border: `1px solid ${T.borderHi}`, borderRadius: 6, padding: "8px 12px", boxShadow: "0 6px 24px #0006", minWidth: 190 }}>
+        <div style={{ position: "fixed", left: Math.min(tip.x + 14, window.innerWidth - 240), top: Math.min(tip.y + 14, window.innerHeight - 110), zIndex: 500, pointerEvents: "none", background: cv("#0f1530", "#ffffff"), border: `1px solid ${T.borderHi}`, borderRadius: 12, padding: "8px 12px", boxShadow: "0 6px 24px #0006", minWidth: 190 }}>
           <div style={{ color: T.text, fontSize: "12px", fontWeight: 700, marginBottom: 6 }}>{tip.titolo}</div>
           {tip.righe.map(([k, v]) => (
             <div key={k} style={{ display: "flex", justifyContent: "space-between", gap: 16, fontSize: "12px", lineHeight: 1.6 }}>
@@ -884,7 +883,7 @@ function Modulocalendariogiri({ token, ruolo }) {
   return (
     <div style={{ flex: 1, overflow: "auto", padding: 20 }}>
       {/* FORM DI INSERIMENTO / MODIFICA */}
-      <div style={{ background: T.surface, border: `1px solid ${form.id ? T.accent : T.border}`, borderRadius: 6, padding: 20, marginBottom: 24 }}>
+      <div style={{ background: T.surface, border: `1px solid ${form.id ? T.accent : T.border}`, borderRadius: 12, padding: 20, marginBottom: 24 }}>
         <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 16 }}>
           <span style={{ color: T.accent, fontWeight: "700", fontSize: "13px" }}>{form.id ? "✎ MODIFICA GIRO" : "+ NUOVO GIRO"}</span>
           {form.id && <button style={{ ...css.btn(), fontSize: "11px", padding: "3px 10px" }} onClick={resetForm}>Annulla modifica</button>}
@@ -904,7 +903,7 @@ function Modulocalendariogiri({ token, ruolo }) {
           <label style={{ color: T.textMid, fontSize: "10px", letterSpacing: "0.08em", textTransform: "uppercase", display: "block", marginBottom: 6 }}>Mese uscita</label>
           <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
             {MESI_LABELS.map(m => (
-              <label key={m} style={{ display: "flex", alignItems: "center", gap: 5, cursor: "pointer", padding: "4px 10px", borderRadius: 4, border: `1px solid ${form.mesi.includes(m) ? T.accent : T.border}`, background: form.mesi.includes(m) ? T.accent + "18" : "transparent" }}>
+              <label key={m} style={{ display: "flex", alignItems: "center", gap: 5, cursor: "pointer", padding: "4px 10px", borderRadius: 9, border: `1px solid ${form.mesi.includes(m) ? T.accent : T.border}`, background: form.mesi.includes(m) ? T.accent + "18" : "transparent" }}>
                 <input type="checkbox" checked={form.mesi.includes(m)} onChange={() => toggleMese(m)} style={{ accentColor: T.accent }} />
                 <span style={{ fontSize: "12px", color: form.mesi.includes(m) ? T.accent : T.textMid }}>{m}</span>
               </label>
@@ -964,7 +963,7 @@ function Modulocalendariogiri({ token, ruolo }) {
       </table>
 
       {toast && (
-        <div style={{ position: "fixed", bottom: 24, left: "50%", transform: "translateX(-50%)", background: toast.type === "err" ? cv("#4a1a2a", "#fdecec") : cv("#1a3a2a", "#e7f6ee"), border: `1px solid ${toast.type === "err" ? T.red : T.green}`, color: toast.type === "err" ? T.red : T.green, borderRadius: 6, padding: "8px 20px", fontSize: "12px", zIndex: 999, boxShadow: "0 4px 20px #0008" }}>
+        <div style={{ position: "fixed", bottom: 24, left: "50%", transform: "translateX(-50%)", background: toast.type === "err" ? cv("#4a1a2a", "#fdecec") : cv("#1a3a2a", "#e7f6ee"), border: `1px solid ${toast.type === "err" ? T.red : T.green}`, color: toast.type === "err" ? T.red : T.green, borderRadius: 12, padding: "8px 20px", fontSize: "12px", zIndex: 999, boxShadow: OMBRA_POPUP }}>
           {toast.msg}
         </div>
       )}
@@ -985,12 +984,12 @@ function SearchableSelect({ value, onChange, options, placeholder = "Tutti", lab
     : (labelKey ? (options.find(o => o[valueKey] === value)?.[labelKey] || value) : value);
   return (
     <div style={{ position: "relative" }}>
-      <button style={{ ...css.btn(value !== "tutti" && value !== null ? "accent" : "default"), minWidth: width, display: "flex", justifyContent: "space-between", alignItems: "center", gap: 8 }} onClick={() => setOpen(o => !o)}>
+      <button style={{ ...css.btn(value !== "tutti" && value !== null ? "attivo" : "default"), minWidth: width, display: "flex", justifyContent: "space-between", alignItems: "center", gap: 8 }} onClick={() => setOpen(o => !o)}>
         <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", maxWidth: width - 30 }}>{currentLabel}</span>
         <span>▾</span>
       </button>
       {open && (
-        <div style={{ position: "absolute", top: "100%", left: 0, zIndex: 50, background: T.surface, border: `1px solid ${T.borderHi}`, borderRadius: 4, minWidth: width, maxHeight: 300, display: "flex", flexDirection: "column", marginTop: 4, boxShadow: "0 4px 20px #0008" }}>
+        <div style={{ position: "absolute", top: "100%", left: 0, zIndex: 50, background: T.surface, border: `1px solid ${T.borderHi}`, borderRadius: 9, minWidth: width, maxHeight: 300, display: "flex", flexDirection: "column", marginTop: 4, boxShadow: OMBRA_POPUP }}>
           <div style={{ padding: "8px 10px", borderBottom: `1px solid ${T.border}`, flexShrink: 0 }}>
             <input style={{ ...css.input, width: "100%", boxSizing: "border-box" }} placeholder="Cerca..." value={search} onChange={e => setSearch(e.target.value)} autoFocus />
           </div>
@@ -1021,14 +1020,14 @@ function SearchableMultiSelect({ values, onChange, options, placeholder = "Tutti
   const filtered = options.filter(o => label(o).toLowerCase().includes(search.toLowerCase()));
   return (
     <div style={{ position: "relative" }}>
-      <button style={{ ...css.btn(values.length > 0 ? "accent" : "default"), minWidth: width, display: "flex", justifyContent: "space-between", alignItems: "center", gap: 8 }} onClick={() => setOpen(o => !o)}>
+      <button style={{ ...css.btn(values.length > 0 ? "attivo" : "default"), minWidth: width, display: "flex", justifyContent: "space-between", alignItems: "center", gap: 8 }} onClick={() => setOpen(o => !o)}>
         <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", maxWidth: width - 30 }}>
           {values.length === 0 ? placeholder : renderOption ? values.map(renderOption).join(", ") : `${values.length} selezionati`}
         </span>
         <span>▾</span>
       </button>
       {open && (
-        <div style={{ position: "absolute", top: "100%", left: 0, zIndex: 50, background: T.surface, border: `1px solid ${T.borderHi}`, borderRadius: 4, minWidth: width, maxHeight: 320, display: "flex", flexDirection: "column", marginTop: 4, boxShadow: "0 4px 20px #0008" }}>
+        <div style={{ position: "absolute", top: "100%", left: 0, zIndex: 50, background: T.surface, border: `1px solid ${T.borderHi}`, borderRadius: 9, minWidth: width, maxHeight: 320, display: "flex", flexDirection: "column", marginTop: 4, boxShadow: OMBRA_POPUP }}>
           <div style={{ padding: "8px 10px", borderBottom: `1px solid ${T.border}`, flexShrink: 0 }}>
             <input style={{ ...css.input, width: "100%", boxSizing: "border-box", marginBottom: 6 }} placeholder="Cerca..." value={search} onChange={e => setSearch(e.target.value)} autoFocus />
             <div style={{ display: "flex", justifyContent: "space-between" }}>
@@ -1082,14 +1081,14 @@ function TendinaGiroCedola({ items, eanIndex, statoMap, onToggleChiuso, selected
   return (
     <div style={{ position: "relative", width }}>
       <button
-        style={{ ...css.btn(selected ? "accent" : "default"), width: "100%", display: "flex", justifyContent: "space-between", alignItems: "center", gap: 8, borderColor: selected ? accentColor : T.border, color: selected ? accentColor : T.text }}
+        style={{ ...css.btn(selected ? "attivo" : "default"), width: "100%", display: "flex", justifyContent: "space-between", alignItems: "center", gap: 8, borderColor: selected ? accentColor : T.border, color: selected ? accentColor : T.text }}
         onClick={() => setOpen(o => !o)}
       >
         <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{selected || placeholder}</span>
         <span>▾</span>
       </button>
       {open && (
-        <div style={{ position: "absolute", top: "100%", left: 0, zIndex: 60, background: T.surface, border: `1px solid ${T.borderHi}`, borderRadius: 4, width: Math.max(width, 280), maxHeight: 380, display: "flex", flexDirection: "column", marginTop: 4, boxShadow: "0 4px 20px #0008" }}>
+        <div style={{ position: "absolute", top: "100%", left: 0, zIndex: 60, background: T.surface, border: `1px solid ${T.borderHi}`, borderRadius: 9, width: Math.max(width, 280), maxHeight: 380, display: "flex", flexDirection: "column", marginTop: 4, boxShadow: OMBRA_POPUP }}>
           <div style={{ padding: "8px 10px", borderBottom: `1px solid ${T.border}`, flexShrink: 0, display: "flex", flexDirection: "column", gap: 6 }}>
             <input autoFocus placeholder="Cerca nome..." value={search} onChange={e => setSearch(e.target.value)} style={{ ...css.input, width: "100%", boxSizing: "border-box" }} />
             <input placeholder="Cerca per EAN..." value={eanSearch} onChange={e => setEanSearch(e.target.value)} style={{ ...css.input, width: "100%", boxSizing: "border-box" }} />
@@ -1236,7 +1235,7 @@ function SezioneAgentiTitoli({ titoli, token, clienteSel, canaliIds }) {
           {stato.errore && <div style={{ color: T.red, fontSize: "12px", marginBottom: 8 }}>✕ {stato.errore}</div>}
           {!ids.length && <div style={{ color: T.textMid, fontSize: "12px" }}>Nessun titolo con i filtri attuali.</div>}
           {pivot && (
-            <div style={{ maxHeight: "45vh", overflow: "auto", border: `1px solid ${T.border}`, borderRadius: 4, opacity: stato.caricamento ? 0.5 : 1 }}>
+            <div style={{ maxHeight: "45vh", overflow: "auto", border: `1px solid ${T.border}`, borderRadius: 9, opacity: stato.caricamento ? 0.5 : 1 }}>
               <table style={{ borderCollapse: "separate", borderSpacing: 0, minWidth: "100%" }}>
                 <thead>
                   <tr>
@@ -1380,14 +1379,14 @@ function PannelloEditoriGiro({ titoli, giroLabel, token }) {
         <div style={{ padding: "0 20px 12px" }}>
           <div style={{ display: "flex", gap: 8, alignItems: "center", marginBottom: 8, flexWrap: "wrap" }}>
             {filtri.map(([k, label, col]) => (
-              <button key={k} onClick={() => setVista(k)} style={{ ...css.btn(vista === k ? "accent" : "default"), padding: "4px 10px", ...(vista !== k ? { color: col } : {}) }}>
+              <button key={k} onClick={() => setVista(k)} style={{ ...css.btn(vista === k ? "attivo" : "default"), padding: "4px 10px", ...(vista !== k ? { color: col } : {}) }}>
                 {label} ({k === "tutti" ? conteggi.tutti : conteggi[k]})
               </button>
             ))}
             <input style={{ ...css.input, width: 200 }} placeholder="Cerca editore…" value={cerca} onChange={e => setCerca(e.target.value)} />
             {errore && <span style={{ color: T.red, fontSize: "11px" }}>{errore}</span>}
           </div>
-          <div style={{ maxHeight: "38vh", overflowY: "auto", border: `1px solid ${T.border}`, borderRadius: 4 }}>
+          <div style={{ maxHeight: "38vh", overflowY: "auto", border: `1px solid ${T.border}`, borderRadius: 9 }}>
             <div style={{ display: "grid", gridTemplateColumns: colonne }}>
               {["Rank", "Editore", "Cat.", "Account", "Titoli", "Stato", ""].map((h, i) => (
                 <div key={i} style={{ ...cella, position: "sticky", top: 0, zIndex: 1, background: T.surface, color: T.textMid, fontSize: "10px", letterSpacing: "0.08em", textTransform: "uppercase", borderBottom: `1px solid ${T.border}` }}>{h}</div>
@@ -1512,7 +1511,7 @@ function AvvisoEditoriNuovi({ token, userId }) {
   const totale = novita.reduce((s, x) => s + x.editori.length, 0);
   return (
     <div style={{ position: "fixed", inset: 0, background: "#000a", zIndex: 300, display: "flex", alignItems: "center", justifyContent: "center" }} onClick={chiudi}>
-      <div style={{ background: T.surface, border: `1px solid ${T.borderHi}`, borderRadius: 6, padding: 24, width: 520, maxWidth: "92vw", maxHeight: "80vh", display: "flex", flexDirection: "column" }} onClick={e => e.stopPropagation()}>
+      <div style={{ background: T.surface, border: `1px solid ${T.borderHi}`, borderRadius: 12, padding: 24, width: 520, maxWidth: "92vw", maxHeight: "80vh", display: "flex", flexDirection: "column" }} onClick={e => e.stopPropagation()}>
         <div style={{ color: T.accent, fontWeight: 700, fontSize: "13px", letterSpacing: "0.06em", marginBottom: 4 }}>🆕 NUOVI EDITORI NEI GIRI</div>
         <div style={{ color: T.textMid, fontSize: "12px", marginBottom: 14 }}>Dall'ultimo avviso {totale === 1 ? "è stato aggiunto 1 editore" : `sono stati aggiunti ${totale} editori`}:</div>
         <div style={{ overflowY: "auto", flex: 1 }}>
@@ -1956,7 +1955,7 @@ function ModuloCedola({ titoli, giriList, onUpdateTitolo, onDeleteTitolo, spalma
       {/* MODAL NUOVO GIRO */}
       {showNuovoGiro && (
         <div style={{ position: "fixed", inset: 0, background: "#000a", zIndex: 200, display: "flex", alignItems: "center", justifyContent: "center" }} onClick={() => setShowNuovoGiro(false)}>
-          <div style={{ background: T.surface, border: `1px solid ${T.borderHi}`, borderRadius: 6, padding: 28, width: 380 }} onClick={e => e.stopPropagation()}>
+          <div style={{ background: T.surface, border: `1px solid ${T.borderHi}`, borderRadius: 12, padding: 28, width: 380 }} onClick={e => e.stopPropagation()}>
             <div style={{ color: T.accent, fontWeight: "700", fontSize: "13px", marginBottom: 20 }}>NUOVO GIRO</div>
             <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12, marginBottom: 12 }}>
               <div>
@@ -1983,7 +1982,7 @@ function ModuloCedola({ titoli, giriList, onUpdateTitolo, onDeleteTitolo, spalma
       {/* MODAL NUOVO TITOLO */}
       {showNuovoTitolo && (
         <div style={{ position: "fixed", inset: 0, background: "#000a", zIndex: 200, display: "flex", alignItems: "center", justifyContent: "center" }} onClick={() => setShowNuovoTitolo(false)}>
-          <div style={{ background: T.surface, border: `1px solid ${T.borderHi}`, borderRadius: 6, padding: 28, width: 640, maxHeight: "85vh", overflowY: "auto" }} onClick={e => e.stopPropagation()}>
+          <div style={{ background: T.surface, border: `1px solid ${T.borderHi}`, borderRadius: 12, padding: 28, width: 640, maxHeight: "85vh", overflowY: "auto" }} onClick={e => e.stopPropagation()}>
             <div style={{ color: T.accent, fontWeight: "700", fontSize: "13px", marginBottom: 20 }}>NUOVO TITOLO</div>
             <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
               {[
@@ -2046,7 +2045,7 @@ function ModuloCedola({ titoli, giriList, onUpdateTitolo, onDeleteTitolo, spalma
 
       {/* TOAST LOCALE */}
       {toastCedola && (
-        <div style={{ position: "fixed", bottom: 24, left: "50%", transform: "translateX(-50%)", background: toastCedola.type === "err" ? cv("#4a1a2a", "#fdecec") : cv("#1a3a2a", "#e7f6ee"), border: `1px solid ${toastCedola.type === "err" ? T.red : T.green}`, color: toastCedola.type === "err" ? T.red : T.green, borderRadius: 6, padding: "8px 20px", fontSize: "12px", zIndex: 999, boxShadow: "0 4px 20px #0008" }}>
+        <div style={{ position: "fixed", bottom: 24, left: "50%", transform: "translateX(-50%)", background: toastCedola.type === "err" ? cv("#4a1a2a", "#fdecec") : cv("#1a3a2a", "#e7f6ee"), border: `1px solid ${toastCedola.type === "err" ? T.red : T.green}`, color: toastCedola.type === "err" ? T.red : T.green, borderRadius: 12, padding: "8px 20px", fontSize: "12px", zIndex: 999, boxShadow: OMBRA_POPUP }}>
           {toastCedola.msg}
         </div>
       )}
@@ -2061,7 +2060,7 @@ function ModuloCedola({ titoli, giriList, onUpdateTitolo, onDeleteTitolo, spalma
         <SearchableMultiSelect values={filterAccount} onChange={setFilterAccount} options={accounts} placeholder="Tutti gli account" width={160} />
         <input style={{ ...css.input, width: 180 }} placeholder="Cerca..." value={search} onChange={e => setSearch(e.target.value)} />
         {["tutti","triangolo","top100","gemelli"].map(f => (
-          <button key={f} style={{ ...css.btn(filterFlag === f ? "accent" : "default"), padding: "5px 10px" }} onClick={() => setFilterFlag(f)}>
+          <button key={f} style={{ ...css.btn(filterFlag === f ? "attivo" : "default"), padding: "5px 10px" }} onClick={() => setFilterFlag(f)}>
             {f === "tutti" ? "Tutti" : f === "triangolo" ? "▲" : f === "top100" ? "★" : "Gem."}
           </button>
         ))}
@@ -2151,7 +2150,7 @@ function ModuloCedola({ titoli, giriList, onUpdateTitolo, onDeleteTitolo, spalma
                         style={{
                           background: t.top_100 ? T.accent + "22" : "transparent",
                           border: `1px solid ${t.top_100 ? T.accent : T.border}`,
-                          borderRadius: 4,
+                          borderRadius: 9,
                           color: t.top_100 ? T.accent : T.textMid,
                           cursor: savingTop100Id === t.id ? "default" : "pointer",
                           fontSize: "11px",
@@ -2785,7 +2784,7 @@ function ModuloFineGiro({ titoli, prenotato, canali, token, ruolo, spalmatura, u
     <div style={{ display: "flex", flexDirection: "column", height: "100%", overflow: "hidden" }}>
       {tipAgenti && (
         <div style={{ position: "fixed", left: Math.min(tipAgenti.x + 14, window.innerWidth - 300), top: Math.min(tipAgenti.y + 14, window.innerHeight - 320), zIndex: 600, pointerEvents: "none",
-          background: cv("#0f1530", "#ffffff"), border: `1px solid ${T.borderHi}`, borderRadius: 6, padding: "10px 12px", boxShadow: "0 8px 28px #0007", width: 280 }}>
+          background: cv("#0f1530", "#ffffff"), border: `1px solid ${T.borderHi}`, borderRadius: 12, padding: "10px 12px", boxShadow: "0 8px 28px #0007", width: 280 }}>
           <div style={{ color: T.text, fontSize: "12px", fontWeight: 700 }}>{tipAgenti.canale}</div>
           <div style={{ color: T.textMid, fontSize: "11px", marginBottom: 8, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
             {tipAgenti.titolo}{clienteSel ? ` · cliente ${clienteSel}` : ""}
@@ -2868,12 +2867,12 @@ function ModuloFineGiro({ titoli, prenotato, canali, token, ruolo, spalmatura, u
         )}
         {ruolo !== "agente" && (
           <div style={{ position: "relative" }}>
-            <button style={{ ...css.btn(clienteSel ? "accent" : "default"), minWidth: 160, display: "flex", justifyContent: "space-between", alignItems: "center", gap: 8 }} onClick={() => setClienteDropdownOpen(o => !o)}>
+            <button style={{ ...css.btn(clienteSel ? "attivo" : "default"), minWidth: 160, display: "flex", justifyContent: "space-between", alignItems: "center", gap: 8 }} onClick={() => setClienteDropdownOpen(o => !o)}>
               <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", maxWidth: 130 }}>{clienteSel ? clientiList.find(c => c.cod === clienteSel)?.nome || clienteSel : "Tutti i clienti"}</span>
               <span>▾</span>
             </button>
             {clienteDropdownOpen && (
-              <div style={{ position: "absolute", top: "100%", left: 0, zIndex: 50, background: T.surface, border: `1px solid ${T.borderHi}`, borderRadius: 4, minWidth: 260, maxHeight: 300, overflowY: "auto", marginTop: 4, boxShadow: "0 4px 20px #0008" }}>
+              <div style={{ position: "absolute", top: "100%", left: 0, zIndex: 50, background: T.surface, border: `1px solid ${T.borderHi}`, borderRadius: 9, minWidth: 260, maxHeight: 300, overflowY: "auto", marginTop: 4, boxShadow: OMBRA_POPUP }}>
                 <div style={{ padding: "8px 12px", borderBottom: `1px solid ${T.border}`, position: "sticky", top: 0, background: T.surface }}>
                   <input style={{ ...css.input, width: "100%", boxSizing: "border-box" }} placeholder="Cerca cliente..." value={clienteSearch} onChange={e => setClienteSearch(e.target.value)} autoFocus />
                 </div>
@@ -2938,7 +2937,7 @@ function ModuloFineGiro({ titoli, prenotato, canali, token, ruolo, spalmatura, u
               ["Copie non trovate", (rpnSync.preview.totaleAggregato - rpnSync.preview.totaleFound).toLocaleString("it"), T.red],
               ["EAN non trovati", new Set(rpnSync.preview.aggregato.filter(r => !r.found).map(r => r.ean)).size, T.red],
             ].map(([label, val, color]) => (
-              <div key={label} style={{ background: T.bg, border: `1px solid ${T.border}`, borderRadius: 4, padding: "8px 14px" }}>
+              <div key={label} style={{ background: T.surface2, border: `1px solid ${T.border}`, borderRadius: 9, padding: "8px 14px" }}>
                 <div style={{ color: T.textMid, fontSize: "10px", textTransform: "uppercase", marginBottom: 2 }}>{label}</div>
                 <div style={{ color, fontWeight: "700", fontSize: "16px" }}>{val}</div>
               </div>
@@ -2954,7 +2953,7 @@ function ModuloFineGiro({ titoli, prenotato, canali, token, ruolo, spalmatura, u
             return (
               <details style={{ marginBottom: 12, fontSize: "12px" }}>
                 <summary style={{ cursor: "pointer", color: T.red }}>Mostra EAN non trovati ({righeNf.length})</summary>
-                <div style={{ maxHeight: 220, overflowY: "auto", marginTop: 6, border: `1px solid ${T.border}`, borderRadius: 4 }}>
+                <div style={{ maxHeight: 220, overflowY: "auto", marginTop: 6, border: `1px solid ${T.border}`, borderRadius: 9 }}>
                   <table style={{ width: "100%", borderCollapse: "collapse" }}>
                     <tbody>
                       {righeNf.map(([ean, qta]) => (
@@ -3012,7 +3011,7 @@ function ModuloFineGiro({ titoli, prenotato, canali, token, ruolo, spalmatura, u
           const totMgRag = mg.canali.reduce((s, cod) => s + (obiPerCanaleFinGiro[cod]?.raggiunto || 0), 0);
           const pctMg = totMgAss > 0 ? Math.round(totMgRag / totMgAss * 100) : 0;
           return (
-            <div key={mg.id} style={{ background: T.surface, border: `1px solid ${T.border}`, borderRadius: 4, padding: "10px 14px", minWidth: 180 }}>
+            <div key={mg.id} style={{ background: T.surface, border: `1px solid ${T.border}`, borderRadius: 9, padding: "10px 14px", minWidth: 180 }}>
               <div style={{ color: T.accent, fontWeight: "700", fontSize: "11px", letterSpacing: "0.08em", textTransform: "uppercase", marginBottom: 4 }}>{mg.label}</div>
               <div style={{ display: "flex", gap: 10, alignItems: "center", marginBottom: 8, paddingBottom: 6, borderBottom: `1px solid ${T.border}44` }}>
                 <div style={{ fontSize: "10px", color: T.textMid }}>Ass: <span style={{ color: T.text, fontWeight: "600" }}>{totMgAss.toLocaleString("it")}</span></div>
@@ -3814,7 +3813,7 @@ if (!r.ok) throw new Error(await r.text());
         <div style={{ color: T.textMid, fontSize: "10px", letterSpacing: "0.1em", textTransform: "uppercase", marginBottom: 10 }}>Top editori</div>
         <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
           {editoriTop.map(([ed, v]) => (
-            <div key={ed} style={{ background: T.bg, border: `1px solid ${T.border}`, borderRadius: 4, padding: "8px 12px", minWidth: 150, flex: "1 1 150px", maxWidth: 220 }}>
+            <div key={ed} style={{ background: T.surface2, border: `1px solid ${T.border}`, borderRadius: 9, padding: "8px 12px", minWidth: 150, flex: "1 1 150px", maxWidth: 220 }}>
               <div style={{ fontSize: "11px", fontWeight: "600", color: T.text, marginBottom: 4, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{ed}</div>
               <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 3 }}>
                 <div style={{ flex: 1, height: 4, background: T.borderHi, borderRadius: 2, overflow: "hidden" }}>
@@ -3994,7 +3993,7 @@ if (!r.ok) throw new Error(await r.text());
       </div>
 
       {toast && (
-        <div style={{ position: "fixed", bottom: 24, left: "50%", transform: "translateX(-50%)", background: toast.type === "err" ? cv("#4a1a2a", "#fdecec") : cv("#1a3a2a", "#e7f6ee"), border: `1px solid ${toast.type === "err" ? T.red : T.green}`, color: toast.type === "err" ? T.red : T.green, borderRadius: 6, padding: "8px 20px", fontSize: "12px", zIndex: 999, boxShadow: "0 4px 20px #0008" }}>
+        <div style={{ position: "fixed", bottom: 24, left: "50%", transform: "translateX(-50%)", background: toast.type === "err" ? cv("#4a1a2a", "#fdecec") : cv("#1a3a2a", "#e7f6ee"), border: `1px solid ${toast.type === "err" ? T.red : T.green}`, color: toast.type === "err" ? T.red : T.green, borderRadius: 12, padding: "8px 20px", fontSize: "12px", zIndex: 999, boxShadow: OMBRA_POPUP }}>
           {toast.msg}
         </div>
       )}
@@ -4002,7 +4001,7 @@ if (!r.ok) throw new Error(await r.text());
       {/* POPUP USCITA FORZATA IN FINE GIRO */}
       {popupUscitaForzata && (
         <div style={{ position: "fixed", inset: 0, background: "#000a", zIndex: 300, display: "flex", alignItems: "center", justifyContent: "center" }} onClick={() => setPopupUscitaForzata(null)}>
-          <div style={{ background: T.surface, border: `1px solid ${cv("#e8a838", "#b7791f")}`, borderRadius: 6, padding: 28, width: 560, maxHeight: "80vh", overflowY: "auto" }} onClick={e => e.stopPropagation()}>
+          <div style={{ background: T.surface, border: `1px solid ${cv("#e8a838", "#b7791f")}`, borderRadius: 12, padding: 28, width: 560, maxHeight: "80vh", overflowY: "auto" }} onClick={e => e.stopPropagation()}>
             <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 6 }}>
               <span style={{ fontSize: "22px" }}>⚠</span>
               <span style={{ color: cv("#e8a838", "#b7791f"), fontWeight: "700", fontSize: "14px" }}>COMUNICA A GESTIONE LANCIO</span>
@@ -4010,7 +4009,7 @@ if (!r.ok) throw new Error(await r.text());
             <div style={{ color: T.textMid, fontSize: "12px", marginBottom: 16, lineHeight: 1.5 }}>
               {popupUscitaForzata.length === 1 ? "Questo titolo ha" : `Questi ${popupUscitaForzata.length} titoli hanno`} un'uscita scelta in Fine Giro diversa da quella determinata dalla soglia di {SOGLIA_USCITA_MARTEDI.toLocaleString("it")} copie. Comunica a Gestione Lancio l'uscita corretta.
             </div>
-            <div style={{ border: `1px solid ${T.border}`, borderRadius: 4, overflow: "hidden", marginBottom: 20 }}>
+            <div style={{ border: `1px solid ${T.border}`, borderRadius: 9, overflow: "hidden", marginBottom: 20 }}>
               <table style={css.table}>
                 <thead>
                   <tr>
@@ -4045,7 +4044,7 @@ if (!r.ok) throw new Error(await r.text());
       {/* POPUP ANTICIPI LANCIO NOTIFICATI */}
       {anticipiPopup && (
         <div style={{ position: "fixed", inset: 0, background: "#000a", zIndex: 300, display: "flex", alignItems: "center", justifyContent: "center" }} onClick={() => setAnticipiPopup(null)}>
-          <div style={{ background: T.surface, border: `1px solid ${cv("#e8a838", "#b7791f")}`, borderRadius: 6, padding: 28, width: 520, maxHeight: "80vh", overflowY: "auto" }} onClick={e => e.stopPropagation()}>
+          <div style={{ background: T.surface, border: `1px solid ${cv("#e8a838", "#b7791f")}`, borderRadius: 12, padding: 28, width: 520, maxHeight: "80vh", overflowY: "auto" }} onClick={e => e.stopPropagation()}>
             <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 6 }}>
               <span style={{ fontSize: "22px" }}>🔔</span>
               <span style={{ color: cv("#e8a838", "#b7791f"), fontWeight: "700", fontSize: "14px" }}>ANTICIPI LANCIO SBLOCCATI</span>
@@ -4055,7 +4054,7 @@ if (!r.ok) throw new Error(await r.text());
                 ? "1 anticipo lancio è ora collegato a un titolo di questo lancio ed è pronto per essere gestito."
                 : `${anticipiPopup.length} anticipi lancio sono ora collegati a titoli di questo lancio e pronti per essere gestiti.`}
             </div>
-            <div style={{ border: `1px solid ${T.border}`, borderRadius: 4, overflow: "hidden", marginBottom: 20 }}>
+            <div style={{ border: `1px solid ${T.border}`, borderRadius: 9, overflow: "hidden", marginBottom: 20 }}>
               <table style={css.table}>
                 <thead>
                   <tr>
@@ -4786,19 +4785,19 @@ function ModuloVerificaLanciAmazon({ token, titoli, prenotato, canali }) {
         </select>
         <input style={{ ...css.input, width: 180 }} placeholder="Cerca EAN / titolo..." value={search} onChange={e => setSearch(e.target.value)} />
         <div style={{ marginLeft: "auto", display: "flex", gap: 10 }}>
-          <button style={{ ...css.btn(showProposteUpload ? "accent" : undefined) }} onClick={() => setShowProposteUpload(s => !s)}>
+          <button style={{ ...css.btn(showProposteUpload ? "attivo" : undefined) }} onClick={() => setShowProposteUpload(s => !s)}>
             🎯 Carica prima proposta
           </button>
           <button style={css.btn()} onClick={exportControproposta}>
             🔁 Esporta controproposta
           </button>
-          <button style={{ ...css.btn(showMailUpload ? "accent" : undefined) }} onClick={() => setShowMailUpload(s => !s)}>
+          <button style={{ ...css.btn(showMailUpload ? "attivo" : undefined) }} onClick={() => setShowMailUpload(s => !s)}>
             📧 Carica mail Messaggerie
           </button>
-          <button style={{ ...css.btn(showOrdiniUpload ? "accent" : undefined) }} onClick={() => setShowOrdiniUpload(s => !s)}>
+          <button style={{ ...css.btn(showOrdiniUpload ? "attivo" : undefined) }} onClick={() => setShowOrdiniUpload(s => !s)}>
             📥 Carica ordini Amazon
           </button>
-          <button style={{ ...css.btn(showPreorderUpload ? "accent" : undefined) }} onClick={() => setShowPreorderUpload(s => !s)}>
+          <button style={{ ...css.btn(showPreorderUpload ? "attivo" : undefined) }} onClick={() => setShowPreorderUpload(s => !s)}>
             📖 Carica preorder
           </button>
           <button style={css.btn()} onClick={exportExcel}>Download Excel</button>
@@ -4856,11 +4855,11 @@ function ModuloVerificaLanciAmazon({ token, titoli, prenotato, canali }) {
           ) : (
             <>
               {mailLancioMismatch ? (
-                <div style={{ background: T.red + "18", border: `1px solid ${T.red}`, borderRadius: 4, padding: "10px 14px", marginBottom: 12, color: T.red, fontSize: "12px", fontWeight: "600" }}>
+                <div style={{ background: T.red + "18", border: `1px solid ${T.red}`, borderRadius: 9, padding: "10px 14px", marginBottom: 12, color: T.red, fontSize: "12px", fontWeight: "600" }}>
                   🚫 {mailLancioMismatch.msg}
                 </div>
               ) : mailLancioInfo && (
-                <div style={{ background: T.green + "18", border: `1px solid ${T.green}`, borderRadius: 4, padding: "8px 14px", marginBottom: 12, color: T.green, fontSize: "12px" }}>
+                <div style={{ background: T.green + "18", border: `1px solid ${T.green}`, borderRadius: 9, padding: "8px 14px", marginBottom: 12, color: T.green, fontSize: "12px" }}>
                   ✓ La mail si riferisce al lancio {mailLancioInfo.numLancio}{mailLancioInfo.anno ? "/" + mailLancioInfo.anno : ""}, corrispondente al lancio selezionato.
                 </div>
               )}
@@ -4868,7 +4867,7 @@ function ModuloVerificaLanciAmazon({ token, titoli, prenotato, canali }) {
                 Trovati <b style={{ color: cv("#e8a838", "#b7791f") }}>{mailParseResult.length}</b> titoli nella mail. Gli altri <b style={{ color: T.green }}>{mailPreview?.autoConfermati ?? 0}</b> titoli del lancio (senza differenza) verranno confermati in automatico sulla proposta iniziale PDE (Amazon Cedola). Tutti i valori esistenti verranno sovrascritti.
               </div>
               {mailParseResult.length > 0 && (
-                <div style={{ maxHeight: 260, overflowY: "auto", marginBottom: 12, border: `1px solid ${T.border}`, borderRadius: 4 }}>
+                <div style={{ maxHeight: 260, overflowY: "auto", marginBottom: 12, border: `1px solid ${T.border}`, borderRadius: 9 }}>
                 <table style={css.table}>
                   <thead>
                     <tr>
@@ -4937,7 +4936,7 @@ function ModuloVerificaLanciAmazon({ token, titoli, prenotato, canali }) {
                 Trovati <b style={{ color: cv("#e8a838", "#b7791f") }}>{ordiniPreview?.totRighe ?? 0}</b> EAN nel file, di cui <b style={{ color: T.green }}>{ordiniPreview?.matched ?? 0}</b> corrispondono a titoli del lancio {filterLancio}/{filterAnno} selezionato. Verranno aggiornati solo questi.
               </div>
               {ordiniParseResult.length > 0 && (
-                <div style={{ maxHeight: 260, overflowY: "auto", marginBottom: 12, border: `1px solid ${T.border}`, borderRadius: 4 }}>
+                <div style={{ maxHeight: 260, overflowY: "auto", marginBottom: 12, border: `1px solid ${T.border}`, borderRadius: 9 }}>
                 <table style={css.table}>
                   <thead>
                     <tr>
@@ -5075,7 +5074,7 @@ function ModuloVerificaLanciAmazon({ token, titoli, prenotato, canali }) {
         {showRiepilogoEditori && (
         <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginTop: 10 }}>
           {riepilogoEditoriVerifica.map(e => (
-            <div key={e.editore} style={{ background: T.bg, border: `1px solid ${T.border}`, borderRadius: 4, padding: "8px 12px", minWidth: 150, flex: "1 1 150px", maxWidth: 220 }}>
+            <div key={e.editore} style={{ background: T.surface2, border: `1px solid ${T.border}`, borderRadius: 9, padding: "8px 12px", minWidth: 150, flex: "1 1 150px", maxWidth: 220 }}>
               <div style={{ fontSize: "11px", fontWeight: "600", color: T.text, marginBottom: 4, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{e.editore}</div>
               <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 3 }}>
                 <div style={{ flex: 1, height: 4, background: T.borderHi, borderRadius: 2, overflow: "hidden" }}>
@@ -5195,7 +5194,7 @@ function ModuloVerificaLanciAmazon({ token, titoli, prenotato, canali }) {
       </div>
 
       {toast && (
-        <div style={{ position: "fixed", bottom: 24, left: "50%", transform: "translateX(-50%)", background: toast.type === "err" ? cv("#4a1a2a", "#fdecec") : cv("#1a3a2a", "#e7f6ee"), border: `1px solid ${toast.type === "err" ? T.red : T.green}`, color: toast.type === "err" ? T.red : T.green, borderRadius: 6, padding: "8px 20px", fontSize: "12px", zIndex: 999, boxShadow: "0 4px 20px #0008" }}>
+        <div style={{ position: "fixed", bottom: 24, left: "50%", transform: "translateX(-50%)", background: toast.type === "err" ? cv("#4a1a2a", "#fdecec") : cv("#1a3a2a", "#e7f6ee"), border: `1px solid ${toast.type === "err" ? T.red : T.green}`, color: toast.type === "err" ? T.red : T.green, borderRadius: 12, padding: "8px 20px", fontSize: "12px", zIndex: 999, boxShadow: OMBRA_POPUP }}>
           {toast.msg}
         </div>
       )}
@@ -5585,7 +5584,7 @@ function ModuloAnticipiLancio({ token, userEmail }) {
       {/* MODAL NUOVO / MODIFICA ANTICIPO */}
       {showForm && (
         <div style={{ position: "fixed", inset: 0, background: "#000a", zIndex: 200, display: "flex", alignItems: "center", justifyContent: "center" }} onClick={() => { setShowForm(false); setEditingId(null); }}>
-          <div style={{ background: T.surface, border: `1px solid ${T.borderHi}`, borderRadius: 6, padding: 28, width: 480 }} onClick={e => e.stopPropagation()}>
+          <div style={{ background: T.surface, border: `1px solid ${T.borderHi}`, borderRadius: 12, padding: 28, width: 480 }} onClick={e => e.stopPropagation()}>
             <div style={{ color: T.accent, fontWeight: "700", fontSize: "13px", marginBottom: 20 }}>{editingId ? "✎ MODIFICA ANTICIPO LANCIO" : "NUOVO ANTICIPO LANCIO"}</div>
             <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
               <div style={{ gridColumn: "1/-1" }}>
@@ -5660,7 +5659,7 @@ function ModuloAnticipiLancio({ token, userEmail }) {
       {/* TOOLBAR */}
       <div style={{ padding: "14px 20px", borderBottom: `1px solid ${T.border}`, display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap" }}>
         {[["attivi","Attivi"],["da_gestire","Da gestire"],["notificato","Notificato"],["gestito","Gestiti"],["tutti","Tutti"]].map(([k, label]) => (
-          <button key={k} style={css.btn(filterStato === k ? "accent" : "default")} onClick={() => setFilterStato(k)}>{label}</button>
+          <button key={k} style={css.btn(filterStato === k ? "attivo" : "default")} onClick={() => setFilterStato(k)}>{label}</button>
         ))}
         <input style={{ ...css.input, width: 200 }} placeholder="Cerca cliente / EAN / titolo..." value={search} onChange={e => setSearch(e.target.value)} />
         <div style={{ marginLeft: "auto", display: "flex", gap: 8, alignItems: "center", flexShrink: 0 }}>
@@ -5748,7 +5747,7 @@ function ModuloAnticipiLancio({ token, userEmail }) {
       {/* AVVISO: la mail si apre vuota, il testo con la tabella è negli appunti */}
       {avvisoMail && (
         <div style={{ position: "fixed", inset: 0, background: "#000a", zIndex: 300, display: "flex", alignItems: "center", justifyContent: "center" }}>
-          <div style={{ background: T.surface, border: `1px solid ${T.accent}`, borderRadius: 6, padding: 28, width: 420, textAlign: "center" }}>
+          <div style={{ background: T.surface, border: `1px solid ${T.accent}`, borderRadius: 12, padding: 28, width: 420, textAlign: "center" }}>
             <div style={{ fontSize: "28px", marginBottom: 10 }}>📋</div>
             <div style={{ color: T.text, fontSize: "15px", fontWeight: "700", marginBottom: 10 }}>Clicca CTRL + V per incollare il testo</div>
             <div style={{ color: T.textMid, fontSize: "12px", lineHeight: 1.6, marginBottom: 20 }}>
@@ -5760,38 +5759,69 @@ function ModuloAnticipiLancio({ token, userEmail }) {
       )}
 
       {toast && (
-        <div style={{ position: "fixed", bottom: 24, left: "50%", transform: "translateX(-50%)", background: toast.type === "err" ? cv("#4a1a2a", "#fdecec") : cv("#1a3a2a", "#e7f6ee"), border: `1px solid ${toast.type === "err" ? T.red : T.green}`, color: toast.type === "err" ? T.red : T.green, borderRadius: 6, padding: "8px 20px", fontSize: "12px", zIndex: 999, boxShadow: "0 4px 20px #0008" }}>
+        <div style={{ position: "fixed", bottom: 24, left: "50%", transform: "translateX(-50%)", background: toast.type === "err" ? cv("#4a1a2a", "#fdecec") : cv("#1a3a2a", "#e7f6ee"), border: `1px solid ${toast.type === "err" ? T.red : T.green}`, color: toast.type === "err" ? T.red : T.green, borderRadius: 12, padding: "8px 20px", fontSize: "12px", zIndex: 999, boxShadow: OMBRA_POPUP }}>
           {toast.msg}
         </div>
       )}
     </div>
   );
 }
+// Voci del menu come le tessere del launcher BookUp: icona SVG bianca su riquadro sfumato
+// nei colori della sezione (a1 → a2)
 const MODULES = [
-  { id: "dashboard", label: "Dashboard", icon: "◈" },
-  { id: "calendariogiri", label: "Calendario Giri", icon: "📅" },
-  { id: "cedola", label: "Giri e Cedole", icon: "≡" },
-  { id: "finegiro", label: "Fine Giro", icon: "⊞" },
-  { id: "avanzamento", label: "Avanzamento Novità", icon: "▣" },
-  { id: "lanci", label: "Lanci Settimanali", icon: "🚀" },
-  { id: "verificalanci", label: "Verifica Lanci Amazon", icon: "📦" },
-  { id: "anticipilancio", label: "Anticipi Lancio", icon: "⏱" },
+  { id: "dashboard", label: "Dashboard", a1: "#0090c8", a2: "#005f8f", icon: <><rect x="3" y="3" width="7" height="9" rx="1" /><rect x="14" y="3" width="7" height="5" rx="1" /><rect x="14" y="12" width="7" height="9" rx="1" /><rect x="3" y="16" width="7" height="5" rx="1" /></> },
+  { id: "calendariogiri", label: "Calendario Giri", a1: "#6d72f6", a2: "#4338ca", icon: <><rect x="3" y="4" width="18" height="18" rx="2" /><path d="M16 2v4M8 2v4M3 10h18" /></> },
+  { id: "cedola", label: "Giri e Cedole", a1: "#0ea5a4", a2: "#0f766e", icon: <path d="M8 6h13M8 12h13M8 18h13M3 6h.01M3 12h.01M3 18h.01" /> },
+  { id: "finegiro", label: "Fine Giro", a1: "#ec4899", a2: "#be185d", icon: <><rect x="3" y="3" width="18" height="18" rx="2" /><path d="M3 9h18M3 15h18M9 3v18" /></> },
+  { id: "avanzamento", label: "Avanzamento Novità", a1: "#a855f7", a2: "#7e22ce", icon: <path d="M22 7l-8.5 8.5-5-5L2 17M16 7h6v6" /> },
+  { id: "lanci", label: "Lanci Settimanali", a1: "#f5a524", a2: "#b45309", icon: <><path d="M4.5 16.5c-1.5 1.26-2 5-2 5s3.74-.5 5-2c.71-.84.7-2.13-.09-2.91a2.18 2.18 0 0 0-2.91-.09z" /><path d="M12 15l-3-3a22 22 0 0 1 2-3.95A12.88 12.88 0 0 1 22 2c0 2.72-.78 7.5-6 11a22.35 22.35 0 0 1-4 2z" /><path d="M9 12H4s.55-3.03 2-4c1.62-1.08 5 0 5 0M12 15v5s3.03-.55 4-2c1.08-1.62 0-5 0-5" /></> },
+  { id: "verificalanci", label: "Verifica Lanci Amazon", a1: "#f97316", a2: "#c2410c", icon: <><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z" /><path d="M3.27 6.96L12 12.01l8.73-5.05M12 22.08V12M16.5 9.4L7.5 4.21" /></> },
+  { id: "anticipilancio", label: "Anticipi Lancio", a1: "#22c55e", a2: "#15803d", icon: <><circle cx="12" cy="13" r="8" /><path d="M12 9v4l2 2M10 2h4" /></> },
 ];
 
 const MODULES_IMPORT = [
-  { id: "import", label: "Creazione cedola GiroManager", icon: "↑" },
-  { id: "pubblicarpn", label: "Crea cedola su RPN", icon: "⇪" },
-  { id: "prenotato", label: "Import Prenotato", icon: "↳" },
-  { id: "spalmatura", label: "Pesi Spalmatura", icon: "⚖" },
-  { id: "fatturato", label: "Carica Fatturato", icon: "€" },
-  { id: "rankingeditori", label: "Ranking Editori", icon: "🏷" },
-  { id: "newentry", label: "Nuovi editori", icon: "🆕" },
-  { id: "terne", label: "Aggiorna Terne", icon: "👥" },
-  { id: "sftp", label: "SFTP Messaggerie", icon: "🔐" },
+  { id: "import", label: "Creazione cedola GiroManager", a1: "#3b82f6", a2: "#1d4ed8", icon: <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M17 8l-5-5-5 5M12 3v12" /> },
+  { id: "pubblicarpn", label: "Crea cedola su RPN", a1: "#6366f1", a2: "#4338ca", icon: <path d="M22 2L11 13M22 2l-7 20-4-9-9-4 20-7z" /> },
+  { id: "prenotato", label: "Import Prenotato", a1: "#14b8a6", a2: "#0f766e", icon: <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M7 10l5 5 5-5M12 15V3" /> },
+  { id: "spalmatura", label: "Pesi Spalmatura", a1: "#eab308", a2: "#a16207", icon: <path d="M12 3v18M7 21h10M5 7h14M3 13l2-6 2 6a2.5 2.5 0 0 1-4 0zM17 13l2-6 2 6a2.5 2.5 0 0 1-4 0z" /> },
+  { id: "fatturato", label: "Carica Fatturato", a1: "#10b981", a2: "#047857", icon: <path d="M4 10h12M4 14h9M19 6a7.7 7.7 0 0 0-5.2-2A7.9 7.9 0 0 0 6 12c0 4.4 3.5 8 7.8 8 2 0 3.8-.8 5.2-2" /> },
+  { id: "rankingeditori", label: "Ranking Editori", a1: "#ef4444", a2: "#b91c1c", icon: <path d="M12 20V10M18 20V4M6 20v-4" /> },
+  { id: "newentry", label: "Nuovi editori", a1: "#ec4899", a2: "#be185d", icon: <><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2M19 8v6M22 11h-6" /><circle cx="9" cy="7" r="4" /></> },
+  { id: "terne", label: "Aggiorna Terne", a1: "#8b5cf6", a2: "#6d28d9", icon: <><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2M23 21v-2a4 4 0 0 0-3-3.87M16 3.13a4 4 0 0 1 0 7.75" /><circle cx="9" cy="7" r="4" /></> },
+  { id: "sftp", label: "SFTP Messaggerie", a1: "#64748b", a2: "#334155", icon: <><rect x="3" y="11" width="18" height="11" rx="2" /><path d="M7 11V7a5 5 0 0 1 10 0v4" /></> },
 ];
 
+// Icona di sezione: riquadro arrotondato sfumato con il disegno SVG in bianco
+function IconaModulo({ m, size = 32, attivo = false }) {
+  return (
+    <span style={{ width: size, height: size, flexShrink: 0, display: "flex", alignItems: "center", justifyContent: "center", borderRadius: Math.round(size * 0.31), color: "#fff",
+      background: attivo ? "rgba(255,255,255,.22)" : `linear-gradient(140deg, ${m.a1}, ${m.a2})`, boxShadow: attivo ? "none" : `0 6px 14px -8px ${m.a2}` }}>
+      <svg viewBox="0 0 24 24" width={Math.round(size * 0.53)} height={Math.round(size * 0.53)} fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">{m.icon}</svg>
+    </span>
+  );
+}
+
+// Stile globale (come il CSS di BookUp): sfondo con watermark del logo, font, focus dei campi,
+// righe alternate delle tabelle, barre di scorrimento sottili
 const style = document.createElement('style');
-style.textContent = `button:hover { filter: brightness(${cv("1.3", "0.94")}); } @keyframes gm-spin { to { transform: rotate(360deg); } }`;
+style.textContent = `
+body { position: relative; background: ${T.bg}; color: ${T.text}; font-family: ${FONT}; overflow-x: hidden; }
+body::before { content: ""; position: fixed; top: -60%; left: -60%; width: 220%; height: 220%; background-image: url('${import.meta.env.BASE_URL}logo/giro-manager-logo-480.png'); background-repeat: space; background-size: 360px auto; transform: rotate(-24deg); transform-origin: center center; opacity: ${cv("0.025", "0.035")}; pointer-events: none; z-index: -1; }
+button { font-family: inherit; }
+button:not(:disabled):hover { filter: brightness(${cv("1.15", "0.96")}); }
+.gm-nav:hover { filter: none !important; }
+.gm-nav:not(.gm-nav-on):hover { background: ${T.surface2} !important; }
+input:focus, select:focus, textarea:focus { border-color: ${T.accent} !important; outline: none; }
+input[type="checkbox"], input[type="radio"] { accent-color: ${T.accent}; }
+::placeholder { color: ${T.textDim}; }
+tbody tr:nth-child(even) { background: ${T.surface2}; }
+tbody tr:hover { background: ${T.accent}14; }
+::-webkit-scrollbar { width: 10px; height: 10px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: ${T.borderHi}; border-radius: 10px; border: 2px solid transparent; background-clip: padding-box; }
+::-webkit-scrollbar-corner { background: transparent; }
+@keyframes gm-spin { to { transform: rotate(360deg); } }
+`;
 document.head.appendChild(style);
 
 // Cambio password dell'utente collegato: la vecchia password si verifica con un accesso
@@ -5838,7 +5868,7 @@ function CambiaPassword({ email, token, onClose }) {
 
   return (
     <div style={{ position: "fixed", inset: 0, background: "#000a", zIndex: 400, display: "flex", alignItems: "center", justifyContent: "center" }}>
-      <div style={{ background: T.surface, border: `1px solid ${T.borderHi}`, borderRadius: 6, padding: 28, width: 380 }}>
+      <div style={{ background: T.surface, border: `1px solid ${T.borderHi}`, borderRadius: 12, padding: 28, width: 380 }}>
         {fatto ? (
           <div style={{ textAlign: "center" }}>
             <div style={{ fontSize: "30px", marginBottom: 10 }}>✅</div>
@@ -5866,11 +5896,11 @@ function CambiaPassword({ email, token, onClose }) {
 // Selettore tema chiaro/scuro (scelta condivisa con il PDE Hub, vedi tema.js)
 function SelettoreTema() {
   return (
-    <div role="group" aria-label="Tema" style={{ display: "flex", border: `1px solid ${T.border}`, borderRadius: 4, overflow: "hidden" }}>
+    <div role="group" aria-label="Tema" style={{ display: "flex", border: `2px solid ${T.border}`, borderRadius: 10, overflow: "hidden", background: T.surface }}>
       {[["light", "☀ Chiaro"], ["dark", "☾ Scuro"]].map(([v, l]) => (
         <button key={v} onClick={() => impostaTema(v)} aria-pressed={temaAttivo === v}
-          style={{ padding: "4px 10px", fontSize: "11px", border: "none", fontFamily: "inherit", whiteSpace: "nowrap", cursor: temaAttivo === v ? "default" : "pointer",
-            background: temaAttivo === v ? T.accent : "transparent", color: temaAttivo === v ? cv("#000", "#fff") : T.textMid, fontWeight: temaAttivo === v ? 700 : 400 }}>
+          style={{ padding: "5px 12px", fontSize: "13px", border: "none", fontFamily: "inherit", whiteSpace: "nowrap", cursor: temaAttivo === v ? "default" : "pointer",
+            background: temaAttivo === v ? T.accent + "22" : "transparent", color: temaAttivo === v ? T.accent : T.textMid, fontWeight: temaAttivo === v ? 700 : 600 }}>
           {l}
         </button>
       ))}
@@ -5971,57 +6001,58 @@ export default function App() {
   const moduliImport = ruolo !== "agente" ? MODULES_IMPORT : [];
 
   return (
-    <div style={{ ...css.app, display: "flex", height: "100vh", overflow: "hidden" }}>
-      <div style={css.sidebar}>
-        <div style={{ padding: "20px 16px 16px", borderBottom: `1px solid ${T.border}`, flexShrink: 0 }}>
-          <div style={{ background: "#fff", borderRadius: 6, padding: "9px 8px" }}>
-            <img src={`${import.meta.env.BASE_URL}logo/giro-manager-logo-480.png`} style={{ width: "100%", display: "block" }} alt="Giro Manager" />
-          </div>
+    <div style={{ ...css.app, display: "flex", flexDirection: "column", height: "100vh", overflow: "hidden" }}>
+      {/* Intestazione (come BookUp): logo a sinistra, utente e comandi a destra */}
+      <div style={css.header}>
+        <div style={{ background: "#fff", borderRadius: 12, padding: cv("6px 10px", "0"), flexShrink: 0 }}>
+          <img src={`${import.meta.env.BASE_URL}logo/giro-manager-logo-480.png`} style={{ width: 230, display: "block" }} alt="Giro Manager" />
         </div>
-        <nav style={{ flex: 1, minHeight: 0, overflowY: "auto", padding: "8px 0", display: "flex", flexDirection: "column" }}>
-          <div style={{ flex: 1 }}>
-            {moduliVis.map(m => (
-              <button key={m.id} style={{ width: "100%", textAlign: "left", padding: "10px 16px", border: "none", background: activeModule === m.id ? T.accent + "18" : "transparent", color: activeModule === m.id ? T.accent : T.textMid, cursor: "pointer", fontFamily: "inherit", fontSize: "12px", borderLeft: `2px solid ${activeModule === m.id ? T.accent : "transparent"}`, display: "flex", alignItems: "center", gap: 10, letterSpacing: "0.04em" }}
-                onClick={() => setActiveModule(m.id)}>
-                <span style={{ fontSize: "14px" }}>{m.icon}</span> {m.label}
-              </button>
-            ))}
-          </div>
-          {moduliImport.length > 0 && (
-            <div>
-              <div style={{ borderTop: `1px solid ${T.border}`, margin: "8px 0", padding: "6px 16px 2px" }}>
-                <span style={{ color: T.textDim, fontSize: "9px", letterSpacing: "0.1em", textTransform: "uppercase" }}>Import</span>
-              </div>
-              {moduliImport.map(m => (
-                <button key={m.id} style={{ width: "100%", textAlign: "left", padding: "8px 16px", border: "none", background: activeModule === m.id ? T.accent + "18" : "transparent", color: activeModule === m.id ? T.accent : T.textDim, cursor: "pointer", fontFamily: "inherit", fontSize: "11px", borderLeft: `2px solid ${activeModule === m.id ? T.accent : "transparent"}`, display: "flex", alignItems: "center", gap: 10, letterSpacing: "0.04em" }}
-                  onClick={() => setActiveModule(m.id)}>
-                  <span style={{ fontSize: "13px" }}>{m.icon}</span> {m.label}
-                </button>
-              ))}
-            </div>
-          )}
-        </nav>
-        <div style={{ padding: "12px 16px", borderTop: `1px solid ${T.border}`, flexShrink: 0 }}>
-          <div style={{ color: T.textDim, fontSize: "10px", marginBottom: 2 }}>{session.user?.email}</div>
-          <div style={{ color: T.textDim, fontSize: "10px", marginBottom: 6, textTransform: "uppercase", letterSpacing: "0.06em" }}>{ruolo}</div>
-          <button style={{ ...css.btn(), fontSize: "11px", padding: "4px 10px", width: "100%" }} onClick={handleLogout}>Esci</button>
+        <div style={{ marginLeft: "auto", display: "flex", gap: 10, alignItems: "center", flexShrink: 0 }}>
+          <span style={{ color: T.textMid, fontSize: "14px", whiteSpace: "nowrap" }}>{session.user?.email} · <span style={{ textTransform: "capitalize" }}>{ruolo}</span></span>
+          {ruolo !== "agente" && <button style={{ ...css.btn(), whiteSpace: "nowrap" }} onClick={refreshDati}>↺ Aggiorna</button>}
+          <button style={{ ...css.btn(), whiteSpace: "nowrap" }} onClick={() => setCambioPassword(true)}>🔑 Cambia password</button>
+          <SelettoreTema />
+          <button style={{ ...css.btn(), whiteSpace: "nowrap" }} onClick={handleLogout}>Esci</button>
         </div>
       </div>
+      <div style={{ flex: 1, minHeight: 0, display: "flex", gap: 22, padding: "16px 16px 0" }}>
+      {/* Barra laterale (launcher BookUp in versione elenco) */}
+      <div style={{ ...css.sidebar, marginBottom: 16 }}>
+        <nav style={{ flex: 1, minHeight: 0, overflowY: "auto", padding: 10, display: "flex", flexDirection: "column", gap: 2 }}>
+          {[{ titolo: "Giri e lanci", voci: moduliVis }, { titolo: "Import", voci: moduliImport }].filter(g => g.voci.length > 0).map(g => (
+            <Fragment key={g.titolo}>
+              <div style={{ margin: "10px 8px 6px", fontSize: "11px", fontWeight: 800, letterSpacing: "0.07em", textTransform: "uppercase", color: T.textMid }}>{g.titolo}</div>
+              {g.voci.map(m => {
+                const on = activeModule === m.id;
+                return (
+                  <button key={m.id} className={on ? "gm-nav gm-nav-on" : "gm-nav"}
+                    style={{ width: "100%", textAlign: "left", padding: "5px 10px 5px 5px", border: "none", borderRadius: 12, background: on ? `linear-gradient(140deg, ${m.a1}, ${m.a2})` : "transparent", color: on ? "#fff" : T.text, cursor: "pointer", fontFamily: "inherit", fontSize: "14px", lineHeight: 1.2, fontWeight: on ? 700 : 500, display: "flex", alignItems: "center", gap: 10, boxShadow: on ? `0 8px 18px -8px ${m.a2}` : "none" }}
+                    onClick={() => setActiveModule(m.id)}>
+                    <IconaModulo m={m} attivo={on} /> <span style={{ flex: 1, minWidth: 0 }}>{m.label}</span>
+                  </button>
+                );
+              })}
+            </Fragment>
+          ))}
+        </nav>
+      </div>
       <div style={css.main}>
-        <div style={css.header}>
-          <span style={{ color: T.accent, fontSize: "11px", letterSpacing: "0.12em", textTransform: "uppercase" }}>{[...MODULES, ...MODULES_IMPORT].find(m => m.id === activeModule)?.label}</span>
-          <span style={{ color: T.borderHi }}>·</span>
-          <span style={{ color: T.textMid, fontSize: "11px" }}>{titoli.length} titoli · {[...new Set(titoli.map(t => t.n_cedola).filter(Boolean))].length} cedole</span>
-          <div style={{ marginLeft: "auto", display: "flex", gap: 8, alignItems: "center", flexShrink: 0 }}>
-            {ruolo !== "agente" && <button style={{ ...css.btn(), fontSize: "11px", padding: "4px 10px", whiteSpace: "nowrap" }} onClick={refreshDati}>↺ Aggiorna</button>}
-            <button style={{ ...css.btn(), fontSize: "11px", padding: "4px 10px", whiteSpace: "nowrap" }} onClick={() => setCambioPassword(true)}>🔑 Cambia password</button>
-            <SelettoreTema />
-          </div>
-        </div>
+        {(() => {
+          const mAtt = [...MODULES, ...MODULES_IMPORT].find(m => m.id === activeModule);
+          return (
+            <div style={{ display: "flex", alignItems: "center", gap: 14, padding: "4px 4px 12px", flexShrink: 0, flexWrap: "wrap" }}>
+              {mAtt && <IconaModulo m={mAtt} size={42} />}
+              <span style={{ fontFamily: FONT_TITOLI, fontSize: "28px", fontWeight: 400, lineHeight: 1.1, color: mAtt ? cv(mAtt.a1, mAtt.a2) : T.text }}>{mAtt?.label}</span>
+              <span style={{ color: T.textMid, fontSize: "13px", marginLeft: "auto" }}>{titoli.length} titoli · {[...new Set(titoli.map(t => t.n_cedola).filter(Boolean))].length} cedole</span>
+            </div>
+          );
+        })()}
         {cambioPassword && <CambiaPassword email={session.user?.email} token={session.token} onClose={() => setCambioPassword(false)} />}
         <AvvisoEditoriNuovi token={session.token} userId={session.user?.id} />
 
-        <div style={{ flex: 1, overflow: "hidden", display: "flex", flexDirection: "column" }}>
+        {/* Contenuto della sezione: card bianca come in BookUp (la Dashboard ha già le sue card) */}
+        <div style={{ flex: 1, minHeight: 0, overflow: "hidden", display: "flex", flexDirection: "column", marginBottom: 16,
+          ...(activeModule === "dashboard" ? {} : { background: T.surface, border: `1px solid ${T.border}`, borderRadius: 18, boxShadow: OMBRA_CARD }) }}>
           {/* MOD 3: Passato spalmatura alla Dashboard */}
           {activeModule === "dashboard" && <ModuloDashboard titoli={titoli} prenotato={prenotato} canali={canali} spalmatura={spalmatura} ruolo={ruolo} />}
           {activeModule === "calendariogiri" && <Modulocalendariogiri token={session.token} ruolo={ruolo} />}
@@ -6043,6 +6074,7 @@ export default function App() {
           {activeModule === "rankingeditori" && <ModuloRankingEditori token={session.token} titoli={titoli} onDataChange={refreshDati} />}
           {activeModule === "sftp" && <ModuloSftp token={session.token} />}
         </div>
+      </div>
       </div>
     </div>
   );

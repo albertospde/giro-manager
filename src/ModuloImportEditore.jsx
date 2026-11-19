@@ -1,6 +1,6 @@
 import { useState, useMemo, useCallback, useEffect } from "react";
 import { resolveGiri } from "./ModuloImport.jsx";
-import { tema, cv } from "./tema.js";
+import { tema, cv, stileBtn, stileInput, stileTag, stileMini, OMBRA_CARD, FONT } from "./tema.js";
 
 // ═══════════════════════════════════════════════════════════════════════════
 // TRASCINAMENTO FILE GLOBALE
@@ -107,12 +107,12 @@ const T = tema({
   accent: "#c8a96e", green: "#4caf7d", red: "#e05c5c", blue: "#5b8fd4", orange: "#e0a24c",
 });
 const css = {
-  btn: (v = "default") => ({ padding: "6px 14px", border: `1px solid ${v === "accent" ? T.accent : v === "danger" ? T.red : T.border}`, background: v === "accent" ? T.accent : v === "danger" ? T.red + "22" : "transparent", color: v === "accent" ? "#000" : v === "danger" ? T.red : T.text, cursor: "pointer", fontSize: "12px", fontFamily: "inherit", borderRadius: 3, fontWeight: v === "accent" ? "700" : "400" }),
-  th: { padding: "8px 10px", textAlign: "left", color: T.textMid, fontWeight: "400", fontSize: "11px", letterSpacing: "0.08em", textTransform: "uppercase", borderBottom: `1px solid ${T.border}`, whiteSpace: "nowrap", background: T.surface, position: "sticky", top: 0 },
-  td: { padding: "6px 10px", borderBottom: `1px solid ${T.border}22`, verticalAlign: "middle", fontSize: "12px" },
-  input: { background: T.bg, border: `1px solid ${T.borderHi}`, color: T.text, padding: "5px 8px", fontSize: "12px", fontFamily: "inherit", borderRadius: 3 },
-  box: (c = T.border) => ({ background: T.surface, border: `1px solid ${c}`, borderRadius: 4, padding: "10px 16px" }),
-  panel: { background: T.surface, border: `1px solid ${T.border}`, borderRadius: 4, padding: 16, marginBottom: 16 },
+  btn: (v = "default", disabled = false) => ({ ...stileBtn(v, disabled) }),
+  th: { padding: "8px 10px", textAlign: "left", color: T.textMid, fontWeight: 700, fontSize: "11px", letterSpacing: "0.03em", textTransform: "uppercase", borderBottom: `2px solid ${T.border}`, whiteSpace: "nowrap", background: T.surface, position: "sticky", top: 0 },
+  td: { padding: "6px 10px", borderBottom: `1px solid ${T.border}`, verticalAlign: "middle", fontSize: "12px" },
+  input: { background: T.surface, border: `2px solid ${T.border}`, color: T.text, padding: "5px 8px", fontSize: "13px", fontFamily: "inherit", borderRadius: 8 },
+  box: (c = T.border) => ({ background: T.surface, border: `1px solid ${c}`, borderRadius: 9, padding: "10px 16px" }),
+  panel: { background: T.surface, border: `1px solid ${T.border}`, borderRadius: 9, padding: 16, marginBottom: 16 },
 };
 
 const hdr = (token) => ({ apikey: SUPABASE_KEY, Authorization: `Bearer ${token}` });
@@ -940,7 +940,7 @@ export default function ModuloImportEditore({ token, onImportDone, manuale = fal
     const thBase = { position: "sticky", background: T.surface, color: T.textMid, fontWeight: 500, fontSize: "11px", textAlign: "left", whiteSpace: "nowrap", borderBottom: bordo, borderRight: bordo, padding: "7px 10px", zIndex: 2 };
     const fisso = (left) => ({ position: "sticky", left, zIndex: 3 });
     const cellaInput = { width: "100%", boxSizing: "border-box", background: "transparent", border: "none", outline: "none", color: T.text, font: "inherit", fontSize: "12px", padding: "9px 10px", borderRadius: 0 };
-    const pulsante = (extra = {}) => ({ ...css.btn(), padding: "7px 14px", borderRadius: 6, ...extra });
+    const pulsante = (extra = {}) => ({ ...css.btn(), padding: "7px 14px", borderRadius: 12, ...extra });
     return (
       <div style={{ background: T.surface, border: bordo, borderRadius: 10, overflow: "hidden" }}>
         <style>{`
@@ -1036,7 +1036,7 @@ export default function ModuloImportEditore({ token, onImportDone, manuale = fal
             {daSistemare > 0 && <span style={{ color: T.red }}>● {daSistemare} da sistemare</span>}
           </div>
           <button onClick={confermaManuale} disabled={loading || !compilate || daSistemare > 0}
-            style={{ ...css.btn("accent"), marginLeft: "auto", padding: "9px 22px", borderRadius: 6, fontSize: "13px", opacity: loading || !compilate || daSistemare > 0 ? 0.45 : 1, cursor: loading || !compilate || daSistemare > 0 ? "default" : "pointer" }}
+            style={{ ...css.btn("accent"), marginLeft: "auto", padding: "9px 22px", borderRadius: 12, fontSize: "13px", opacity: loading || !compilate || daSistemare > 0 ? 0.45 : 1, cursor: loading || !compilate || daSistemare > 0 ? "default" : "pointer" }}
             title={daSistemare > 0 ? "Sistema le righe segnate in rosso" : ""}>
             {loading ? "Analisi in corso…" : `Conferma ${pronte || ""} →`}
           </button>
@@ -1051,7 +1051,7 @@ export default function ModuloImportEditore({ token, onImportDone, manuale = fal
         onDragOver={e => { e.preventDefault(); e.dataTransfer.dropEffect = "copy"; if (!dragOver) setDragOver(true); }}
         onDragLeave={e => { if (!e.currentTarget.contains(e.relatedTarget)) setDragOver(false); }}
         onDrop={e => { e.preventDefault(); setDragOver(false); if (!loading && e.dataTransfer.files?.[0]) handleFile(e.dataTransfer.files[0]); }}
-        style={{ border: `2px dashed ${dragOver ? T.accent : T.borderHi}`, background: dragOver ? T.accent + "14" : "transparent", borderRadius: 6, padding: 40, textAlign: "center", marginBottom: 16, transition: "all .15s" }}>
+        style={{ border: `2px dashed ${dragOver ? T.accent : T.borderHi}`, background: dragOver ? T.accent + "14" : "transparent", borderRadius: 12, padding: 40, textAlign: "center", marginBottom: 16, transition: "all .15s" }}>
         <div style={{ fontSize: "32px", marginBottom: 12 }}>📑</div>
         <div style={{ color: T.text, marginBottom: 8 }}>{loading ? "Lettura e analisi in corso..." : dragOver ? "Rilascia qui il file" : "Trascina qui il file ricevuto dall'editore, oppure"}</div>
         <div style={{ color: T.textMid, fontSize: "11px", marginBottom: 20 }}>.xlsx, .xls o .csv, qualsiasi layout: colonne ed editori vengono riconosciuti in automatico</div>
@@ -1106,9 +1106,9 @@ export default function ModuloImportEditore({ token, onImportDone, manuale = fal
 
       {/* Giro + foglio */}
       <div style={{ ...css.panel, display: "flex", gap: 20, alignItems: "center", flexWrap: "wrap" }}>
-        <div style={{ display: "flex", border: `1px solid ${T.borderHi}`, borderRadius: 3, overflow: "hidden" }}>
+        <div style={{ display: "flex", border: `1px solid ${T.borderHi}`, borderRadius: 7, overflow: "hidden" }}>
           {[["giro", "Giro numerato"], ["extra", "Cedola extra"]].map(([k, l]) => (
-            <button key={k} onClick={() => setModo(k)} style={{ ...css.btn(modo === k ? "accent" : "default"), border: "none", borderRadius: 0 }}>{l}</button>
+            <button key={k} onClick={() => setModo(k)} style={{ ...css.btn(modo === k ? "attivo" : "default"), border: "none", borderRadius: 0 }}>{l}</button>
           ))}
         </div>
         {modo === "giro" ? (
@@ -1199,7 +1199,7 @@ export default function ModuloImportEditore({ token, onImportDone, manuale = fal
       )}
 
       {/* Anteprima titoli nell'ordine del file */}
-      <div style={{ overflow: "auto", maxHeight: "60vh", border: `1px solid ${T.border}`, borderRadius: 4 }}>
+      <div style={{ overflow: "auto", maxHeight: "60vh", border: `1px solid ${T.border}`, borderRadius: 9 }}>
         <table style={{ width: "100%", borderCollapse: "collapse" }}>
           <thead><tr>{["Riga", "N. Cedola", "Pos.", "Rk Ed.", "EAN", "Titolo", "Autore", "Editore", "Prezzo", "Uscita", "★", "Obj", "Note", "Gemelli", ""].map(h => <th key={h} style={css.th}>{h}</th>)}</tr></thead>
           <tbody>

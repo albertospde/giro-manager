@@ -23,7 +23,7 @@ function Bottone({ label, variante = "extra", onClick }) {
         width: "100%",
         padding: "10px 12px",
         marginBottom: 8,
-        borderRadius: 6,
+        borderRadius: 12,
         fontSize: 12,
         fontWeight: 600,
         letterSpacing: 0.3,
@@ -52,7 +52,7 @@ function Colonna({ titolo, anno, onCambiaAnno, children }) {
             margin: "0 auto 16px",
             background: "#8fa8e8",
             border: "none",
-            borderRadius: 4,
+            borderRadius: 9,
             padding: "6px 10px",
             fontWeight: 600,
           }}

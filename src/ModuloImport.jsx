@@ -1,7 +1,7 @@
 import { useState, useCallback } from "react";
 import ModuloImportRpn from "./ModuloImportRpn.jsx";
 import ModuloImportEditore from "./ModuloImportEditore.jsx";
-import { tema, cv } from "./tema.js";
+import { tema, cv, stileBtn, stileInput, stileTag, stileMini, OMBRA_CARD, FONT } from "./tema.js";
 
 const SUPABASE_URL = "https://tdflwenlylhctxssatax.supabase.co";
 const SUPABASE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InRkZmx3ZW5seWxoY3R4c3NhdGF4Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzYzMzgyNzYsImV4cCI6MjA5MTkxNDI3Nn0.l35qEL7LOvyYuI1McQlVqj4vbyTqmlevcmqWbTGYi2Q";
@@ -13,9 +13,9 @@ const T = tema({
 });
 
 const css = {
-  btn: (v = "default") => ({ padding: "6px 14px", border: `1px solid ${v === "accent" ? T.accent : v === "danger" ? T.red : T.border}`, background: v === "accent" ? T.accent : v === "danger" ? T.red + "22" : "transparent", color: v === "accent" ? "#000" : v === "danger" ? T.red : T.text, cursor: "pointer", fontSize: "12px", fontFamily: "inherit", borderRadius: 3, fontWeight: v === "accent" ? "700" : "400" }),
-  th: { padding: "8px 12px", textAlign: "left", color: T.textMid, fontWeight: "400", fontSize: "11px", letterSpacing: "0.08em", textTransform: "uppercase", borderBottom: `1px solid ${T.border}`, whiteSpace: "nowrap", background: T.surface },
-  td: { padding: "7px 12px", borderBottom: `1px solid ${T.border}22`, verticalAlign: "middle", fontSize: "12px" },
+  btn: (v = "default", disabled = false) => ({ ...stileBtn(v, disabled) }),
+  th: { padding: "8px 12px", textAlign: "left", color: T.textMid, fontWeight: 700, fontSize: "11px", letterSpacing: "0.03em", textTransform: "uppercase", borderBottom: `2px solid ${T.border}`, whiteSpace: "nowrap", background: T.surface },
+  td: { padding: "7px 12px", borderBottom: `1px solid ${T.border}`, verticalAlign: "middle", fontSize: "12px" },
 };
 
 // Mappa colonne template → campi DB.
@@ -274,15 +274,15 @@ export default function ModuloImport({ token, onImportDone }) {
       {step === "upload" && (
         <div>
           <div style={{ display: "flex", gap: 8, marginBottom: 20 }}>
-            <button style={css.btn(sorgente === "file" ? "accent" : "default")} onClick={() => setSorgente("file")}>📂 Carica file .xlsx</button>
-            <button style={css.btn(sorgente === "editore" ? "accent" : "default")} onClick={() => setSorgente("editore")}>📑 File editore</button>
-            <button style={css.btn(sorgente === "manuale" ? "accent" : "default")} onClick={() => setSorgente("manuale")}>✍️ Inserimento manuale</button>
-            <button style={css.btn(sorgente === "rpn" ? "accent" : "default")} onClick={() => setSorgente("rpn")}>🔄 Importa da RPN</button>
+            <button style={css.btn(sorgente === "file" ? "attivo" : "default")} onClick={() => setSorgente("file")}>📂 Carica file .xlsx</button>
+            <button style={css.btn(sorgente === "editore" ? "attivo" : "default")} onClick={() => setSorgente("editore")}>📑 File editore</button>
+            <button style={css.btn(sorgente === "manuale" ? "attivo" : "default")} onClick={() => setSorgente("manuale")}>✍️ Inserimento manuale</button>
+            <button style={css.btn(sorgente === "rpn" ? "attivo" : "default")} onClick={() => setSorgente("rpn")}>🔄 Importa da RPN</button>
           </div>
 
           {sorgente === "file" && (
             <div style={{ maxWidth: 500 }}>
-              <div style={{ border: `2px dashed ${T.borderHi}`, borderRadius: 6, padding: 40, textAlign: "center", marginBottom: 20 }}>
+              <div style={{ border: `2px dashed ${T.borderHi}`, borderRadius: 12, padding: 40, textAlign: "center", marginBottom: 20 }}>
                 <div style={{ fontSize: "32px", marginBottom: 12 }}>📂</div>
                 <div style={{ color: T.text, marginBottom: 8 }}>{loadingFile ? "Elaborazione in corso..." : "Carica il template compilato"}</div>
                 <div style={{ color: T.textMid, fontSize: "11px", marginBottom: 20 }}>Solo file .xlsx — usa il template ufficiale</div>
@@ -313,11 +313,11 @@ export default function ModuloImport({ token, onImportDone }) {
       {step === "preview" && (
         <div>
           <div style={{ display: "flex", gap: 12, marginBottom: 16, alignItems: "center" }}>
-            <div style={{ background: T.surface, border: `1px solid ${T.border}`, borderRadius: 4, padding: "10px 16px" }}>
+            <div style={{ background: T.surface, border: `1px solid ${T.border}`, borderRadius: 9, padding: "10px 16px" }}>
               <span style={{ color: T.textMid, fontSize: "11px" }}>Righe lette: </span>
               <span style={{ color: T.text, fontWeight: "700" }}>{rows.length}</span>
             </div>
-            <div style={{ background: T.surface, border: `1px solid ${errors.length > 0 ? T.red : T.green}`, borderRadius: 4, padding: "10px 16px" }}>
+            <div style={{ background: T.surface, border: `1px solid ${errors.length > 0 ? T.red : T.green}`, borderRadius: 9, padding: "10px 16px" }}>
               <span style={{ color: T.textMid, fontSize: "11px" }}>Errori: </span>
               <span style={{ color: errors.length > 0 ? T.red : T.green, fontWeight: "700" }}>{errors.length}</span>
             </div>
@@ -330,14 +330,14 @@ export default function ModuloImport({ token, onImportDone }) {
           </div>
 
           {errors.length > 0 && (
-            <div style={{ background: T.red + "11", border: `1px solid ${T.red}44`, borderRadius: 4, padding: 16, marginBottom: 16 }}>
+            <div style={{ background: T.red + "11", border: `1px solid ${T.red}44`, borderRadius: 9, padding: 16, marginBottom: 16 }}>
               <div style={{ color: T.red, fontWeight: "700", marginBottom: 8, fontSize: "12px" }}>⚠ Correggi gli errori prima di importare</div>
               {errors.map((e, i) => <div key={i} style={{ color: T.textMid, fontSize: "11px" }}>Riga {e.row}: {e.fields.join(", ")}</div>)}
             </div>
           )}
 
           {anagraficaMissing.length > 0 && (
-            <div style={{ background: T.red + "11", border: `1px solid ${T.red}44`, borderRadius: 4, padding: 16, marginBottom: 16 }}>
+            <div style={{ background: T.red + "11", border: `1px solid ${T.red}44`, borderRadius: 9, padding: 16, marginBottom: 16 }}>
               <div style={{ color: T.red, fontWeight: "700", marginBottom: 8, fontSize: "12px" }}>⚠ Editori non presenti in anagrafica (ranking_editori) — aggiungili lì prima di importare</div>
               {anagraficaMissing.map((e, i) => <div key={i} style={{ color: T.textMid, fontSize: "11px" }}>{e}</div>)}
             </div>

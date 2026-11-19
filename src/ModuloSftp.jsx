@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from "react";
-import { tema } from "./tema.js";
+import { tema, stileBtn, stileInput, stileTag, stileMini, OMBRA_CARD, FONT } from "./tema.js";
 
 // ─── SFTP Messaggerie ────────────────────────────────────────────────────────
 // Impostazioni e stato del download automatico dei file dall'SFTP di Messaggerie.
@@ -18,14 +18,14 @@ const T = tema({
   accent: "#7b9fe8", green: "#4caf7d", red: "#e05c5c", amber: "#e0a84c",
 });
 const css = {
-  btn: (v = "default", disabled = false) => ({ padding: "7px 16px", border: `1px solid ${v === "accent" ? T.accent : T.border}`, background: v === "accent" ? T.accent : "transparent", color: v === "accent" ? "#000" : T.text, cursor: disabled ? "default" : "pointer", fontSize: "12px", fontFamily: "inherit", borderRadius: 3, fontWeight: v === "accent" ? "700" : "400", opacity: disabled ? 0.5 : 1 }),
-  card: { background: T.surface, border: `1px solid ${T.border}`, borderRadius: 6, padding: 20, marginBottom: 16 },
+  btn: (v = "default", disabled = false) => ({ ...stileBtn(v, disabled) }),
+  card: { background: T.surface, border: `1px solid ${T.border}`, borderRadius: 14, boxShadow: OMBRA_CARD, padding: 20, marginBottom: 16 },
   h: { color: T.text, fontSize: "13px", fontWeight: 700, marginBottom: 6, letterSpacing: "0.03em" },
   sub: { color: T.textMid, fontSize: "11px", lineHeight: 1.5, marginBottom: 14 },
   label: { display: "flex", flexDirection: "column", gap: 4, color: T.textMid, fontSize: "11px" },
-  input: { background: T.bg, border: `1px solid ${T.borderHi}`, color: T.text, padding: "6px 8px", fontSize: "12px", fontFamily: "inherit", borderRadius: 3 },
-  th: { padding: "7px 10px", textAlign: "left", color: T.textMid, fontWeight: "400", fontSize: "10px", letterSpacing: "0.08em", textTransform: "uppercase", borderBottom: `1px solid ${T.border}`, whiteSpace: "nowrap" },
-  td: { padding: "7px 10px", borderBottom: `1px solid ${T.border}55`, fontSize: "12px", color: T.text, whiteSpace: "nowrap" },
+  input: { background: T.surface, border: `2px solid ${T.border}`, color: T.text, padding: "6px 8px", fontSize: "13px", fontFamily: "inherit", borderRadius: 8 },
+  th: { padding: "7px 10px", textAlign: "left", color: T.textMid, fontWeight: 700, fontSize: "11px", letterSpacing: "0.03em", textTransform: "uppercase", borderBottom: `2px solid ${T.border}`, whiteSpace: "nowrap" },
+  td: { padding: "7px 10px", borderBottom: `1px solid ${T.border}`, fontSize: "12px", color: T.text, whiteSpace: "nowrap" },
 };
 
 const fmtData = (s) => (s ? new Date(s).toLocaleString("it-IT", { day: "2-digit", month: "2-digit", year: "numeric", hour: "2-digit", minute: "2-digit" }) : "—");

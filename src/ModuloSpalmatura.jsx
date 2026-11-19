@@ -1,5 +1,5 @@
 import { useState, useEffect, useMemo, useCallback, useRef } from "react";
-import { tema, cv } from "./tema.js";
+import { tema, cv, stileBtn, stileInput, stileTag, stileMini, OMBRA_CARD, FONT } from "./tema.js";
 
 // ─── Pesi Spalmatura ─────────────────────────────────────────────────────────
 // Vista e modifica diretta della tabella spalmatura_obiettivo: per ogni editore+formato, la quota
@@ -24,12 +24,12 @@ const T = tema({
 });
 
 const css = {
-  btn: (v = "default", disabled = false) => ({ padding: "6px 12px", border: `1px solid ${v === "accent" ? T.accent : v === "green" ? T.green : v === "danger" ? T.red : T.border}`, background: v === "accent" ? T.accent : v === "green" ? T.green : "transparent", color: v === "accent" || v === "green" ? "#000" : v === "danger" ? T.red : T.text, cursor: disabled ? "default" : "pointer", fontSize: "12px", fontFamily: "inherit", borderRadius: 3, fontWeight: v === "accent" || v === "green" ? 700 : 400, opacity: disabled ? 0.5 : 1, whiteSpace: "nowrap" }),
-  mini: { padding: "2px 6px", border: `1px solid ${T.border}`, background: "transparent", color: T.textMid, cursor: "pointer", fontSize: "11px", fontFamily: "inherit", borderRadius: 3 },
-  card: { background: T.surface, border: `1px solid ${T.border}`, borderRadius: 6, padding: 16, marginBottom: 14 },
-  th: { padding: "7px 6px", textAlign: "left", color: T.textMid, fontWeight: 400, fontSize: "10px", letterSpacing: "0.06em", textTransform: "uppercase", borderBottom: `1px solid ${T.border}`, whiteSpace: "nowrap", position: "sticky", top: 0, background: T.surface, zIndex: 1 },
-  td: { padding: "4px 6px", borderBottom: `1px solid ${T.border}55`, fontSize: "12px", color: T.text, whiteSpace: "nowrap", verticalAlign: "middle" },
-  input: { background: T.bg, border: `1px solid ${T.borderHi}`, color: T.text, padding: "4px 6px", fontSize: "12px", fontFamily: "inherit", borderRadius: 3 },
+  btn: (v = "default", disabled = false) => ({ ...stileBtn(v, disabled), whiteSpace: "nowrap" }),
+  mini: stileMini,
+  card: { background: T.surface, border: `1px solid ${T.border}`, borderRadius: 14, boxShadow: OMBRA_CARD, padding: 16, marginBottom: 14 },
+  th: { padding: "7px 6px", textAlign: "left", color: T.textMid, fontWeight: 700, fontSize: "11px", letterSpacing: "0.03em", textTransform: "uppercase", borderBottom: `2px solid ${T.border}`, whiteSpace: "nowrap", position: "sticky", top: 0, background: T.surface, zIndex: 1 },
+  td: { padding: "4px 6px", borderBottom: `1px solid ${T.border}`, fontSize: "12px", color: T.text, whiteSpace: "nowrap", verticalAlign: "middle" },
+  input: { background: T.surface, border: `2px solid ${T.border}`, color: T.text, padding: "4px 6px", fontSize: "13px", fontFamily: "inherit", borderRadius: 8 },
   label: { display: "flex", flexDirection: "column", gap: 4, color: T.textMid, fontSize: "11px" },
 };
 
@@ -522,7 +522,7 @@ export default function ModuloSpalmatura({ token, onDataChange }) {
   if (loading) return <div style={{ padding: 24, color: T.textMid }}>Caricamento pesi spalmatura…</div>;
 
   const Kpi = ({ label, value, color = T.text, onClick, title }) => (
-    <div onClick={onClick} title={title} style={{ border: `1px solid ${color === T.text ? T.border : color + "66"}`, borderRadius: 4, padding: "6px 10px", minWidth: 80, cursor: onClick ? "pointer" : "default" }}>
+    <div onClick={onClick} title={title} style={{ border: `1px solid ${color === T.text ? T.border : color + "66"}`, borderRadius: 9, padding: "6px 10px", minWidth: 80, cursor: onClick ? "pointer" : "default" }}>
       <div style={{ color: color === T.text ? T.textMid : color, fontSize: "10px", fontWeight: 700 }}>{label}</div>
       <div style={{ color: T.text, fontWeight: 700 }}>{value}</div>
     </div>
@@ -641,7 +641,7 @@ export default function ModuloSpalmatura({ token, onDataChange }) {
         </div>
       )}
 
-      <div style={{ border: `1px solid ${T.border}`, borderRadius: 4, overflow: "auto", maxHeight: "70vh" }}>
+      <div style={{ border: `1px solid ${T.border}`, borderRadius: 9, overflow: "auto", maxHeight: "70vh" }}>
         <table style={{ borderCollapse: "collapse", minWidth: "100%" }}>
           <thead>
             <tr>
@@ -944,11 +944,11 @@ function PannelloResa({ resa, correzione, par, setPar, canaliInfo, onApplica, on
       </div>
       <div style={{ display: "flex", gap: 6, marginBottom: 12 }}>
         {[["regole", "Regole a soglie"], ["formula", "Formula proporzionale"]].map(([m, l]) => (
-          <button key={m} style={css.btn(par.metodo === m ? "accent" : "default")} onClick={() => setPar(p => ({ ...p, metodo: m }))}>{l}</button>
+          <button key={m} style={css.btn(par.metodo === m ? "attivo" : "default")} onClick={() => setPar(p => ({ ...p, metodo: m }))}>{l}</button>
         ))}
       </div>
       {par.metodo === "regole" ? (
-        <div style={{ background: T.bg, border: `1px solid ${T.border}`, borderRadius: 4, padding: "10px 12px", marginBottom: 12, fontSize: "12px", color: T.text, lineHeight: 2.2 }}>
+        <div style={{ background: T.bg, border: `1px solid ${T.border}`, borderRadius: 9, padding: "10px 12px", marginBottom: 12, fontSize: "12px", color: T.text, lineHeight: 2.2 }}>
           <div><span style={{ color: T.red, fontWeight: 700 }}>● Resa critica</span> — resa ≥ <Num v={par.critica} on={num("critica")} />% → il canale perde il <Num v={par.taglioCritica} on={num("taglioCritica")} />% del suo peso</div>
           <div><span style={{ color: T.amber, fontWeight: 700 }}>● Resa alta</span> — resa ≥ <Num v={par.alta} on={num("alta")} />% → perde il <Num v={par.taglioAlta} on={num("taglioAlta")} />%</div>
           <div><span style={{ color: T.green, fontWeight: 700 }}>● Resa virtuosa</span> — resa ≤ <Num v={par.virtuosa} on={num("virtuosa")} />% → riceve le quote tolte agli altri, al massimo +<Num v={par.aumentoMax} on={num("aumentoMax")} />% del suo peso</div>
@@ -959,7 +959,7 @@ function PannelloResa({ resa, correzione, par, setPar, canaliInfo, onApplica, on
       ) : (
         <div style={{ color: T.textMid, fontSize: "11px", marginBottom: 12 }}>Ogni canale sale o scende in proporzione a quanto la sua resa è sotto o sopra la media dell'editore.</div>
       )}
-      <div style={{ background: T.bg, border: `1px solid ${T.border}`, borderRadius: 4, padding: "8px 12px", marginBottom: 12, fontSize: "12px", color: T.text, lineHeight: 2 }}>
+      <div style={{ background: T.bg, border: `1px solid ${T.border}`, borderRadius: 9, padding: "8px 12px", marginBottom: 12, fontSize: "12px", color: T.text, lineHeight: 2 }}>
         <b>Eccezione Amazon</b> — peso fisso <Num v={par.amazonFisso} on={num("amazonFisso")} />% per tutti gli editori (0 = spenta), gli altri canali si riproporzionano.
         <div style={{ color: T.textMid, fontSize: "11px" }}>Esclusi (separati da virgola):{" "}
           <input style={{ ...css.input, width: "min(560px, 100%)", padding: "2px 6px" }} defaultValue={(par.amazonEsclusi || []).join(", ")}

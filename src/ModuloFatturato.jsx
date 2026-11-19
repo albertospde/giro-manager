@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { tema, cv } from "./tema.js";
+import { tema, cv, stileBtn, stileInput, stileTag, stileMini, OMBRA_CARD, FONT } from "./tema.js";
 
 // ─── Carica Fatturato ────────────────────────────────────────────────────────
 // Fatturato per libreria ed editore da caricare su RPN (pulsante "Carica fatturato" della home di RPN,
@@ -20,11 +20,11 @@ const T = tema({
   accent: "#7b9fe8", green: "#4caf7d", red: "#e05c5c", amber: "#e0a84c",
 });
 const css = {
-  btn: (v = "default", disabled = false) => ({ padding: "7px 14px", border: `1px solid ${v === "accent" ? T.accent : T.border}`, background: v === "accent" ? T.accent : "transparent", color: v === "accent" ? "#000" : T.text, cursor: disabled ? "default" : "pointer", fontSize: "12px", fontFamily: "inherit", borderRadius: 3, fontWeight: v === "accent" ? 700 : 400, opacity: disabled ? 0.5 : 1, whiteSpace: "nowrap" }),
-  card: { background: T.surface, border: `1px solid ${T.border}`, borderRadius: 6, padding: 18, marginBottom: 16 },
-  th: { padding: "6px 10px", textAlign: "left", color: T.textMid, fontWeight: 400, fontSize: "10px", letterSpacing: "0.08em", textTransform: "uppercase", borderBottom: `1px solid ${T.border}` },
-  td: { padding: "5px 10px", borderBottom: `1px solid ${T.border}55`, fontSize: "12px", color: T.text },
-  kpi: { background: T.bg, border: `1px solid ${T.border}`, borderRadius: 4, padding: "8px 14px", minWidth: 120 },
+  btn: (v = "default", disabled = false) => ({ ...stileBtn(v, disabled), whiteSpace: "nowrap" }),
+  card: { background: T.surface, border: `1px solid ${T.border}`, borderRadius: 14, boxShadow: OMBRA_CARD, padding: 18, marginBottom: 16 },
+  th: { padding: "6px 10px", textAlign: "left", color: T.textMid, fontWeight: 700, fontSize: "11px", letterSpacing: "0.03em", textTransform: "uppercase", borderBottom: `2px solid ${T.border}` },
+  td: { padding: "5px 10px", borderBottom: `1px solid ${T.border}`, fontSize: "12px", color: T.text },
+  kpi: { background: T.surface2, border: `1px solid ${T.border}`, borderRadius: 9, padding: "8px 14px", minWidth: 120 },
 };
 
 const norm = (s) => String(s ?? "").replace(/\s+/g, " ").trim().toUpperCase();
