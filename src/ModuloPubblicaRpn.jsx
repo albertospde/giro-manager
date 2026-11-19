@@ -71,9 +71,10 @@ function ListaTitoli({ titolo, righe, colore, aperta }) {
   );
 }
 
-export default function ModuloPubblicaRpn({ token, titoli }) {
+export default function ModuloPubblicaRpn({ token, titoli, cedolaIniziale }) {
   const [syncRows, setSyncRows] = useState({});
-  const [giroSel, setGiroSel] = useState("");
+  // Arrivando da Giri e cedola ("Pubblica su RPN") si parte dal giro della cedola scelta
+  const [giroSel, setGiroSel] = useState(() => (cedolaIniziale && (titoli || []).find(t => t.n_cedola === cedolaIniziale)?.giro_label) || "");
   const [sel, setSel] = useState(null);          // n_cedola aperta nel dettaglio
   const [preview, setPreview] = useState(null);
   const [date, setDate] = useState({ data_inizio: "", data_fine: "" });
@@ -168,6 +169,8 @@ export default function ModuloPubblicaRpn({ token, titoli }) {
     } catch (e) { setErrore(e.message); }
     setBusy("");
   };
+  // Cedola passata da Giri e cedola: si apre subito il confronto GiroManager ↔ RPN
+  useEffect(() => { if (cedolaIniziale) apri(cedolaIniziale); }, [cedolaIniziale]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const pubblica = async () => {
     const p = preview;

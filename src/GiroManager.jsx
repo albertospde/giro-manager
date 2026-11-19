@@ -1532,7 +1532,7 @@ function AvvisoEditoriNuovi({ token, userId }) {
   );
 }
 
-function ModuloCedola({ titoli, giriList, onUpdateTitolo, onDeleteTitolo, spalmatura, canali = [], prenotato, ruolo, token, onTitoliChange, userAccount, statoChiusure, onToggleChiusura }) {
+function ModuloCedola({ titoli, giriList, onUpdateTitolo, onDeleteTitolo, spalmatura, canali = [], prenotato, ruolo, token, onTitoliChange, userAccount, statoChiusure, onToggleChiusura, onPubblicaRpn }) {
   const [giroLabelSel, setGiroLabelSel] = useState([]);
   const [extraSel, setExtraSel] = useState([]);
   const [giroSel, setGiroSel] = useState([]);
@@ -1615,6 +1615,29 @@ function ModuloCedola({ titoli, giriList, onUpdateTitolo, onDeleteTitolo, spalma
   const emptyTitolo = { ean: "", titolo: "", autore: "", editore_nome: "", codice_editore: "", prezzo: "", uscita: "", formato: "Cover", n_cedola: "", giro_label: "", posizione: "", obiettivo_assegnato: "", account_editore: "", note_comunicazione: "", note: "" };
   const [formTitolo, setFormTitolo] = useState(emptyTitolo);
   const [savingTitolo, setSavingTitolo] = useState(false);
+  const [inserisciDopo, setInserisciDopo] = useState(null); // titolo sotto cui inserire (tasto "+ sotto")
+
+  // "+ sotto" su una riga: nuovo titolo nella stessa cedola, subito dopo quella riga.
+  // L'ordine in cedola (e su RPN) è ranking editore → editore → posizione: il nuovo titolo
+  // prende l'editore della riga e la posizione successiva, i titoli seguenti scendono di un posto.
+  const apriInserisciSotto = (t) => {
+    setInserisciDopo(t);
+    setFormTitolo({
+      ...emptyTitolo,
+      giro_label: t.giro_label || "", n_cedola: t.n_cedola || "",
+      editore_nome: t.editore_nome || "", codice_editore: t.codice_editore || "",
+      account_editore: t.account_editore || "", formato: t.formato || "Cover",
+      posizione: String((t.posizione || 0) + 1),
+    });
+    setShowNuovoTitolo(true);
+  };
+  // "+ Titolo" dalla barra: se è aperta una sola cedola, giro e cedola sono già compilati.
+  const apriNuovoTitolo = () => {
+    setInserisciDopo(null);
+    const giri = [...new Set(filtered.map(t => t.giro_label).filter(Boolean))];
+    setFormTitolo({ ...emptyTitolo, giro_label: giri.length === 1 ? giri[0] : "", n_cedola: cedolaUnica || "" });
+    setShowNuovoTitolo(true);
+  };
   const giriLabelAll = useMemo(() => [...new Set(titoli.map(t => t.giro_label).filter(Boolean))].sort((a, b) => { const [na, ya] = a.split(" "); const [nb, yb] = b.split(" "); return Number(yb) - Number(ya) || Number(nb) - Number(na); }), [titoli]);
 
   const saveNuovoTitolo = async () => {
@@ -1690,6 +1713,7 @@ function ModuloCedola({ titoli, giriList, onUpdateTitolo, onDeleteTitolo, spalma
       const data = await r.json();
       showToastCedola(`"${formTitolo.titolo}" aggiunto in posizione ${posizioneFinale}`);
       setShowNuovoTitolo(false);
+      setInserisciDopo(null);
       setFormTitolo(emptyTitolo);
       if (onTitoliChange) onTitoliChange();
       if (data?.[0]) onUpdateTitolo(data[0]);
@@ -1778,6 +1802,8 @@ function ModuloCedola({ titoli, giriList, onUpdateTitolo, onDeleteTitolo, spalma
   [titoli, giroLabelSel, extraSel, giroSel, search, filterFlag, filterEditori, filterAccount, sortKey]);
 
   const editingTitolo = titoli.find(t => t.id === editingId);
+  // Cedola unica visualizzata (serve per "Pubblica su RPN" e per precompilare "+ Titolo")
+  const cedolaUnica = useMemo(() => { const s = new Set(filtered.map(t => t.n_cedola).filter(Boolean)); return s.size === 1 ? [...s][0] : null; }, [filtered]);
 
   const getObjCanale = (titolo, canale_codice) => objPerCanale(titolo, spalmatura)?.[canale_codice] || 0;
 
@@ -1983,7 +2009,13 @@ function ModuloCedola({ titoli, giriList, onUpdateTitolo, onDeleteTitolo, spalma
       {showNuovoTitolo && (
         <div style={{ position: "fixed", inset: 0, background: "#000a", zIndex: 200, display: "flex", alignItems: "center", justifyContent: "center" }} onClick={() => setShowNuovoTitolo(false)}>
           <div style={{ background: T.surface, border: `1px solid ${T.borderHi}`, borderRadius: 12, padding: 28, width: 640, maxHeight: "85vh", overflowY: "auto" }} onClick={e => e.stopPropagation()}>
-            <div style={{ color: T.accent, fontWeight: "700", fontSize: "13px", marginBottom: 20 }}>NUOVO TITOLO</div>
+            <div style={{ color: T.accent, fontWeight: "700", fontSize: "13px", marginBottom: inserisciDopo ? 6 : 20 }}>NUOVO TITOLO</div>
+            {inserisciDopo && (
+              <div style={{ color: T.textMid, fontSize: "11px", marginBottom: 16, lineHeight: 1.5 }}>
+                Sotto <b style={{ color: T.text }}>{inserisciDopo.titolo}</b> ({inserisciDopo.editore_nome || "—"}, pos. {inserisciDopo.posizione ?? "—"}) in cedola <b style={{ color: T.text }}>{inserisciDopo.n_cedola}</b>.
+                In cedola i titoli sono in ordine di editore e poi di posizione: se cambi editore, la posizione vale tra i titoli del nuovo editore.
+              </div>
+            )}
             <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
               {[
                 ["ean", "EAN *", "full"], ["titolo", "Titolo *", "full"],
@@ -2068,11 +2100,16 @@ function ModuloCedola({ titoli, giriList, onUpdateTitolo, onDeleteTitolo, spalma
         <div style={{ marginLeft: "auto", color: T.textMid, fontSize: "11px" }}><span style={{ color: T.text }}>{filtered.length}</span> titoli</div>
         {ruolo !== "agente" && <>
           <button style={{ ...css.btn(), borderColor: T.green, color: T.green }} onClick={() => setShowNuovoGiro(true)}>+ Giro</button>
-          <button style={{ ...css.btn(), borderColor: T.green, color: T.green }} onClick={() => setShowNuovoTitolo(true)}>+ Titolo</button>
+          <button style={{ ...css.btn(), borderColor: T.green, color: T.green }} onClick={apriNuovoTitolo}>+ Titolo</button>
           <button style={{ ...css.btn(), borderColor: T.blue, color: T.blue }} onClick={() => setShowCaricoSemplice(true)} title="Carica più titoli da file Excel — supporta anche cedole EXTRA">+ Carico</button>
         </>}
         <button style={css.btn("accent")} onClick={exportAgenti}>↓ Download Agenti</button>
         {ruolo !== "agente" && <button style={css.btn("accent")} onClick={exportDirezionale}>↓ Download Direzionali</button>}
+        {ruolo !== "agente" && onPubblicaRpn && (
+          <button style={{ ...css.btn(), borderColor: "#6366f1", color: "#6366f1" }} disabled={!cedolaUnica}
+            title={cedolaUnica ? `Apre "${cedolaUnica}" in Crea cedola su RPN: vedi cosa cambia e pubblichi titoli, ordine e obiettivi` : "Scegli una sola cedola (tendina \"Tutte le cedole\") per pubblicarla su RPN"}
+            onClick={() => onPubblicaRpn(cedolaUnica)}>⇪ Pubblica su RPN</button>
+        )}
         {ruolo !== "agente" && <button style={{ ...css.btn(), borderColor: T.blue, color: T.blue }} onClick={exportTemplateRicaricabile} title="Genera un file nello stesso formato del template di import, ricaricabile direttamente">↓ Template ricaricabile</button>}
         <a href="https://lafeltrinelli.sharepoint.com/:f:/s/PDE/IgD7OJj1nZrhTKrDAVfuqOc3AQQaTrH4gMuXZT7Ob6Fbm2w?e=mEDMdm" target="_blank" rel="noopener noreferrer" style={{ ...css.btn(), borderColor: "#9c6fcf", color: "#9c6fcf", textDecoration: "none" }}>📄 PDF & Materiali</a>
       </div>
@@ -2170,7 +2207,10 @@ function ModuloCedola({ titoli, giriList, onUpdateTitolo, onDeleteTitolo, spalma
                 </td>
                 <td style={css.td}>{t.ean_gemello_1 && <div style={{ fontSize: "10px", color: T.textMid }}><div>{t.ean_gemello_1}</div>{t.ean_gemello_2 && <div>{t.ean_gemello_2}</div>}{t.ean_gemello_3 && <div>{t.ean_gemello_3}</div>}</div>}</td>
                 <td style={{ ...css.td, maxWidth: 160 }}>{(t.note || t.note_comunicazione) && <div style={{ fontSize: "11px", color: T.textMid, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", maxWidth: 150 }} title={t.note_comunicazione || t.note}>{t.note_comunicazione || t.note}</div>}</td>
-                <td style={css.td}><button style={{ ...css.btn(), padding: "3px 9px", fontSize: "11px" }} onClick={() => setEditingId(t.id)}>Edit</button></td>
+                <td style={{ ...css.td, whiteSpace: "nowrap" }}>
+                  <button style={{ ...css.btn(), padding: "3px 9px", fontSize: "11px" }} onClick={() => setEditingId(t.id)}>Edit</button>
+                  {ruolo !== "agente" && <button title="Inserisci un nuovo titolo subito sotto questo" style={{ ...css.btn(), padding: "3px 9px", fontSize: "11px", marginLeft: 4, borderColor: T.green, color: T.green }} onClick={() => apriInserisciSotto(t)}>+ sotto</button>}
+                </td>
               </tr>
             ))}
           </tbody>
@@ -5913,6 +5953,8 @@ export default function App() {
   const [checkingAuth, setCheckingAuth] = useState(true);
   const [cambioPassword, setCambioPassword] = useState(false);
   const [activeModule, setActiveModule] = useState("dashboard");
+  // Cedola da aprire subito in "Crea cedola su RPN" quando ci si arriva da Giri e cedola
+  const [rpnCedolaIniziale, setRpnCedolaIniziale] = useState(null);
   const [titoli, setTitoli] = useState([]);
   const [prenotato, setPrenotato] = useState([]);
   const [spalmatura, setSpalmatura] = useState([]);
@@ -6027,7 +6069,7 @@ export default function App() {
                 return (
                   <button key={m.id} className={on ? "gm-nav gm-nav-on" : "gm-nav"}
                     style={{ width: "100%", textAlign: "left", padding: "5px 10px 5px 5px", border: "none", borderRadius: 12, background: on ? `linear-gradient(140deg, ${m.a1}, ${m.a2})` : "transparent", color: on ? "#fff" : T.text, cursor: "pointer", fontFamily: "inherit", fontSize: "14px", lineHeight: 1.2, fontWeight: on ? 700 : 500, display: "flex", alignItems: "center", gap: 10, boxShadow: on ? `0 8px 18px -8px ${m.a2}` : "none" }}
-                    onClick={() => setActiveModule(m.id)}>
+                    onClick={() => { setRpnCedolaIniziale(null); setActiveModule(m.id); }}>
                     <IconaModulo m={m} attivo={on} /> <span style={{ flex: 1, minWidth: 0 }}>{m.label}</span>
                   </button>
                 );
@@ -6057,7 +6099,7 @@ export default function App() {
           {activeModule === "dashboard" && <ModuloDashboard titoli={titoli} prenotato={prenotato} canali={canali} spalmatura={spalmatura} ruolo={ruolo} />}
           {activeModule === "calendariogiri" && <Modulocalendariogiri token={session.token} ruolo={ruolo} />}
           {/* FIX 5: Passato token a ModuloCedola */}
-          {activeModule === "cedola" && <ModuloCedola titoli={titoli} giriList={giriDB} canali={canali} onUpdateTitolo={t => { updateTitolo(t); setTitoli(prev => prev.some(x => x.id === t.id) ? prev.map(x => x.id === t.id ? t : x) : [...prev, t]); }} onDeleteTitolo={deleteTitolo} spalmatura={spalmatura} prenotato={prenotato} ruolo={ruolo} token={session.token} onTitoliChange={refreshDati} userAccount={userAccount} statoChiusure={statoChiusure} onToggleChiusura={toggleChiusura} />}
+          {activeModule === "cedola" && <ModuloCedola titoli={titoli} giriList={giriDB} canali={canali} onUpdateTitolo={t => { updateTitolo(t); setTitoli(prev => prev.some(x => x.id === t.id) ? prev.map(x => x.id === t.id ? t : x) : [...prev, t]); }} onDeleteTitolo={deleteTitolo} spalmatura={spalmatura} prenotato={prenotato} ruolo={ruolo} token={session.token} onTitoliChange={refreshDati} userAccount={userAccount} statoChiusure={statoChiusure} onToggleChiusura={toggleChiusura} onPubblicaRpn={n => { setRpnCedolaIniziale(n); setActiveModule("pubblicarpn"); }} />}
           {activeModule === "prenotato" && <ModuloPrenotato token={session.token} titoli={titoli} onImportDone={() => sbFetch("prenotato?select=*&limit=100000", session.token).then(setPrenotato)} />}
           {/* MOD 4: Passato spalmatura a ModuloFineGiro */}
           {activeModule === "finegiro" && <ModuloFineGiro titoli={titoli} prenotato={prenotato} canali={canali} token={session.token} ruolo={ruolo} spalmatura={spalmatura} userAccount={userAccount} onPrenotatoUpdated={refreshDati} onUpdateTitolo={updateTitolo} statoChiusure={statoChiusure} onToggleChiusura={toggleChiusura} />}
@@ -6070,7 +6112,7 @@ export default function App() {
           {activeModule === "fatturato" && <ModuloFatturato token={session.token} />}
           {activeModule === "newentry" && <ModuloEditoriNewEntry token={session.token} onDataChange={refreshDati} />}
           {activeModule === "terne" && <ModuloTerne token={session.token} />}
-          {activeModule === "pubblicarpn" && <ModuloPubblicaRpn token={session.token} titoli={titoli} />}
+          {activeModule === "pubblicarpn" && <ModuloPubblicaRpn token={session.token} titoli={titoli} cedolaIniziale={rpnCedolaIniziale} />}
           {activeModule === "rankingeditori" && <ModuloRankingEditori token={session.token} titoli={titoli} onDataChange={refreshDati} />}
           {activeModule === "sftp" && <ModuloSftp token={session.token} />}
         </div>
