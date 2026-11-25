@@ -5861,6 +5861,11 @@ tbody tr:hover { background: ${T.accent}14; }
 ::-webkit-scrollbar-thumb { background: ${T.borderHi}; border-radius: 10px; border: 2px solid transparent; background-clip: padding-box; }
 ::-webkit-scrollbar-corner { background: transparent; }
 @keyframes gm-spin { to { transform: rotate(360deg); } }
+/* Telefono: barra laterale solo icone, niente scorrimento orizzontale */
+@media (max-width: 768px) {
+  .gm-sidebar { width: 58px !important; }
+  .gm-nav-label, .gm-nav-gruppo, .gm-hide-sm { display: none !important; }
+}
 `;
 document.head.appendChild(style);
 
@@ -5944,6 +5949,55 @@ function SelettoreTema() {
           {l}
         </button>
       ))}
+    </div>
+  );
+}
+
+// true se Giro Manager è aperto dentro una scheda del PDE Hub (iframe): il Hub ha già il suo menu utente
+// (stesso account, stesso tema), quindi qui non si ripete.
+const IN_HUB = (() => {
+  try { return window.self !== window.top; } catch (e) { return true; }
+})();
+
+// Pulsante utente della barra in alto (come il PDE Hub): nella tendina email e ruolo, Aggiorna dati,
+// tema chiaro/scuro, Cambia password, Esci
+function MenuUtente({ email, ruolo, onAggiorna, onCambiaPassword, onEsci }) {
+  const [aperto, setAperto] = useState(false);
+  const rif = useRef(null);
+  useEffect(() => {
+    if (!aperto) return;
+    const chiudi = (e) => { if (rif.current && !rif.current.contains(e.target)) setAperto(false); };
+    const esc = (e) => { if (e.key === "Escape") setAperto(false); };
+    document.addEventListener("mousedown", chiudi);
+    document.addEventListener("keydown", esc);
+    return () => { document.removeEventListener("mousedown", chiudi); document.removeEventListener("keydown", esc); };
+  }, [aperto]);
+  const nome = (email || "").split("@")[0];
+  const riga = { display: "flex", alignItems: "center", gap: 10, width: "100%", padding: "11px 16px", fontSize: "13px", color: T.text, background: "none", border: "none", borderBottom: `1px solid ${T.border}`, cursor: "pointer", fontFamily: "inherit", textAlign: "left" };
+  const fai = (f) => () => { setAperto(false); f(); };
+  return (
+    <div ref={rif} style={{ position: "relative", flexShrink: 0 }}>
+      <button onClick={() => setAperto(a => !a)} aria-haspopup="menu" aria-expanded={aperto}
+        style={{ display: "flex", alignItems: "center", gap: 8, padding: "6px 12px", fontSize: "13px", fontFamily: "inherit", fontWeight: 600, borderRadius: 9, cursor: "pointer", border: `1px solid ${aperto ? T.accent : T.border}`, background: T.surface, color: T.text, maxWidth: 220 }}>
+        <span aria-hidden="true">👤</span>
+        <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{nome}</span>
+        <span aria-hidden="true" style={{ color: T.textMid, fontSize: "10px" }}>▾</span>
+      </button>
+      {aperto && (
+        <div role="menu" style={{ position: "absolute", top: "calc(100% + 8px)", right: 0, minWidth: 260, background: T.surface, border: `1px solid ${T.border}`, borderRadius: 12, boxShadow: OMBRA_POPUP, overflow: "hidden", zIndex: 300 }}>
+          <div style={{ padding: "12px 16px", borderBottom: `1px solid ${T.border}` }}>
+            <div style={{ fontSize: "12px", color: T.textMid, wordBreak: "break-all" }}>{email}</div>
+            <div style={{ fontSize: "11px", color: T.textDim, textTransform: "uppercase", letterSpacing: "0.08em", marginTop: 2 }}>{ruolo}</div>
+          </div>
+          {onAggiorna && <button role="menuitem" style={riga} onClick={fai(onAggiorna)}>↺ Aggiorna dati</button>}
+          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10, padding: "10px 16px", borderBottom: `1px solid ${T.border}` }}>
+            <span style={{ fontSize: "11px", fontWeight: 600, color: T.textMid, textTransform: "uppercase", letterSpacing: "0.08em" }}>Tema</span>
+            <SelettoreTema />
+          </div>
+          <button role="menuitem" style={riga} onClick={fai(onCambiaPassword)}>🔑 Cambia password</button>
+          <button role="menuitem" style={{ ...riga, borderBottom: "none", color: T.red }} onClick={fai(onEsci)}>⎋ Esci</button>
+        </div>
+      )}
     </div>
   );
 }
@@ -6044,33 +6098,48 @@ export default function App() {
 
   return (
     <div style={{ ...css.app, display: "flex", flexDirection: "column", height: "100vh", overflow: "hidden" }}>
-      {/* Intestazione (come BookUp): logo a sinistra, utente e comandi a destra */}
-      <div style={css.header}>
-        <div style={{ background: "#fff", borderRadius: 12, padding: cv("6px 10px", "0"), flexShrink: 0 }}>
-          <img src={`${import.meta.env.BASE_URL}logo/giro-manager-logo-480.png`} style={{ width: 230, display: "block" }} alt="Giro Manager" />
-        </div>
-        <div style={{ marginLeft: "auto", display: "flex", gap: 10, alignItems: "center", flexShrink: 0 }}>
-          <span style={{ color: T.textMid, fontSize: "14px", whiteSpace: "nowrap" }}>{session.user?.email} · <span style={{ textTransform: "capitalize" }}>{ruolo}</span></span>
-          {ruolo !== "agente" && <button style={{ ...css.btn(), whiteSpace: "nowrap" }} onClick={refreshDati}>↺ Aggiorna</button>}
-          <button style={{ ...css.btn(), whiteSpace: "nowrap" }} onClick={() => setCambioPassword(true)}>🔑 Cambia password</button>
-          <SelettoreTema />
-          <button style={{ ...css.btn(), whiteSpace: "nowrap" }} onClick={handleLogout}>Esci</button>
-        </div>
-      </div>
+      {/* Barra in alto sottile (come il PDE Hub): a sinistra la sezione aperta, a destra solo il menu utente.
+          Dentro il PDE Hub il menu utente non c'è (lo ha già il Hub). Il logo è in cima alla barra laterale. */}
+      {(() => {
+        const mAtt = [...MODULES, ...MODULES_IMPORT].find(m => m.id === activeModule);
+        return (
+          <div style={{ ...css.header, height: 50, padding: "0 16px", boxSizing: "border-box", gap: 10, flexShrink: 0 }}>
+            {mAtt && <IconaModulo m={mAtt} size={30} />}
+            <span style={{ fontFamily: FONT_TITOLI, fontSize: "19px", lineHeight: 1.1, color: mAtt ? cv(mAtt.a1, mAtt.a2) : T.text, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", minWidth: 0 }}>{mAtt?.label}</span>
+            <span className="gm-hide-sm" style={{ color: T.textMid, fontSize: "12px", whiteSpace: "nowrap" }}>{titoli.length} titoli · {[...new Set(titoli.map(t => t.n_cedola).filter(Boolean))].length} cedole</span>
+            <div style={{ marginLeft: "auto" }} />
+            {IN_HUB
+              ? (ruolo !== "agente" && <button style={{ ...css.btn(), padding: "6px 12px" }} title="Ricarica titoli, prenotato e giri" onClick={refreshDati}>↺ Aggiorna dati</button>)
+              : <MenuUtente email={session.user?.email} ruolo={ruolo}
+                  onAggiorna={ruolo !== "agente" ? refreshDati : null}
+                  onCambiaPassword={() => setCambioPassword(true)} onEsci={handleLogout} />}
+          </div>
+        );
+      })()}
       <div style={{ flex: 1, minHeight: 0, display: "flex", gap: 22, padding: "16px 16px 0" }}>
       {/* Barra laterale (launcher BookUp in versione elenco) */}
-      <div style={{ ...css.sidebar, marginBottom: 16 }}>
+      <div className="gm-sidebar" style={{ ...css.sidebar, marginBottom: 16 }}>
         <nav style={{ flex: 1, minHeight: 0, overflowY: "auto", padding: 10, display: "flex", flexDirection: "column", gap: 2 }}>
+          {/* Logo dell'app (kit condiviso del PDE Hub) in cima al menu: riquadro bianco anche in tema scuro */}
+          <div className="gm-hide-sm" style={{ background: "#fff", border: `1px solid ${T.border}`, borderRadius: 12, padding: "10px 8px", margin: "2px 0 4px", display: "flex", justifyContent: "center", flexShrink: 0 }}>
+            <div className="pde-logo" role="img" aria-label="Giro Manager">
+              <div className="pl-text">
+                <div className="pl-name"><b>GIRO</b><span>MANAGER</span></div>
+                <div className="pl-tag"><i className="c0">PIANIFICA.</i><em>I</em><i className="c1">PRENOTA.</i><em>I</em><i className="c2">MONITORA.</i></div>
+              </div>
+              <div className="pl-wing"></div>
+            </div>
+          </div>
           {[{ titolo: "Giri e lanci", voci: moduliVis }, { titolo: "Import", voci: moduliImport }].filter(g => g.voci.length > 0).map(g => (
             <Fragment key={g.titolo}>
-              <div style={{ margin: "10px 8px 6px", fontSize: "11px", fontWeight: 800, letterSpacing: "0.07em", textTransform: "uppercase", color: T.textMid }}>{g.titolo}</div>
+              <div className="gm-nav-gruppo" style={{ margin: "10px 8px 6px", fontSize: "11px", fontWeight: 800, letterSpacing: "0.07em", textTransform: "uppercase", color: T.textMid }}>{g.titolo}</div>
               {g.voci.map(m => {
                 const on = activeModule === m.id;
                 return (
-                  <button key={m.id} className={on ? "gm-nav gm-nav-on" : "gm-nav"}
+                  <button key={m.id} title={m.label} className={on ? "gm-nav gm-nav-on" : "gm-nav"}
                     style={{ width: "100%", textAlign: "left", padding: "5px 10px 5px 5px", border: "none", borderRadius: 12, background: on ? `linear-gradient(140deg, ${m.a1}, ${m.a2})` : "transparent", color: on ? "#fff" : T.text, cursor: "pointer", fontFamily: "inherit", fontSize: "14px", lineHeight: 1.2, fontWeight: on ? 700 : 500, display: "flex", alignItems: "center", gap: 10, boxShadow: on ? `0 8px 18px -8px ${m.a2}` : "none" }}
                     onClick={() => { setRpnCedolaIniziale(null); setActiveModule(m.id); }}>
-                    <IconaModulo m={m} attivo={on} /> <span style={{ flex: 1, minWidth: 0 }}>{m.label}</span>
+                    <IconaModulo m={m} attivo={on} /> <span className="gm-nav-label" style={{ flex: 1, minWidth: 0 }}>{m.label}</span>
                   </button>
                 );
               })}
@@ -6079,16 +6148,6 @@ export default function App() {
         </nav>
       </div>
       <div style={css.main}>
-        {(() => {
-          const mAtt = [...MODULES, ...MODULES_IMPORT].find(m => m.id === activeModule);
-          return (
-            <div style={{ display: "flex", alignItems: "center", gap: 14, padding: "4px 4px 12px", flexShrink: 0, flexWrap: "wrap" }}>
-              {mAtt && <IconaModulo m={mAtt} size={42} />}
-              <span style={{ fontFamily: FONT_TITOLI, fontSize: "28px", fontWeight: 400, lineHeight: 1.1, color: mAtt ? cv(mAtt.a1, mAtt.a2) : T.text }}>{mAtt?.label}</span>
-              <span style={{ color: T.textMid, fontSize: "13px", marginLeft: "auto" }}>{titoli.length} titoli · {[...new Set(titoli.map(t => t.n_cedola).filter(Boolean))].length} cedole</span>
-            </div>
-          );
-        })()}
         {cambioPassword && <CambiaPassword email={session.user?.email} token={session.token} onClose={() => setCambioPassword(false)} />}
         <AvvisoEditoriNuovi token={session.token} userId={session.user?.id} />
 
